@@ -1,0 +1,3 @@
+# The bubblesim core is pure Python standard library (math, random) — no install needed.
+# matplotlib is only used by run_demo.py to render the figures.
+matplotlib>=3.5

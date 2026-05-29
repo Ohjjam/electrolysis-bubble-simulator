@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Electrolysis Bubble Simulator — HER / OER</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121a30; --panel2:#0e1526; --line:#23314f;
+    --txt:#e8eefc; --dim:#90a0c0; --accent:#39b3ff; --accent2:#ff5d6c;
+    --good:#36d399; --warn:#ffb454;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:radial-gradient(1200px 800px at 70% -10%, #15203a 0%, var(--bg) 55%);
+    color:var(--txt);
+    font:13px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;
+    padding:14px;
+  }
+  h1{font-size:17px;margin:0 0 2px;font-weight:650;letter-spacing:.2px;}
+  h1 span{color:var(--accent);}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:12px;}
+  .app{display:grid;grid-template-columns:300px minmax(380px,1fr) 320px;gap:14px;align-items:start;}
+  @media(max-width:1100px){.app{grid-template-columns:1fr;}}
+  .card{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line);border-radius:12px;padding:14px;}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);
+    margin:0 0 10px;font-weight:600;}
+  /* controls */
+  .ctl{margin-bottom:13px;}
+  .ctl .lab{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;}
+  .ctl .lab b{font-weight:600;}
+  .ctl .val{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:600;}
+  .ctl .hint{color:var(--dim);font-size:10.5px;}
+  input[type=range]{width:100%;-webkit-appearance:none;height:5px;border-radius:5px;
+    background:var(--line);outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;
+    border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid #0b1020;box-shadow:0 0 0 1px var(--accent);}
+  input[type=range].r2::-webkit-slider-thumb{background:var(--accent2);box-shadow:0 0 0 1px var(--accent2);}
+  .seg{display:flex;gap:6px;}
+  .seg button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+    padding:7px;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;}
+  .seg button.on{background:var(--accent);color:#06101f;border-color:var(--accent);}
+  .seg.oer button.on{background:var(--accent2);color:#1b0608;border-color:var(--accent2);}
+  .btn{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    padding:8px;border-radius:8px;cursor:pointer;font-weight:600;margin-top:4px;}
+  .btn:hover{border-color:var(--accent);}
+  /* stage */
+  #stageWrap{position:relative;}
+  canvas{display:block;width:100%;height:auto;border-radius:10px;background:#060912;}
+  .stageTag{position:absolute;top:10px;left:12px;font-size:11px;color:var(--dim);
+    background:rgba(8,12,24,.6);padding:3px 8px;border-radius:6px;border:1px solid var(--line);}
+  /* metrics */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .met{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;}
+  .met .k{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;}
+  .met .v{font-size:18px;font-weight:680;font-variant-numeric:tabular-nums;margin-top:1px;}
+  .met .u{font-size:10px;color:var(--dim);font-weight:500;}
+  .bar{height:6px;border-radius:4px;background:var(--line);margin-top:6px;overflow:hidden;}
+  .bar > i{display:block;height:100%;border-radius:4px;background:var(--accent);transition:width .1s;}
+  .plotlab{display:flex;justify-content:space-between;color:var(--dim);font-size:10.5px;margin:10px 0 3px;}
+  .foot{color:var(--dim);font-size:11px;margin-top:12px;line-height:1.5;}
+  .pill{display:inline-block;padding:1px 7px;border-radius:20px;border:1px solid var(--line);
+    color:var(--dim);font-size:10.5px;margin-right:4px;}
+</style>
+</head>
+<body>
+  <h1>수전해 버블 다이내믹스 <span>시뮬레이터</span></h1>
+  <div class="sub">전압·전류 ↔ 버블 핵생성·성장·이탈의 실시간 커플링 — HER/OER bubble control 탐구용 ·
+    <span id="enginetag" class="pill">physics-mirror of bubblesim core</span></div>
+
+  <div class="app">
+    <!-- ============ CONTROLS ============ -->
+    <div class="card" id="controls">
+      <h2>제어 변수 (levers)</h2>
+
+      <div class="ctl">
+        <div class="lab"><b>반응 / 전극</b></div>
+        <div class="seg" id="segElec">
+          <button data-e="HER" class="on">HER (cathode · H₂)</button>
+          <button data-e="OER">OER (anode · O₂)</button>
+        </div>
+        <div class="hint" style="margin-top:4px">HER는 같은 전하당 O₂의 2배 부피 기체 발생 (z=2 vs 4)</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>전압 V<sub>cell</sub></b><span class="val"><span id="vV">2.00</span> V</span></div>
+        <input id="V" type="range" min="1.4" max="2.8" step="0.01" value="2.0">
+        <div class="hint">과전압 → 전류 → 기체 발생률을 모두 끌어올림</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>Wettability — 접촉각</b><span class="val"><span id="vA">60</span>°</span></div>
+        <input id="A" type="range" min="10" max="160" step="1" value="60">
+        <div class="hint">작을수록(친수성) 작은 버블·낮은 coverage·잦은 이탈 → 고전류</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>전해질 농도 (KOH)</b><span class="val"><span id="vC">6.0</span> M</span></div>
+        <input id="C" type="range" min="0.5" max="10" step="0.1" value="6.0">
+        <div class="hint">전도도는 ~6 M에서 최대 · 고농도는 coalescence 억제</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>유속 (cross-flow)</b><span class="val"><span id="vU">0.00</span> m/s</span></div>
+        <input id="U" type="range" min="0" max="0.6" step="0.005" value="0">
+        <div class="hint">drag로 버블을 떼어내고 쓸어냄 → coverage↓</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>자기장 B (MHD)</b><span class="val"><span id="vB">0.0</span> T</span></div>
+        <input id="B" type="range" min="0" max="3" step="0.05" value="0">
+        <div class="hint">Lorentz j×B 대류 → 유효 전단력 ↑ → 이탈 촉진</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>전기장 E (DEP)</b><span class="val"><span id="vE">0.0</span> MV/m</span></div>
+        <input id="E" type="range" min="0" max="3" step="0.02" value="0">
+        <div class="hint">음의 유전영동력으로 버블을 전극에서 밀어냄</div>
+      </div>
+
+      <div class="grid2" style="gap:10px">
+        <div class="ctl" style="margin-bottom:6px">
+          <div class="lab"><b>온도</b><span class="val"><span id="vT">60</span>°C</span></div>
+          <input id="T" type="range" min="20" max="90" step="1" value="60">
+        </div>
+        <div class="ctl" style="margin-bottom:6px">
+          <div class="lab"><b>압력</b><span class="val"><span id="vP">1.0</span> bar</span></div>
+          <input id="P" type="range" min="1" max="10" step="0.1" value="1">
+        </div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>이탈크기 보정 <span class="hint">(Fritz scale)</span></b><span class="val"><span id="vF">0.60</span>×</span></div>
+        <input id="F" class="r2" type="range" min="0.2" max="1.5" step="0.05" value="0.6">
+        <div class="hint">전해 버블은 보통 Fritz 예측보다 작게 이탈 — 보정/시각화 밀도용</div>
+      </div>
+
+      <div class="ctl">
+        <div class="lab"><b>재생 속도</b><span class="val"><span id="vS">1.0</span>×</span></div>
+        <input id="S" class="r2" type="range" min="0.2" max="3" step="0.1" value="1.0">
+      </div>
+
+      <button class="btn" id="resetBtn">↺ 버블 리셋</button>
+      <button class="btn" id="pauseBtn">⏸ 일시정지</button>
+    </div>
+
+    <!-- ============ STAGE ============ -->
+    <div class="card" id="stageWrap">
+      <h2>전극 표면 — 버블 한살이 (nucleate → grow → detach → rise)</h2>
+      <div style="position:relative">
+        <canvas id="stage" width="760" height="560"></canvas>
+        <div class="stageTag" id="stageTag">HER · H₂</div>
+      </div>
+      <div class="plotlab"><span>전류 밀도 j(t) — 톱니파</span><span id="traceRange"></span></div>
+      <canvas id="trace" width="760" height="150"></canvas>
+    </div>
+
+    <!-- ============ METRICS ============ -->
+    <div class="card" id="metrics">
+      <h2>관측량 (live)</h2>
+      <div class="grid2">
+        <div class="met"><div class="k">전류밀도 j</div><div class="v"><span id="mJ">–</span><span class="u"> A/cm²</span></div></div>
+        <div class="met"><div class="k">전류 I</div><div class="v"><span id="mI">–</span><span class="u"> A</span></div></div>
+        <div class="met"><div class="k">Coverage θ</div><div class="v"><span id="mTh">–</span></div><div class="bar"><i id="barTh"></i></div></div>
+        <div class="met"><div class="k">Void ε</div><div class="v"><span id="mEp">–</span></div><div class="bar"><i id="barEp" style="background:var(--accent2)"></i></div></div>
+        <div class="met"><div class="k">이탈 직경 d<sub>d</sub></div><div class="v"><span id="mRd">–</span><span class="u"> µm</span></div></div>
+        <div class="met"><div class="k">이탈 빈도</div><div class="v"><span id="mFr">–</span><span class="u"> /s·patch</span></div></div>
+        <div class="met"><div class="k"># 버블</div><div class="v"><span id="mN">–</span></div></div>
+        <div class="met"><div class="k">기체 발생</div><div class="v"><span id="mG">–</span><span class="u"> mL/min·cm²</span></div></div>
+      </div>
+
+      <div class="plotlab"><span>과전압 분해 [V]</span></div>
+      <div class="grid2">
+        <div class="met"><div class="k">E<sub>rev</sub></div><div class="v" style="font-size:15px"><span id="mErev">–</span></div></div>
+        <div class="met"><div class="k">η act + η ohm</div><div class="v" style="font-size:15px"><span id="mEta">–</span></div></div>
+      </div>
+
+      <div class="plotlab"><span>분극 관계 V–j (누적)</span><span class="hint">전압을 바꿔보세요</span></div>
+      <canvas id="polar" width="300" height="190"></canvas>
+
+      <div class="foot">
+        <b>읽는 법.</b> 버블이 자라며 표면을 가리면 (θ↑, ε↑) 같은 전압에서 전류가 흘러내리고,
+        커진 버블이 이탈하면 θ가 급감하며 전류가 튀어오릅니다 — 이것이 톱니파.
+        wettability·flow·B·E를 키우면 버블이 더 일찍/자주 떨어져 평균 전류가 올라갑니다.
+        <div style="margin-top:6px">
+          <span class="pill">α 모델 v1</span> 상관식은 정성적 경향·차수 수준 — 정량 검증 전 단계입니다.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+//==================== physics constants (mirror bubblesim/constants.py) ====
+const C = {F:96485.33212, R:8.314462618, G:9.80665, EPS0:8.8541878128e-12, EPSW:78.0};
+const GAS = {HER:{z:2, M:2.016e-3, name:"H₂"}, OER:{z:4, M:31.998e-3, name:"O₂"}};
+
+//==================== model params (mirror bubblesim/config.py Params) =====
+const P = {
+  fritz_scale:0.6, j0:1.0, tafel_b:0.15, j_lim:4.0e4, flow_jlim:1.5,
+  patch_w:6.0e-3, patch_h:5.0e-3, near_layer:1.0e-3,
+  site_density:2.0e6, r_nuc:5.0e-6, k_nuc:40.0, j_ref:3.0e3, f_to_bubble:0.75,
+  Cd_flow:1.2, k_mhd:2.0e-5, r_min_detach:8.0e-6, detach_spread:0.3,
+  c_coalesce_crit:0.3, p_merge_inhibited:0.05, p_merge_free:0.9,
+};
+
+//==================== operating levers (mirror Operating) ==================
+const op = {
+  V_cell:2.0, electrode:"HER", c_electrolyte:6.0, T:333.15, P:1.0e5,
+  contact_angle:60.0, u_flow:0.0, B_field:0.0, E_ext:0.0, A_cm2:1.0, gap_mm:2.0,
+};
+
+//==================== property correlations (mirror properties.py) =========
+function props(){
+  const T=op.T, c=op.c_electrolyte;
+  const d={};
+  d.E_rev = 1.229 - 0.9e-3*(T-298.15);
+  d.kappa = Math.max(1.0, 20.0*c - 1.667*c*c) * (1.0 + 0.02*(T-298.15));
+  d.sigma = 0.0728 - 1.5e-4*(T-298.15) + 0.0013*c;
+  d.rho_l = 1000.0 + 48.0*c;
+  d.rho_g = op.P*GAS[op.electrode].M/(C.R*T);
+  d.mu    = 1.0e-3*Math.exp(1800.0*(1.0/T - 1.0/298.15))*(1.0+0.10*c);
+  d.d_rho = d.rho_l - d.rho_g;
+  d.fritz_scale=P.fritz_scale; d.j0=P.j0; d.b=P.tafel_b;
+  d.j_lim_eff=P.j_lim*(1.0+P.flow_jlim*op.u_flow);
+  d.Cd_flow=P.Cd_flow; d.k_mhd=P.k_mhd; d.r_min=P.r_min_detach;
+  return d;
+}
+
+//==================== electrochemistry (mirror electrochem.py) =============
+function solveJ(d, theta, eps){
+  const kap = d.kappa*Math.pow(1-eps,1.5);
+  const Rarea = (op.gap_mm*1e-3)/Math.max(kap,1e-6);
+  const omt = Math.max(1e-3, 1-theta);
+  const drive = op.V_cell - d.E_rev;
+  if(drive<=0) return 0;
+  const res = j=>{ const eta=drive-j*Rarea; if(eta<=0) return j; return j - omt*d.j0*Math.pow(10, eta/d.b); };
+  let lo=0, hi=d.j_lim_eff;
+  if(res(hi)<0) return d.j_lim_eff;
+  for(let i=0;i<80;i++){ const m=0.5*(lo+hi); if(res(m)>0) hi=m; else lo=m; }
+  return 0.5*(lo+hi);
+}
+//==================== detachment (mirror forces.py) ========================
+function fritzR(sigma,d_rho,angle){ return 0.5*0.0208*angle*Math.sqrt(sigma/(C.G*d_rho)); }
+function departureR(d, j){
+  const r_d0 = fritzR(d.sigma,d.d_rho,op.contact_angle)*d.fritz_scale;
+  const bc=(4/3)*Math.PI*d.d_rho*C.G;
+  const adh=bc*Math.pow(r_d0,3);
+  const ueff=op.u_flow + d.k_mhd*j*op.B_field;
+  const cdr=0.5*d.Cd_flow*d.rho_l*ueff*ueff*Math.PI;
+  const K=Math.abs((1-C.EPSW)/(1+2*C.EPSW));
+  const cdp=2*Math.PI*C.EPS0*C.EPSW*K*op.E_ext*op.E_ext;
+  const c2=cdr+cdp, rmin=d.r_min;
+  const det=r=>bc*r*r*r + c2*r*r;
+  if(det(rmin)>=adh) return rmin;
+  let lo=rmin, hi=r_d0;
+  for(let i=0;i<60;i++){ const m=0.5*(lo+hi); if(det(m)>adh) hi=m; else lo=m; }
+  return 0.5*(lo+hi);
+}
+
+//==================== bubble population (mirror surface.py / simulator.py) ==
+let bubbles=[];
+let simT=0, currentEps=0, detachTimes=[];
+const VOLR = r=>(4/3)*Math.PI*r*r*r;
+
+function coverage(){
+  const sa=Math.abs(Math.sin(op.contact_angle*Math.PI/180));
+  let s=0; for(const b of bubbles) if(b.att){ const rf=b.r*sa; s+=Math.PI*rf*rf; }
+  return Math.min(0.95, s/(P.patch_w*P.patch_h));
+}
+function voidFrac(){
+  let v=0; const lv=P.patch_w*P.patch_h*P.near_layer;
+  for(const b of bubbles) if(b.att || b.y<P.near_layer) v+=VOLR(b.r);
+  return Math.min(0.6, v/lv);
+}
+function siteCount(){ const f=0.5+op.contact_angle/90.0; return Math.floor(P.site_density*f*P.patch_w*P.patch_h); }
+
+function stepSim(dt){
+  const d=props();
+  const theta=coverage(), eps=voidFrac(); currentEps=eps;
+  const j=solveJ(d,theta,eps);
+  const z=GAS[op.electrode].z;
+  const Ipatch=j*P.patch_w*P.patch_h;
+  const ndot=Ipatch/(z*C.F);
+  const Q=ndot*C.R*op.T/op.P;            // m^3/s gas
+  // --- grow (share ~ r^2)
+  const att=bubbles.filter(b=>b.att);
+  let W=0; for(const b of att) W+=b.r*b.r;
+  const Qb=P.f_to_bubble*Q;
+  if(att.length && W>0 && Qb>0) for(const b of att){ const v=VOLR(b.r)+Qb*(b.r*b.r/W)*dt; b.r=Math.cbrt(3*v/(4*Math.PI)); }
+  // --- nucleate
+  const free=Math.max(0, siteCount()-att.length);
+  if(free>0 && j>0){
+    let exp=P.k_nuc*(j/P.j_ref)*free*dt; let n=Math.floor(exp); if(Math.random()<exp-n) n++;
+    for(let i=0;i<n;i++){ const sp=P.detach_spread;
+      bubbles.push({x:Math.random()*P.patch_w, y:0, r:P.r_nuc, att:true, df:1+(Math.random()*2-1)*sp}); }
+  }
+  // --- coalesce
+  const pm = op.c_electrolyte>P.c_coalesce_crit ? P.p_merge_inhibited : P.p_merge_free;
+  const sa=Math.abs(Math.sin(op.contact_angle*Math.PI/180));
+  const A=bubbles.filter(b=>b.att);
+  for(let i=0;i<A.length;i++){ const a=A[i]; if(a.dead) continue;
+    for(let k=i+1;k<A.length;k++){ const c=A[k]; if(c.dead) continue;
+      const rfa=a.r*sa, rfc=c.r*sa;
+      if(Math.hypot(a.x-c.x,a.y-c.y)<0.8*(rfa+rfc) && Math.random()<pm){
+        const v=VOLR(a.r)+VOLR(c.r); a.r=Math.cbrt(3*v/(4*Math.PI)); a.x=0.5*(a.x+c.x); c.dead=true; } } }
+  if(bubbles.some(b=>b.dead)) bubbles=bubbles.filter(b=>!b.dead);
+  // --- detach
+  const r_d=departureR(d,j);
+  for(const b of bubbles) if(b.att && b.r>=r_d*b.df){ b.att=false; detachTimes.push(simT); }
+  // --- advect (rise + flow drift)
+  const kept=[];
+  for(const b of bubbles){
+    if(!b.att){
+      const vr=Math.min(2*d.d_rho*C.G*b.r*b.r/(9*d.mu), 0.3);
+      b.y+=vr*dt; b.x+=op.u_flow*dt;
+      if(b.y<1.5*P.patch_h && b.x<1.5*P.patch_w) kept.push(b);
+    } else kept.push(b);
+  }
+  bubbles=kept;
+  simT+=dt;
+  while(detachTimes.length && detachTimes[0]<simT-1.0) detachTimes.shift();
+  return {j,theta,eps,r_d,Q,ndot};
+}
+
+//==================== rendering ============================================
+const stage=document.getElementById("stage"), sx=stage.getContext("2d");
+const trace=document.getElementById("trace"), tx=trace.getContext("2d");
+const polar=document.getElementById("polar"), px=polar.getContext("2d");
+let jHist=[], polarPts=[];
+
+function bubbleColor(){ return op.electrode==="HER" ? [120,200,255] : [255,140,150]; }
+
+function drawStage(last){
+  const W=stage.width, H=stage.height;
+  // electrolyte gradient
+  const g=sx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#0a1426"); g.addColorStop(1,"#0c1a33");
+  sx.fillStyle=g; sx.fillRect(0,0,W,H);
+  // faint flow streaks
+  if(op.u_flow>0.002){
+    sx.strokeStyle="rgba(120,160,220,0.06)"; sx.lineWidth=1;
+    for(let i=0;i<14;i++){ const y=H*(i+0.5)/14; sx.beginPath(); sx.moveTo(0,y);
+      for(let xx=0;xx<=W;xx+=20) sx.lineTo(xx, y+Math.sin(xx*0.03+i)*3); sx.stroke(); }
+  }
+  const sc = W/P.patch_w;                       // m -> px (x). y uses same scale, electrode at bottom.
+  const elecH=22;
+  // electrode bar
+  const eg=sx.createLinearGradient(0,H-elecH,0,H);
+  eg.addColorStop(0,"#3a4a66"); eg.addColorStop(1,"#222d44");
+  sx.fillStyle=eg; sx.fillRect(0,H-elecH,W,elecH);
+  sx.fillStyle="rgba(255,255,255,0.06)"; sx.fillRect(0,H-elecH,W,2);
+  const [cr,cg,cb]=bubbleColor();
+  // bubbles
+  for(const b of bubbles){
+    const xpx=b.x*sc;
+    const ypx=(H-elecH) - b.y*sc;             // y up from electrode
+    const rpx=Math.max(1.2, b.r*sc);
+    const grd=sx.createRadialGradient(xpx-rpx*0.35, ypx-rpx*0.4, rpx*0.1, xpx, ypx, rpx);
+    const a=b.att?0.82:0.62;
+    grd.addColorStop(0,`rgba(255,255,255,${a*0.9})`);
+    grd.addColorStop(0.25,`rgba(${cr},${cg},${cb},${a})`);
+    grd.addColorStop(1,`rgba(${cr*0.5|0},${cg*0.5|0},${cb*0.6|0},${a*0.85})`);
+    sx.beginPath(); sx.arc(xpx,ypx,rpx,0,7); sx.fillStyle=grd; sx.fill();
+    sx.lineWidth=1; sx.strokeStyle=`rgba(${cr},${cg},${cb},0.5)`; sx.stroke();
+    // highlight glint
+    sx.beginPath(); sx.arc(xpx-rpx*0.32, ypx-rpx*0.36, Math.max(0.6,rpx*0.18),0,7);
+    sx.fillStyle="rgba(255,255,255,0.55)"; sx.fill();
+  }
+  // scale bar (1 mm)
+  sx.strokeStyle="rgba(220,230,255,0.5)"; sx.lineWidth=2;
+  sx.beginPath(); sx.moveTo(14,H-elecH-12); sx.lineTo(14+1e-3*sc,H-elecH-12); sx.stroke();
+  sx.fillStyle="rgba(220,230,255,0.65)"; sx.font="10px Segoe UI";
+  sx.fillText("1 mm", 16, H-elecH-16);
+}
+
+function drawTrace(){
+  const W=trace.width, H=trace.height;
+  tx.fillStyle="#060c18"; tx.fillRect(0,0,W,H);
+  if(jHist.length<2) return;
+  let jmax=0; for(const v of jHist) if(v>jmax) jmax=v; jmax=Math.max(jmax*1.15,0.2);
+  // gridlines
+  tx.strokeStyle="rgba(120,150,200,0.12)"; tx.lineWidth=1;
+  for(let k=1;k<4;k++){ const y=H*k/4; tx.beginPath(); tx.moveTo(0,y); tx.lineTo(W,y); tx.stroke(); }
+  tx.beginPath();
+  for(let i=0;i<jHist.length;i++){
+    const x=W*i/(jHist.length-1);
+    const y=H - (jHist[i]/jmax)*H*0.92 - 4;
+    i?tx.lineTo(x,y):tx.moveTo(x,y);
+  }
+  tx.strokeStyle="#39b3ff"; tx.lineWidth=1.6; tx.stroke();
+  // fill under
+  tx.lineTo(W,H); tx.lineTo(0,H); tx.closePath();
+  tx.fillStyle="rgba(57,179,255,0.10)"; tx.fill();
+  tx.fillStyle="rgba(180,200,235,0.6)"; tx.font="10px Segoe UI";
+  tx.fillText(jmax.toFixed(2)+" A/cm²", 6, 12);
+  document.getElementById("traceRange").textContent="최근 "+TRACE_SEC+" s";
+}
+
+function drawPolar(){
+  const W=polar.width, H=polar.height, pad=26;
+  px.fillStyle="#060c18"; px.fillRect(0,0,W,H);
+  px.strokeStyle="rgba(120,150,200,0.25)"; px.lineWidth=1;
+  px.strokeRect(pad,6,W-pad-8,H-pad-6);
+  px.fillStyle="rgba(180,200,235,0.6)"; px.font="10px Segoe UI";
+  px.fillText("V", 4, 16); px.fillText("j (A/cm²)", W-66, H-6);
+  if(polarPts.length<1) return;
+  const Vmin=1.4,Vmax=2.8; let jmax=0.2; for(const p of polarPts) if(p.j>jmax) jmax=p.j; jmax*=1.1;
+  const X=j=>pad + (j/jmax)*(W-pad-10);
+  const Y=v=>6 + (1-(v-Vmin)/(Vmax-Vmin))*(H-pad-6);
+  for(const p of polarPts){
+    px.beginPath(); px.arc(X(p.j),Y(p.V),2,0,7);
+    px.fillStyle="rgba(57,179,255,0.35)"; px.fill();
+  }
+  const last=polarPts[polarPts.length-1];
+  px.beginPath(); px.arc(X(last.j),Y(last.V),4,0,7); px.fillStyle="#ff5d6c"; px.fill();
+}
+
+//==================== main loop ===========================================
+const TRACE_SEC=6;
+let traceAccum=0, polarAccum=0, paused=false, lastMetrics=null;
+const DT=8e-4;
+
+function frame(){
+  if(!paused){
+    const subs=Math.max(1, Math.round(speed*(1/60)/DT));
+    let last=null;
+    for(let s=0;s<subs;s++){
+      last=stepSim(DT);
+      traceAccum+=DT;
+      if(traceAccum>=TRACE_SEC/300){
+        jHist.push(last.j/1e4);                 // store as A/cm^2
+        if(jHist.length>300) jHist.shift();
+        traceAccum=0;
+      }
+    }
+    lastMetrics=last;
+    updateMetrics(last);
+    if(++polarAccum>=20){
+      polarPts.push({V:op.V_cell, j:last.j/1e4});
+      if(polarPts.length>500) polarPts.shift();
+      polarAccum=0;
+    }
+  }
+  drawStage(); drawTrace(); drawPolar();
+  requestAnimationFrame(frame);
+}
+
+function updateMetrics(m){
+  const jcm=m.j/1e4;                          // A/cm^2
+  document.getElementById("mJ").textContent=jcm.toFixed(3);
+  document.getElementById("mI").textContent=(jcm*op.A_cm2).toFixed(3);
+  document.getElementById("mTh").textContent=(m.theta*100).toFixed(1)+"%";
+  document.getElementById("mEp").textContent=(m.eps*100).toFixed(1)+"%";
+  document.getElementById("barTh").style.width=(m.theta*100).toFixed(0)+"%";
+  document.getElementById("barEp").style.width=(m.eps/0.6*100).toFixed(0)+"%";
+  document.getElementById("mRd").textContent=(m.r_d*2*1e6).toFixed(0);
+  document.getElementById("mFr").textContent=detachTimes.length.toFixed(0);
+  document.getElementById("mN").textContent=bubbles.length;
+  // gas mL/min/cm2 at cell conditions -> convert ndot(mol/s on patch) to per cm2 STP
+  const molPerS_cm2 = (m.ndot)/(P.patch_w*P.patch_h*1e4);  // mol/s/cm2
+  const mlmin = molPerS_cm2*22414*60;                       // mL(STP)/min/cm2
+  document.getElementById("mG").textContent=mlmin.toFixed(1);
+  const d=props();
+  document.getElementById("mErev").textContent=d.E_rev.toFixed(3);
+  document.getElementById("mEta").textContent=Math.max(0,op.V_cell-d.E_rev).toFixed(3);
+}
+
+//==================== UI wiring ===========================================
+let speed=1.0;
+// set defaults explicitly in JS so browser form-restoration can't override them
+function bind(id, def, fn, fmt){
+  const el=document.getElementById(id), out=document.getElementById("v"+id);
+  el.value=def;
+  const upd=()=>{ const x=parseFloat(el.value); fn(x); if(out) out.textContent=fmt(x); };
+  el.addEventListener("input", upd); upd();
+}
+bind("V", 2.0, v=>op.V_cell=v, v=>v.toFixed(2));
+bind("A", 60,  v=>op.contact_angle=v, v=>v.toFixed(0));
+bind("C", 6.0, v=>op.c_electrolyte=v, v=>v.toFixed(1));
+bind("U", 0,   v=>op.u_flow=v, v=>v.toFixed(3));
+bind("B", 0,   v=>op.B_field=v, v=>v.toFixed(2));
+bind("E", 0,   v=>op.E_ext=v*1e6, v=>v.toFixed(2));
+bind("T", 60,  v=>op.T=v+273.15, v=>v.toFixed(0));
+bind("P", 1,   v=>op.P=v*1e5, v=>v.toFixed(1));
+bind("F", 0.6, v=>P.fritz_scale=v, v=>v.toFixed(2));
+bind("S", 1.0, v=>speed=v, v=>v.toFixed(1));
+
+document.querySelectorAll("#segElec button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll("#segElec button").forEach(b=>b.classList.remove("on"));
+    btn.classList.add("on");
+    op.electrode=btn.dataset.e;
+    document.getElementById("segElec").classList.toggle("oer", op.electrode==="OER");
+    document.getElementById("stageTag").textContent = op.electrode+" · "+GAS[op.electrode].name;
+    polarPts=[];
+  });
+});
+document.getElementById("resetBtn").onclick=()=>{ bubbles=[]; detachTimes=[]; jHist=[]; polarPts=[]; simT=0; };
+document.getElementById("pauseBtn").onclick=(e)=>{ paused=!paused; e.target.textContent=paused?"▶ 재생":"⏸ 일시정지"; };
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
