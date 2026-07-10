@@ -82,6 +82,47 @@ def _port(nz, centre, width, open_row):
     return m
 
 
+def _edge(open2d, line, face):
+    """Boolean (ny,nz) of the open port cells on `face`."""
+    m = np.zeros_like(open2d)
+    if face == "bottom":
+        m[0] = open2d[0] & line
+    elif face == "top":
+        m[-1] = open2d[-1] & line
+    elif face == "left":
+        m[:, 0] = open2d[:, 0] & line
+    else:
+        m[:, -1] = open2d[:, -1] & line
+    return m
+
+
+def flow_connects(open2d, in_line, in_face, out_line, out_face):
+    """Is there an open channel path from the inlet port to the outlet port?
+
+    A plate whose channel never reaches the exit has NO flow: the projection
+    cannot conserve mass (it sees an inflow and no outflow), the divergence
+    stalls two orders of magnitude above tolerance, and every derived number is
+    meaningless. The interdigitated preset is exactly this — real interdigitated
+    plates push the liquid THROUGH the porous transport layer, and this model
+    makes the core solid — so the condition has to be detectable, not silent.
+    """
+    reach = _edge(open2d, in_line, in_face)
+    tgt = _edge(open2d, out_line, out_face)
+    if not reach.any() or not tgt.any():
+        return False
+    for _ in range(open2d.size):
+        nb = reach.copy()
+        nb[1:] |= reach[:-1]; nb[:-1] |= reach[1:]
+        nb[:, 1:] |= reach[:, :-1]; nb[:, :-1] |= reach[:, 1:]
+        nb &= open2d
+        if (nb & tgt).any():
+            return True
+        if nb.sum() == reach.sum():
+            break
+        reach = nb
+    return bool((reach & tgt).any())
+
+
 def voxelize(cfg: Cell3DConfig, grid: Grid3D):
     """Return (solid, face_c, face_a):
 
@@ -109,22 +150,25 @@ def voxelize(cfg: Cell3DConfig, grid: Grid3D):
     ff = cfg.ff
 
     def _band_indices(n_cells, n_div, first, last):
-        """Land bands of a CONSTANT integer thickness, centred on each divider.
+        """Rib bands of constant thickness on an INTEGER pitch.
 
-        Thresholding cell centres against the land half-width (the old way)
-        rounds differently at each divider, so on a coarse grid some ribs came
-        out 1 cell thick, some 2, and some vanished — the uneven bands the user
-        saw. Fixing the thickness first keeps every rib identical.
+        `grid_dims` snaps the flow axis so `n_cells` is a whole number of passes.
+        With a fractional pitch (25 rows / 8 passes = 3.125) the ribs came out
+        uniform but the CHANNELS between them alternated 1 and 2 cells — the
+        uneven flow paths in the cell map. On an integer pitch both are uniform.
+
+        Thickness rounds HALF-DOWN: at pitch 3 a 50/50 plate is not
+        representable, and a thinner rib keeps the channel open rather than
+        choking it. The achieved widths are reported by `rib_channel_mm()`.
         """
-        thick = max(1, int(round(land_frac * n_cells / n_div)))
+        pitch = max(2, n_cells // n_div)
+        thick = int(np.floor(land_frac * pitch + 0.5 - 1e-9))
+        thick = max(1, min(pitch - 1, thick))
         rows = np.zeros(n_cells, dtype=bool)
         owner = np.full(n_cells, -1, dtype=int)          # which divider made this row
         for k in range(first, last + 1):
-            c = k * n_cells / n_div                      # divider position [cells]
-            # floor-centre, not round(): numpy/python round-half-to-even shifts
-            # odd-thickness bands off their divider (and then the "keep one open
-            # column" carve-out lands on a rib instead of the channel)
-            j0 = int(np.floor(c - 0.5 * thick + 0.5))
+            c = k * pitch                                # divider position [cells]
+            j0 = c - (thick - 1) // 2                    # centred, ties toward +
             for j in range(j0, j0 + thick):
                 if 0 <= j < n_cells:
                     rows[j] = True

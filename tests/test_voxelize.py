@@ -118,6 +118,76 @@ def test_rib_bands_have_uniform_thickness():
                 (ff, w_land, _band_widths(line))
 
 
+def test_channels_between_ribs_are_uniform_too():
+    """Not just the ribs — the CHANNELS between them must be one thickness.
+
+    With a fractional pass pitch (25 rows / 8 passes = 3.125) the ribs came out
+    uniform at 2 cells but the channels alternated 1 and 2 cells: visibly uneven
+    flow paths. `grid_dims` now snaps the flow axis to a whole number of passes.
+    Bands touching a domain edge are half-bands (the plate wall), so excluded.
+    """
+    for h_mm in (2.0, 1.0):
+        for ff, axis in (("serp", 1), ("par", 0)):
+            for n in (2, 4, 6, 8, 12):
+                cfg = cell_config_from_designer(
+                    {**DESIGNER_DEFAULTS, "ff": ff, "n_ch": n, "h_mm": h_mm})
+                nx, ny, nz = cfg.grid_dims()
+                g = Grid3D(nx, ny, nz, cfg.h)
+                line = (~voxelize(cfg, g)[1]).any(axis=axis)
+                L = len(line)
+                runs = _band_widths(line)                       # (width, start) of LAND
+                inner_ribs = [w for w, st_ in runs if st_ > 0 and st_ + w < L]
+                assert len(set(inner_ribs)) <= 1, (ff, n, h_mm, inner_ribs)
+
+                gaps = _band_widths(~line)                      # and the CHANNELS
+                inner_ch = [w for w, st_ in gaps if st_ > 0 and st_ + w < L]
+                assert len(set(inner_ch)) <= 1, (ff, n, h_mm, inner_ch)
+
+
+def test_reported_widths_match_the_grid():
+    """The pass pitch is H/n_ch (the width sliders only set the ratio) and both
+    get quantised to whole cells. `rib_channel_mm()` must report what the grid
+    really built, so the UI can say it instead of leaving the user puzzled."""
+    cfg = cell_config_from_designer({**DESIGNER_DEFAULTS, "ff": "serp",
+                                     "n_ch": 8, "h_mm": 2.0})
+    nx, ny, nz = cfg.grid_dims()
+    g = Grid3D(nx, ny, nz, cfg.h)
+    line = (~voxelize(cfg, g)[1]).any(axis=1)
+    L = len(line)
+    pitch, rib, chan = cfg.rib_channel_mm()
+
+    ribs = [w for w, st_ in _band_widths(line) if st_ > 0 and st_ + w < L]
+    chans = [w for w, st_ in _band_widths(~line) if st_ > 0 and st_ + w < L]
+    assert abs(ribs[0] * cfg.h * 1e3 - rib) < 1e-9
+    assert abs(chans[0] * cfg.h * 1e3 - chan) < 1e-9
+    assert abs(pitch - (rib + chan)) < 1e-9
+    assert ny % cfg.n_passes(ny) == 0                   # whole number of passes
+
+
+def test_grid_does_not_move_when_the_flow_field_changes():
+    """Switching a preset over to the hand-drawn plate must not resize the grid.
+
+    It used to: `grid_dims` snapped only for serp/par, so ff='custom' fell back
+    to the unsnapped 25 rows. The editor's 24-row drawing was then resampled onto
+    25 rows and a 6 mm rib came back as 8 mm — you clicked a template and got a
+    different plate. The grid may depend on the cell size and the pass count, and
+    on nothing else.
+    """
+    base = cell_config_from_designer(DESIGNER_DEFAULTS).grid_dims()
+    for ff in ("serp", "par", "inter", "custom", "straight"):
+        got = cell_config_from_designer({**DESIGNER_DEFAULTS, "ff": ff}).grid_dims()
+        assert got == base, (ff, got, base)
+    # and the drawn plate survives that switch bit-for-bit (identity resample)
+    from bubblesim3d.params3d import encode_mask
+    nx, ny, nz = base
+    m = np.zeros((ny, nz), bool)
+    m[5:8, :nz-3] = True
+    cfg = cell_config_from_designer({**DESIGNER_DEFAULTS, "ff": "custom",
+                                     "mask": encode_mask(m)})
+    land = ~voxelize(cfg, Grid3D(*cfg.grid_dims(), cfg.h))[1]
+    assert np.array_equal(land, m)
+
+
 def test_parallel_bands_span_y():
     """Parallel lands are vertical bands (constant over y, vary over z)."""
     cfg = Cell3DConfig(ff="par", n_ch=6, w_ch_mm=1.0, w_land_mm=1.0)
@@ -234,6 +304,38 @@ def test_mask_string_carries_its_shape():
     assert decode_mask("0" * 1024).shape == (32, 32)      # legacy square form
     assert decode_mask("5,5:0101") is None                # wrong bit count
     assert decode_mask("") is None
+
+
+def test_dead_plates_are_detected():
+    """A plate with no inlet->outlet channel cannot conserve mass, so it must be
+    detectable rather than silently simulated.
+
+    The interdigitated preset IS such a plate in this model: real interdigitated
+    flow fields push the liquid through the porous transport layer, and here the
+    core is solid. Measured on the default cell: Qin = 1.1e-5, Qout = 0,
+    divergence 0.30 (150x the tolerance), SOR pinned at its cap every step.
+    """
+    from bubblesim3d.geometry import flow_connects, port_edges
+    g = _grid()
+    for ff, expect in (("serp", True), ("par", True), ("inter", False)):
+        cfg = Cell3DConfig(ff=ff, n_ch=6)
+        land = ~voxelize(cfg, g)[1]
+        inf, in_line, outf, out_line = port_edges(cfg, g, land)
+        assert flow_connects(~land, in_line, inf, out_line, outf) is expect, ff
+
+    # a hand-drawn plate that seals the cell is caught too
+    m = np.zeros((20, 20), bool); m[9:11, :] = True          # full-width rib, no gap
+    cfg = Cell3DConfig(ff="custom", land_mask=m)
+    land = ~voxelize(cfg, g)[1]
+    inf, in_line, outf, out_line = port_edges(cfg, g, land)
+    assert not flow_connects(~land, in_line, inf, out_line, outf)
+
+    # ... and one with a gap is fine
+    m[9:11, :3] = False
+    cfg = Cell3DConfig(ff="custom", land_mask=m)
+    land = ~voxelize(cfg, g)[1]
+    inf, in_line, outf, out_line = port_edges(cfg, g, land)
+    assert flow_connects(~land, in_line, inf, out_line, outf)
 
 
 def test_custom_mask_degenerate_drawings_stay_solvable():

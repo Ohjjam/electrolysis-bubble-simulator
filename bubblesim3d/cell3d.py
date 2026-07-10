@@ -48,12 +48,14 @@ class CellSim3D:
         # voxelize the flow field (ribs/lands) so flow steers around the lands
         self.face_c = self.face_a = None
         self.n_lay = 0
+        self.cfg = cfg
         self.inlet_area = 0.0
         self.port_in = self.port_out = None
         self.in_face = self.out_face = None
+        self.flow_connected = True
         elec_planes = None
         if cfg is not None:
-            from .geometry import voxelize, port_edges
+            from .geometry import voxelize, port_edges, flow_connects
             solid, self.face_c, self.face_a = voxelize(cfg, self.grid)
             self.ns.set_solid(solid)
             nx, ny, nz = self.grid.shape
@@ -75,6 +77,10 @@ class CellSim3D:
                 outlet_z[0 if self.out_face == "left" else 1] = port_out[None, :]
             self.ns.set_ports(inlet=inlet, outlet=outlet,
                               inlet_z=inlet_z, outlet_z=outlet_z)
+            # a plate with no inlet->outlet channel cannot conserve mass; say so
+            # loudly instead of reporting a converged-looking dead simulation
+            self.flow_connected = flow_connects(self.face_c, port_in, self.in_face,
+                                                port_out, self.out_face)
             # electrode (catalyst) planes = the core boundaries: in a zero-gap
             # cell the gas emerges on the MEMBRANE side of each channel
             self.n_lay = max(1, min(cfg.layer_counts()[0], (self.grid.nx - 1) // 2))
@@ -193,6 +199,17 @@ class CellSim3D:
         q_liq = max(0.0, self.op.u_flow) * self.inlet_area
         return q_gas, q_liq, (q_gas / q_liq if q_liq > 0 else float("inf"))
 
+    def _geom_widths(self):
+        if self.cfg is None or self.cfg.ff == "custom":
+            return {"h_mm": round(self.grid.h * 1e3, 2)}
+        pitch, rib, chan = self.cfg.rib_channel_mm()
+        return {"h_mm": round(self.grid.h * 1e3, 2),
+                "pitch_mm": round(pitch, 2),
+                "rib_mm": round(rib, 2),
+                "chan_mm": round(chan, 2),
+                "rib_req_mm": round(self.cfg.w_land_mm, 2),
+                "chan_req_mm": round(self.cfg.w_ch_mm, 2)}
+
     def _exit_radius(self):
         """Mean radius of the bubbles about to leave the cell — the size a gas
         separator downstream would actually see (coalescence has acted on them)."""
@@ -248,6 +265,11 @@ class CellSim3D:
             "n_merge_free": int(p.n_merge_free),     # in the rising swarm
             "r_exit_um": round(self._exit_radius() * 1e6, 1),
             "sweeps": int(getattr(self.ns, "sweeps", 0)),
+            "flow_ok": bool(self.flow_connected),
+            # what the GRID actually resolves, vs what the sliders asked for.
+            # The pass pitch is H/n_ch; w_ch_mm and w_land_mm only set the ratio,
+            # and both get quantised to whole cells.
+            **self._geom_widths(),
             "nu": float(self.ns.nu),
             "mult": round(float(p.site_mult(0)), 1), # 1 tracked = N real (attached)
             "n_real_est": int(n_real),               # real bubbles represented

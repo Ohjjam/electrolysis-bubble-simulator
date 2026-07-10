@@ -37,6 +37,170 @@
 
   g.MASK_N = () => (g.__peState ? g.__peState().NY : 0);   // legacy accessor
 
+  /* ========================= flow-field templates ==========================
+   * Ready-made plates, generated AT the current grid so they are exact and
+   * immediately editable. Each returns a Uint8Array(ny*nz), row 0 = inlet.
+   * `n` = channel count, `t` = rib thickness in cells.
+   * Every template is built to percolate inlet -> outlet by construction.
+   */
+  function tpl(ny, nz, fill) {
+    const m = new Uint8Array(ny * nz);
+    fill(m, (j, k, v) => { if (j >= 0 && j < ny && k >= 0 && k < nz) m[j*nz + k] = v; });
+    return m;
+  }
+  const band = (c, t) => {                       // integer rows centred on c
+    const j0 = Math.floor(c - t / 2 + 0.5);
+    return [j0, j0 + t - 1];
+  };
+  /* A grid can only hold so many ribs. Ask for 14 channels on 12 cells, or a
+   * 4-cell rib on a 3-cell pitch, and the bands merge — the channel between
+   * them disappears and the plate has no flow path at all. Clamp to what the
+   * grid can represent instead of emitting a dead plate. */
+  g.fitPlate = (dim, n, t) => fit(dim, n, t);
+  const fit = (dim, n, t) => {
+    const nn = Math.max(2, Math.min(n | 0, Math.floor(dim / 2)));
+    const pitch = dim / nn;
+    const tt = Math.max(1, Math.min(t | 0, Math.floor(pitch - 1)));
+    return [nn, tt];
+  };
+
+  g.PLATE_TEMPLATES = [
+    { key: "serp", axis: "y", name: "사행",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(ny, n, t);
+        const gap = Math.max(1, Math.min(nz - 1, Math.round(0.14 * nz)));
+        for (let i = 1; i < n; i++) {            // interior dividers only
+          const [a, b] = band(i * ny / n, t);
+          for (let j = a; j <= b; j++)
+            for (let k = 0; k < nz; k++) {
+              const inGap = (i % 2 === 0) ? k >= nz - gap : k < gap;
+              if (!inGap) set(j, k, 1);          // turn gap alternates ends
+            }
+        }
+      }) },
+    { key: "serpv", axis: "z", name: "세로 사행",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(nz, n, t);
+        const gap = Math.max(1, Math.min(ny - 1, Math.round(0.14 * ny)));
+        for (let i = 1; i < n; i++) {
+          const [a, b] = band(i * nz / n, t);
+          for (let k = a; k <= b; k++)
+            for (let j = 0; j < ny; j++) {
+              const inGap = (i % 2 === 0) ? j >= ny - gap : j < gap;
+              if (!inGap) set(j, k, 1);
+            }
+        }
+      }) },
+    { key: "par", axis: "z", name: "병렬",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(nz, n, t);
+        for (let i = 0; i <= n; i++) {           // n channels -> n+1 dividers
+          const [a, b] = band(i * nz / n, t);
+          for (let k = a; k <= b; k++) for (let j = 0; j < ny; j++) set(j, k, 1);
+        }
+        for (let c = 0; c < n; c++)              // keep every channel open
+          for (let j = 0; j < ny; j++) set(j, Math.floor((c + 0.5) / n * nz), 0);
+      }) },
+    /* NOT interdigitated: a real interdigitated plate dead-ends its channels and
+     * drives the liquid THROUGH the porous transport layer. This model makes the
+     * core solid, so such a plate has no inlet->outlet path at all — the
+     * projection cannot conserve mass and every number it produces is junk. The
+     * engine's `ff="inter"` preset shows exactly that (flow_ok = false). It is
+     * therefore not offered as a template. */
+    { key: "zig", axis: "y", name: "지그재그",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(ny, n, t);
+        const gap = Math.max(1, Math.min(nz - 1, Math.round(0.18 * nz)));
+        // the chevron amplitude must leave a channel between neighbouring ribs:
+        // worst case two adjacent bands lean toward each other by S, so
+        // pitch - 2S >= t + 1. Larger and the ribs touch and seal the plate.
+        const pitch = ny / n;
+        const S = Math.max(0, Math.floor((pitch - t - 1) / 2));
+        for (let i = 1; i < n; i++) {
+          const [a, b] = band(i * ny / n, t);
+          for (let k = 0; k < nz; k++) {
+            const u = nz > 1 ? k / (nz - 1) : 0.5;
+            const skew = Math.round((2 * (1 - 2 * Math.abs(u - 0.5)) - 1) * S);
+            const inGap = (i % 2 === 0) ? k >= nz - gap : k < gap;
+            if (inGap) continue;
+            for (let j = a; j <= b; j++) set(j + skew, k, 1);
+          }
+        }
+      }) },
+    /* Pin-fin plates: t x t posts on a pitch that always leaves an open lane, so
+     * the channel is connected in both directions by construction. Staggered and
+     * in-line are both real designs. (A cross-hatch "grid" of continuous ribs is
+     * NOT: every pocket it makes is sealed, and the plate has no flow at all.) */
+    { key: "pin", axis: "z", name: "핀 (엇갈림)",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(nz, n, t);
+        const p = Math.max(t + 1, Math.round(nz / n));
+        for (let j = 1; j < ny - 1; j += p)
+          for (let k = 0; k < nz; k += p) {
+            const off = ((j / p) | 0) % 2 ? Math.floor(p / 2) : 0;
+            for (let a = 0; a < t; a++) for (let b = 0; b < t; b++) set(j + a, k + off + b, 1);
+          }
+      }) },
+    { key: "pinAl", axis: "z", name: "핀 (정렬)",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(nz, n, t);
+        const p = Math.max(t + 1, Math.round(nz / n));
+        for (let j = 1; j < ny - 1; j += p)
+          for (let k = 0; k < nz; k += p)
+            for (let a = 0; a < t; a++) for (let b = 0; b < t; b++) set(j + a, k + b, 1);
+      }) },
+    { key: "spiral", axis: "m", name: "나선",
+      gen: (ny, nz, n, t) => tpl(ny, nz, (m, set) => {
+        [n, t] = fit(Math.min(ny, nz), n, t);
+        const lim = Math.max(1, Math.floor((Math.min(ny, nz) - 2) / 2));
+        // a step wider than the plate emits nothing at all — clamp so at least
+        // one turn always fits, and thin the rib if that leaves no room
+        const step = Math.min(lim, Math.max(t + 1, Math.round(Math.min(ny, nz) / (n + 1))));
+        t = Math.max(1, Math.min(t, step - 1));
+        let top = step, bot = 0, lef = step, rig = nz - 1 - step, turn = 0;
+        while (top < ny - step && lef < rig) {
+          for (let a = 0; a < t; a++) {
+            if (turn % 2 === 0) for (let k = lef; k <= rig; k++) set(top + a, k, 1);
+            else for (let k = lef; k <= rig; k++) set(ny - 1 - top - a, k, 1);
+          }
+          if (turn % 2 === 0) { lef += step; } else { rig -= step; top += step; }
+          turn++;
+          if (turn > 40) break;
+        }
+      }) },
+    { key: "open", axis: "z", name: "빈 판", gen: (ny, nz) => new Uint8Array(ny * nz) },
+  ];
+
+  /** Does the open channel connect the inlet edge to the outlet edge? */
+  g.plateConnects = function (mask, ny, nz, inFace, outFace) {
+    const open = j_k => !mask[j_k];
+    const seeds = [];
+    const edge = (face, push) => {
+      if (face === "bottom") for (let k = 0; k < nz; k++) push(0, k);
+      else if (face === "top") for (let k = 0; k < nz; k++) push(ny-1, k);
+      else if (face === "left") for (let j = 0; j < ny; j++) push(j, 0);
+      else for (let j = 0; j < ny; j++) push(j, nz-1);
+    };
+    edge(inFace || "bottom", (j,k) => { if (open(j*nz+k)) seeds.push(j*nz+k); });
+    const target = new Set();
+    edge(outFace || "top", (j,k) => { if (open(j*nz+k)) target.add(j*nz+k); });
+    if (!seeds.length || !target.size) return false;
+    const seen = new Uint8Array(ny*nz);
+    const st = seeds.slice(); seeds.forEach(i => seen[i] = 1);
+    while (st.length) {
+      const i = st.pop();
+      if (target.has(i)) return true;
+      const j = (i / nz) | 0, k = i % nz;
+      for (const [dj, dk] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const a = j+dj, b = k+dk;
+        if (a<0||a>=ny||b<0||b>=nz) continue;
+        const q = a*nz+b;
+        if (!seen[q] && open(q)) { seen[q] = 1; st.push(q); }
+      }
+    }
+    return false;
+  };
+
   /** (n_out, n_in) fractional-overlap rows, each summing to 1. */
   function overlap(nOut, nIn) {
     const W = [];
@@ -58,14 +222,25 @@
     // silently DELETED 22% of the rows — a rib you drew could simply not exist.)
     let NY = 25, NZ = 25;
     let mask = new Uint8Array(NY * NZ);      // row-major, row 0 = inlet (y=0)
-    let ports = null, lastLand = null, cellMM = null;
+    let ports = null, lastLand = null, cellMM = null, engineFlowOk = null, seeded = false;
     let tool = "line", erase = false, brush = 1, mirror = false;
     let drag = null, hover = null;
     let undo = [], redo = [], sendTimer = null, pending = false;
 
     host.className = "box";
     host.innerHTML = `
-      <h3>유로 직접 그리기</h3>
+      <h3>유로 — 템플릿 &amp; 직접 그리기</h3>
+      <div class="lab"><span class="nm">템플릿</span><span class="un hint">불러온 뒤 자유롭게 수정</span></div>
+      <div class="pe-gal"></div>
+      <div class="ri" style="margin-top:6px">
+        <span class="hint" style="flex:none">리브</span>
+        <input class="pe-ribmm" type="number" step="0.5" min="0.1" value="2" style="width:56px">
+        <span class="hint" style="flex:none">채널</span>
+        <input class="pe-chanmm" type="number" step="0.5" min="0.1" value="4" style="width:56px">
+        <span class="hint" style="flex:none">mm</span>
+      </div>
+      <div class="hint pe-fit" style="margin-top:4px">–</div>
+      <div class="lab" style="margin-top:10px"><span class="nm">직접 그리기</span></div>
       <div class="pe-tools">
         <button class="btn pe-t" data-tool="line" title="직선 리브 — 축에 자동 정렬 (Alt = 자유각)">직선</button>
         <button class="btn pe-t" data-tool="rect" title="채워진 사각형">사각형</button>
@@ -75,7 +250,7 @@
       <div class="ri" style="margin-top:6px">
         <span class="hint" style="flex:none">굵기</span>
         <input class="pe-brush" type="range" min="1" max="5" step="1" value="1">
-        <span class="hint pe-brushn" style="flex:none;width:10px">1</span>
+        <span class="hint pe-brushn" style="flex:none;width:24px">2.0</span><span class="hint" style="flex:none">mm</span>
         <label class="pe-chk"><input class="pe-mirror" type="checkbox"> 좌우대칭</label>
       </div>
       <canvas class="pe-cv" width="512" height="512"></canvas>
@@ -107,6 +282,14 @@
         .pe-cv{width:100%;aspect-ratio:1;display:block;margin-top:7px;border:1px solid var(--line);
                border-radius:8px;cursor:crosshair;touch-action:none;background:var(--cv-liq,#e9f1fa)}
         .pe-dirty{color:var(--gold)}
+        .pe-warn{color:var(--warn)}
+        .pe-gal{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:5px}
+        .pe-gal button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 2px;
+          background:var(--surf,#f3f6fb);border:1px solid var(--line,#d6dce6);border-radius:8px;
+          cursor:pointer;font:inherit;font-size:10.5px;color:var(--dim)}
+        .pe-gal button:hover{border-color:var(--accent);color:var(--accent)}
+        .pe-gal canvas{width:100%;aspect-ratio:1;display:block;border-radius:4px;
+          background:var(--cv-liq,#e9f1fa)}
         #pe-overlay{position:fixed;inset:0;z-index:200;background:rgba(15,22,33,.55);
                     display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
         #pe-overlay .wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;
@@ -236,11 +419,19 @@
       const nLand = mask.reduce((a, b) => a + b, 0);
       const jet = P.ff === "custom" && +P.in_w === 0;
       const mm = cellMM ? ` · 한 칸 ${cellMM.toFixed(1)} mm` : "";
+      // a plate whose channel does not reach the outlet has no flow at all.
+      // While drawing (ff = custom) trust the local mask; for the built-in
+      // presets trust the ENGINE's own percolation result (`flow_ok`).
+      const connected = (P.ff === "custom" || engineFlowOk === null)
+        ? g.plateConnects(mask, NY, NZ, ports && ports.in_face, ports && ports.out_face)
+        : engineFlowOk;
       $(".pe-stat").innerHTML =
         `리브 <b style="color:var(--tx)">${(100*nLand/(NY*NZ)).toFixed(0)}%</b> · ` +
         `<b style="color:var(--tx)">${NY}×${NZ}</b> = 물리격자 그대로${mm}` +
         (pending ? ` · <span class="pe-dirty">적용 대기…</span>` : "") +
         (P.ff === "custom" ? "" : ` · <span style="color:var(--dim)">그리면 적용됩니다</span>`) +
+        (connected ? "" : `<br><span class="pe-warn">⚠ 입구에서 출구까지 이어진 채널이 없습니다</span>` +
+                          `<span style="color:var(--dim)"> — 유동이 흐르지 않습니다.</span>`) +
         (jet ? `<br><span style="color:var(--gold)">입구 폭 = 0 (바닥 전체 급수)</span>` +
                `<span style="color:var(--dim)"> — 좁은 틈으로 유량이 몰려 제트가 생깁니다. ` +
                `포트 폭을 0.1 정도로 지정해 보세요.</span>` : "");
@@ -330,13 +521,79 @@
     host.querySelector('.pe-t[data-tool="line"]').classList.add("on");
 
     const bs = $(".pe-brush");
-    bs.oninput = () => { brush = +bs.value; $(".pe-brushn").textContent = brush; render(); };
+    bs.oninput = () => {                       // brush width in mm, not cells
+      brush = +bs.value;
+      $(".pe-brushn").textContent = ((2 * brush - 1) * cell()).toFixed(1);
+      render();
+    };
     $(".pe-mirror").onchange = e => { mirror = e.target.checked; render(); };
     $(".pe-undo").onclick = () => restore(undo, redo);
     $(".pe-redo").onclick = () => restore(redo, undo);
     $(".pe-clear").onclick = () => { snapshot(); mask.fill(0); scheduleSend(); };
     $(".pe-inv").onclick = () => { snapshot(); for (let i=0;i<mask.length;i++) mask[i] ^= 1; scheduleSend(); };
     $(".pe-load").onclick = () => { snapshot(); loadFromEngine(); scheduleSend(); };
+
+    // -------------------------------------------------------------- templates
+    // Designed in MILLIMETRES. A plate is specified by its rib and channel
+    // widths, not by "how many cells thick" — the pass count follows from the
+    // electrode length. The grid quantises both to whole cells and the readout
+    // says exactly what it built.
+    let ribMM = 2.0, chanMM = 4.0;
+    const cell = () => cellMM || 2.0;
+    const axisDim = t => (t.axis === "y" ? NY : t.axis === "z" ? NZ : Math.min(NY, NZ));
+
+    function plan(t) {
+      const c = cell();
+      const tC = Math.max(1, Math.round(ribMM / c));
+      const cC = Math.max(1, Math.round(chanMM / c));
+      const dim = axisDim(t);
+      const n = Math.max(2, Math.min(Math.floor(dim / (tC + cC)), Math.floor(dim / 2)));
+      const [nEff, tEff] = g.fitPlate(dim, n, tC);
+      const pitch = Math.max(2, Math.floor(dim / nEff));
+      return { n, t: tC, nEff, tEff, pitch,
+               ribMM: tEff * c, chanMM: (pitch - tEff) * c, pitchMM: pitch * c };
+    }
+
+    const gal = $(".pe-gal");
+    for (const t of g.PLATE_TEMPLATES) {
+      const b = document.createElement("button");
+      b.title = `${t.name} — 클릭하면 캔버스에 들어옵니다`;
+      b.innerHTML = `<canvas width="72" height="72"></canvas><span>${t.name}</span>`;
+      b.onclick = () => { const pl = plan(t); snapshot(); mask = t.gen(NY, NZ, pl.n, pl.t); scheduleSend(); };
+      gal.appendChild(b);
+    }
+    function drawThumbs() {
+      [...gal.querySelectorAll("button")].forEach((b, i) => {
+        const t = g.PLATE_TEMPLATES[i], cv = b.querySelector("canvas");
+        const ctx = cv.getContext("2d");
+        const pl = plan(t);
+        const m = t.gen(NY, NZ, pl.n, pl.t);       // the thumbnail IS the result
+        const cx = cv.width / NZ, cy = cv.height / NY;
+        ctx.fillStyle = COL.ch; ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.fillStyle = COL.land;
+        for (let j = 0; j < NY; j++) for (let k = 0; k < NZ; k++)
+          if (m[j*NZ + k]) ctx.fillRect(k*cx, cv.height - (j+1)*cy, Math.ceil(cx), Math.ceil(cy));
+      });
+      fitReadout();
+    }
+    function fitReadout() {
+      const pl = plan(g.PLATE_TEMPLATES[0]);       // serpentine as the reference
+      const c = cell();
+      const off = Math.abs(pl.ribMM - ribMM) > 0.01 || Math.abs(pl.chanMM - chanMM) > 0.01;
+      $(".pe-fit").innerHTML =
+        `실제 <b style="color:${off ? "var(--gold)" : "var(--tx)"}">리브 ${pl.ribMM.toFixed(1)} / ` +
+        `채널 ${pl.chanMM.toFixed(1)} mm</b> · 주기 ${pl.pitchMM.toFixed(1)} mm · ` +
+        `<b style="color:var(--tx)">${pl.nEff}</b>패스 · 한 칸 ${c.toFixed(1)} mm` +
+        (off ? `<br><span style="color:var(--dim)">격자가 셀 단위로 맞춥니다 — 더 가늘게 하려면 ` +
+               `<b>복셀 해상도</b>를 낮추세요.</span>` : "");
+    }
+    const ribIn = $(".pe-ribmm"), chanIn = $(".pe-chanmm");
+    const readMM = () => {
+      ribMM = Math.max(0.1, +ribIn.value || 0.1);
+      chanMM = Math.max(0.1, +chanIn.value || 0.1);
+      drawThumbs();
+    };
+    ribIn.onchange = readMM; chanIn.onchange = readMM;
 
     addEventListener("keydown", e => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -397,16 +654,23 @@
       mask = out; NY = ny; NZ = nz;
       undo.length = 0; redo.length = 0;          // history is shape-specific
       for (const cv of canvases) cv.style.aspectRatio = `${NZ} / ${NY}`;
+      drawThumbs();                              // templates follow the grid
+      bs.oninput();                              // brush readout follows the cell size
       // push the reshaped drawing back, so the canvas and the solver hold the
       // same mask rather than two resolutions of the same picture
       if (P.ff === "custom") scheduleSend();
     }
 
+    drawThumbs();
     render();
 
     // verification handle (headless: synthetic pointer events, no screenshots)
     g.__peState = () => ({
-      NY, NZ, tool, erase, brush, mirror, pending,
+      NY, NZ, tool, erase, brush, mirror, pending, ribMM, chanMM, cellMM,
+      plan: g.PLATE_TEMPLATES.map(t => ({ key: t.key, ...plan(t) })),
+      templates: g.PLATE_TEMPLATES.map(t => t.key),
+      connected: g.plateConnects(mask, NY, NZ,
+        ports && ports.in_face, ports && ports.out_face),
       undo: undo.length, redo: redo.length,
       land: Array.from(mask).reduce((a, b) => a + b, 0),
       rows: [...Array(NY).keys()].map(j => {
@@ -418,7 +682,13 @@
     return {
       sync(st) {
         if (!st) return;
-        if (st.grid) { reshape(st.grid.ny, st.grid.nz); cellMM = st.grid.h_mm; }
+        if (st.grid) { cellMM = st.grid.h_mm; reshape(st.grid.ny, st.grid.nz); }
+        // seed the mm boxes from the plate that is actually running
+        if (!seeded && st.diag && st.diag.rib_mm != null) {
+          seeded = true;
+          ribIn.value = st.diag.rib_mm; chanIn.value = st.diag.chan_mm; readMM();
+        }
+        if (st.diag && st.diag.flow_ok !== undefined) engineFlowOk = !!st.diag.flow_ok;
         if (st.land2d) lastLand = st.land2d;
         if (st.ports) ports = st.ports;
         // While the flow field is a PRESET, the canvas mirrors what is running,

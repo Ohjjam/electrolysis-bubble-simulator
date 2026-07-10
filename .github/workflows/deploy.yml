@@ -1,0 +1,47 @@
+# push to main -> build the Pyodide web app -> deploy to GitHub Pages.
+# The app URL is the site root; /docs/ keeps working via a redirect page
+# (the old legacy-Pages layout served the app under /docs/).
+name: Deploy web app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build the Pyodide web app
+        run: python build_web.py
+      - name: Assemble site (app at root, /docs/ -> redirect)
+        run: |
+          mkdir -p _site/docs
+          cp -r docs/. _site/
+          printf '<!doctype html><meta http-equiv="refresh" content="0; url=../"><a href="../">이 페이지는 사이트 루트로 이동했습니다</a>' > _site/docs/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

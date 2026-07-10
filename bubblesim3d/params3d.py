@@ -210,11 +210,29 @@ class Cell3DConfig:
         n_core = max(2, int(round(core_m / self.h + 0.49)))
         return n_lay, n_core
 
+    def n_passes(self, dim):
+        """Channels the flow axis can actually hold (each needs >= 1 rib cell)."""
+        return max(1, min(int(round(self.n_ch)), dim // 2))
+
+    @staticmethod
+    def _snap(dim, n):
+        """Round the flow axis DOWN to a whole number of passes."""
+        pitch = max(2, dim // n)
+        return max(4, pitch * n)
+
     def grid_dims(self):
         """(nx, ny, nz) at voxel h. x is EXACT: 2 channel layers + core (the
         voxelizer and renderer share layer_counts, so the drawn cell is the
         computed domain). y: electrode height, z: width, capped for the live
-        loop (the cap never touches x — layers must stay intact)."""
+        loop (the cap never touches x — layers must stay intact).
+
+        The FLOW axis is snapped to a whole number of passes. With a fractional
+        pitch (25 rows / 8 passes = 3.125) the ribs come out uniform but the
+        channels between them alternate 1 and 2 cells — visibly uneven bands.
+        Rounding the axis down to `pitch * n` makes both uniform. It costs at
+        most one pitch of electrode height, and the renderer draws the grid, so
+        what you see stays what is computed.
+        """
         n_lay, n_core = self.layer_counts()
         nx = 2 * n_lay + n_core
         ny = max(8, round(self.H_cm * 1e-2 / self.h))
@@ -224,7 +242,30 @@ class Cell3DConfig:
             s = (self.max_cells / total) ** 0.5      # shrink y,z only
             ny = max(8, int(ny * s))
             nz = max(6, int(nz * s))
+        # snap BOTH in-plane axes, for EVERY flow field. If the snap depended on
+        # `ff`, switching a preset over to the hand-drawn plate would change the
+        # grid underneath the drawing and resample it — a 6 mm rib came back as
+        # 8 mm. The grid must depend only on the cell size and the pass count.
+        ny = self._snap(ny, self.n_passes(ny))
+        nz = self._snap(nz, self.n_passes(nz))
         return nx, ny, nz
+
+    def rib_channel_mm(self):
+        """(pitch, rib, channel) in mm as the GRID actually resolves them.
+
+        The pass pitch is the electrode length divided by `n_ch`; `w_ch_mm` and
+        `w_land_mm` only set their RATIO. Both are then quantised to whole cells.
+        Reporting the achieved widths is the only honest thing to do — asking for
+        1 mm ribs on a 2 mm grid cannot give 1 mm ribs.
+        """
+        nx, ny, nz = self.grid_dims()
+        dim = ny if self.ff in ("serp", "straight") else nz
+        n = self.n_passes(dim)
+        pitch = max(2, dim // n)
+        frac = float(min(0.95, max(0.05, self.w_land_mm / (self.w_ch_mm + self.w_land_mm))))
+        rib = max(1, min(pitch - 1, int(frac * pitch + 0.5 - 1e-9)))
+        mm = self.h * 1e3
+        return pitch * mm, rib * mm, (pitch - rib) * mm
 
 
 def cell_config_from_designer(d: dict) -> Cell3DConfig:

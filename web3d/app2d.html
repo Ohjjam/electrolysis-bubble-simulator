@@ -16,6 +16,11 @@
   .pill{display:inline-block;border:1px solid #b6e3d0;background:#e8f7f1;border-radius:99px;
         padding:1px 9px;font-size:11px;color:var(--grn)}
   .app{display:grid;grid-template-columns:320px minmax(420px,1fr) minmax(420px,1fr);gap:12px;align-items:start}
+  /* the left column is ONE grid item; adding a second one there pushed the
+     panels onto row 2 (grid auto-placement, not a styling accident) */
+  .side{display:flex;flex-direction:column;gap:12px;min-width:0}
+  @media (max-width:1180px){ .app{grid-template-columns:300px minmax(360px,1fr)}
+    .side{grid-row:span 2} }
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
   .ctl{margin-bottom:9px} .lab{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:2px;align-items:baseline}
   .val{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
@@ -38,8 +43,9 @@
   .met .k{color:var(--dim);font-size:11px} .met .v{font-size:15px;font-weight:650;margin-top:1px;
     font-variant-numeric:tabular-nums} .met .u{font-size:11px;color:var(--dim)}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:9px}
-  #choke{display:none;margin-top:9px;padding:7px 10px;border-radius:9px;
+  #choke,#deadflow{display:none;margin-top:9px;padding:7px 10px;border-radius:9px;
     border:1px solid #f0b6bb;background:#fdeced;color:#8f1f29;font-size:11.5px}
+  #deadflow{border-color:#e0a0a8;background:#fbe3e5}
   #conn{color:var(--warn);font-size:12px;display:none}
   #face{cursor:crosshair}
 </style>
@@ -52,9 +58,11 @@
 
 <div class="app">
 
-  <!-- ===================== controls ===================== -->
-  <div class="card" id="controls"></div>
-  <div class="card" id="plateEd" style="grid-column:1"></div>
+  <!-- ===================== controls (one grid item, stacked) ===================== -->
+  <div class="side">
+    <div class="card" id="controls"></div>
+    <div class="card" id="plateEd"></div>
+  </div>
 
   <!-- ===================== PANEL 1: local zoom ===================== -->
   <div class="card">
@@ -62,11 +70,12 @@
     <div class="seg" id="sideSeg" style="margin-bottom:6px">
       <button data-s="0" class="on">음극 (H₂)</button><button data-s="1">양극 (O₂)</button>
     </div>
-    <div class="psub">전극 표면의 µm 스케일. 여기서만 진짜 크기가 보입니다 — 핵생성 → 벽에서 성장 → 이탈 → 상승.
+    <div class="psub">전극 표면의 µm 스케일. 전극은 <b>세로</b>로 서 있고 부력은 그와 <b>나란히 위로</b> 작용합니다.
+      여기서만 진짜 크기가 보입니다 — 핵생성 → 벽에서 성장 → 이탈 → 벽을 타고 상승.
       시간 배속을 <b>0.02×</b>로 낮추면 초고속 카메라처럼 한 사이클을 관찰할 수 있습니다.</div>
     <canvas id="hero" width="440" height="520"></canvas>
     <div class="ctl" style="margin-top:8px">
-      <div class="lab"><span>확대 (벽 근처로 파고들기) — 1× = 채널 깊이 전체</span><span class="hint">×</span></div>
+      <div class="lab"><span>확대 (벽 쪽으로 파고들기) — 1× = 채널 깊이 전체</span><span class="hint">×</span></div>
       <div class="ri">
         <input id="sZoom" type="range" min="1" max="12" step="0.5" value="1">
         <input id="nZoom" type="number" min="1" max="60" step="0.5" value="1">
@@ -98,9 +107,13 @@
       <div class="met"><div class="k">셀 전압 V</div><div class="v"><span id="mV">–</span><span class="u"> V</span></div></div>
       <div class="met"><div class="k">가스 / 액체 유량</div><div class="v"><span id="mGL">–</span><span class="u"> ×</span></div></div>
     </div>
+    <div id="deadflow">⚠ <b>유동 경로 없음</b> — 입구에서 출구까지 이어진 채널이 없습니다.
+      압력 풀이가 질량을 보존할 수 없어 <b>이 화면의 모든 수치는 무의미합니다</b>.
+      (교차형 유로는 다공 수송층을 관통하는 유동이 필요한데, 이 모델은 코어를 고체로 둡니다.)</div>
     <div id="choke">⚠ <b>가스 초킹</b> — 발생 가스가 펌프 유량을 넘어섰습니다 (<span id="chokeNum"></span>).
       채널이 가스로 막혀 ε가 치솟고 옴 손실이 커집니다. <b>유량</b>을 올리거나 <b>전류밀도</b>를 낮추세요.</div>
     <div class="hint" id="mBub" style="margin-top:7px">–</div>
+    <div class="hint" id="mGeom" style="margin-top:5px">–</div>
   </div>
 </div>
 
@@ -196,13 +209,40 @@ function simTimeMs() {
 let WIN_Z = 0.6;
 function hash(i) { let x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 
+// Local LIQUID velocity at the clicked spot, in the near-electrode cell.
+// In a serpentine the flow runs ALONG the pass — almost entirely sideways (+/-z)
+// — and it reverses direction from one pass to the next. Buoyancy is the small
+// component (+y). Assuming "flow = up" got the dominant motion 90 deg wrong.
+// Measured on the default cell: |u| ~ 440 mm/s across the pass, v_y ~ 1-5 mm/s.
+function localFlow() {
+  if (!vel3d || !st || !st.grid) return null;
+  const g = st.grid, nx = g.nx, ny = g.ny, nz = g.nz, nl = g.n_lay || 1;
+  const ix = side === 0 ? nl - 1 : nx - nl;            // channel cell at the catalyst
+  // heroY/heroZ are FRACTIONS of the face, and the face has ny x nz cells — so
+  // floor(frac * n), not round(frac * (n-1)). The old form was half a cell off
+  // and made the first/last column almost unreachable by clicking.
+  const j = Math.min(ny-1, Math.max(0, Math.floor(heroY * ny)));
+  const k = Math.min(nz-1, Math.max(0, Math.floor(heroZ * nz)));
+  const fi = ix*ny*nz + j*nz + k;
+  const vy = vel3d.v[fi] * 1000, vz = vel3d.w[fi] * 1000;   // mm/s
+  const mag = Math.hypot(vy, vz);
+  // angle from the vertical: 0 deg = straight up the cell, 90 deg = across it
+  const ang = Math.atan2(Math.abs(vz), Math.abs(vy)) * 180 / Math.PI;
+  // Measured over the whole cathode face (|u| > 20 mm/s): 87% of cells are
+  // within 15 deg of horizontal (mid-pass), 5% within 15 deg of vertical (the
+  // TURN columns, where the snake climbs to the next pass), 8% oblique.
+  const zone = mag < 1 ? "정체" : ang < 25 ? "턴 (수직 상승)"
+             : ang > 65 ? "패스 (가로 흐름)" : "코너 (비스듬)";
+  return { vy, vz, mag, ang, zone };
+}
+
 // local current density at the clicked spot -> local gas rate (hot spots grow
 // faster). Falls back to the cell mean when the face map hasn't arrived.
 function localJFactor() {
   if (!faces || !st) return 1;
   const f = side === 0 ? faces.cathode : faces.anode;
-  const jy = Math.min(f.ny - 1, Math.max(0, Math.round(heroY * (f.ny - 1))));
-  const kz = Math.min(f.nz - 1, Math.max(0, Math.round(heroZ * (f.nz - 1))));
+  const jy = Math.min(f.ny - 1, Math.max(0, Math.floor(heroY * f.ny)));
+  const kz = Math.min(f.nz - 1, Math.max(0, Math.floor(heroZ * f.nz)));
   const jl = f.j[jy * f.nz + kz];
   if (jl < 0) return 0;                                // clicked a rib (no electrolyte)
   const jm = st.diag ? st.diag.j_Acm2 : 0;
@@ -219,29 +259,36 @@ function drawHero() {
   const chDepth = Math.max(0.05, (st.designer && st.designer.d_ch_mm) || 1);
   const pad = 8, aw = W - 2*pad, ah = H - 2*pad;
 
-  // WALL AT THE BOTTOM, channel opening upward to the opposite plate.
-  // vertical  = wall-normal distance (0 .. chDepth/zoom)   -> TO SCALE
-  // horizontal= along the cell (buoyancy + pumped flow)    -> bubbles slide right
+  // ELECTRODE STANDING VERTICAL on the left, channel opening to the right toward
+  // the opposite plate. This is the physical orientation: buoyancy is PARALLEL
+  // to the electrode, so a released bubble climbs ALONG the wall. Drawing the
+  // wall flat on the floor made the same motion read as "sliding sideways on the
+  // ground", as if buoyancy were not acting.
+  //   horizontal = wall-normal distance (0 .. chDepth/zoom)  -> TO SCALE
+  //   vertical   = along the electrode, upward (buoyancy + pumped flow)
   const winN = chDepth / heroZoom;                     // mm shown normal to the wall
-  const sx = ah / winN;                                // px per mm (isotropic)
-  const winT = aw / sx;                                // mm along the wall
-  const NY = pyn => H - pad - pyn * sx;                // wall-normal mm -> px
-  const TX = t => pad + t * sx;                        // tangential mm -> px
+  const sx = aw / winN;                                // px per mm (isotropic)
+  const winT = ah / sx;                                // mm along the wall (up-cell)
+  const NX = pyn => pad + pyn * sx;                    // wall-normal mm -> px
+  const TY = t => H - pad - t * sx;                    // up-cell mm -> px (y up)
 
   c.fillStyle = INK.liq; c.fillRect(pad, pad, aw, ah);      // electrolyte
-  // opposite plate wall (only visible when the whole channel depth is in view)
-  const plateY = NY(chDepth);
-  if (plateY > pad - 2) {
-    c.fillStyle = "#7d8798"; c.fillRect(pad, Math.max(pad, plateY), aw, Math.min(9, ah));
+  // opposite plate (only visible when the whole channel depth is in view)
+  const plateX = NX(chDepth);
+  if (plateX < W - pad + 2) {
+    const px0 = Math.min(W - pad - 9, plateX);
+    c.fillStyle = "#7d8798"; c.fillRect(px0, pad, Math.min(9, aw), ah);
+    c.save(); c.translate(px0 - 6, pad + 10); c.rotate(Math.PI / 2);
     c.fillStyle = INK.dim; c.font = "10px system-ui"; c.textAlign = "left";
-    c.fillText(`반대편 플레이트 (채널 깊이 ${chDepth.toFixed(2)} mm)`, pad + 8, Math.max(pad, plateY) + 21);
+    c.fillText(`반대편 플레이트 (채널 깊이 ${chDepth.toFixed(2)} mm)`, 0, 0);
+    c.restore();
   }
-  // catalyst wall along the bottom
-  const grad = c.createLinearGradient(0, H - pad, 0, H - pad - ah*0.18);
+  // catalyst wall standing on the left
+  const grad = c.createLinearGradient(pad, 0, pad + aw*0.18, 0);
   grad.addColorStop(0, side === 0 ? "rgba(63,110,160,0.22)" : "rgba(176,104,42,0.22)");
   grad.addColorStop(1, "rgba(255,255,255,0)");
-  c.fillStyle = grad; c.fillRect(pad, H - pad - ah*0.18, aw, ah*0.18);
-  c.fillStyle = side === 0 ? "#41607f" : "#9c5f34"; c.fillRect(pad, H - pad - 7, aw, 7);
+  c.fillStyle = grad; c.fillRect(pad, pad, aw*0.18, ah);
+  c.fillStyle = side === 0 ? "#41607f" : "#9c5f34"; c.fillRect(pad, pad, 7, ah);
 
   const jFac = localJFactor();
   const dens = (d.sites_per_mm2 || 0);                 // real sites per mm^2
@@ -260,10 +307,15 @@ function drawHero() {
   const seed = Math.round(heroY*997) * 131 + Math.round(heroZ*997);
   const upT = 3 * winT;                                // upstream fetch [mm]
   const N = Math.min(400, Math.max(0, Math.round(dens * (winT + upT) * WIN_Z)));
-  const uBulk = ((st.designer && st.designer.u_flow) || 0) * 1000;   // mm/s
+  // The liquid direction comes from the SOLVED field at this spot, not from an
+  // assumption. Its magnitude decays into the wall shear layer exactly as the
+  // departure-radius model assumes (u = u_bulk * y/half).
+  const flow = localFlow();
+  const uBulk = flow ? flow.mag : ((st.designer && st.designer.u_flow) || 0) * 1000;
+  const ly = flow && flow.mag > 1e-9 ? flow.vy / flow.mag : 1;   // unit liquid dir
+  const lz = flow && flow.mag > 1e-9 ? flow.vz / flow.mag : 0;
   const halfD = Math.max(0.5 * chDepth, 1e-6);
-  // liquid speed at wall-normal distance y: linear shear layer, bulk past mid-channel
-  const uAt = y => uBulk * Math.min(1, y / halfD);
+  const uAt = y => uBulk * Math.min(1, y / halfD);              // near-wall magnitude
   let n = 0, nUp = 0, rmax = 0, per0 = 0;
 
   // collect first, draw back-to-front: bubbles sit at different depths in the
@@ -302,22 +354,23 @@ function drawHero() {
       // 1) attached, growing on the wall (tangent to it) — only if it is in view
       if (t0 >= 0 && t0 <= winT) {
         const r = R(V(rNuc) + rate * gasF * ph);
-        drawBub(TX(t0), NY(r * 1e-3), r * 1e-3 * sx, 1, dep);
+        drawBub(NX(r * 1e-3), TY(t0), r * 1e-3 * sx, 1, dep);
         n++; rmax = Math.max(rmax, r);
       }
 
-      // 2) the ones that already let go. Streamwise they ride slip + the LOCAL
-      // liquid speed. WALL-NORMAL they do not move: buoyancy points ALONG the
-      // electrode and the engine models no shear-induced lift or turbulent
-      // dispersion, so a released bubble skims the wall at y = its own radius.
-      // (Measured in the engine: risers travel 23 mm up-cell while staying
-      // within +-20 um of their birth distance from the catalyst.) The real
-      // near-wall accumulation is in the same direction — for ~40 um bubbles in
-      // laminar co-current flow the lift force points AT the wall — but the
-      // slow thickening of the bubble curtain is outside this model.
+      // 2) the ones that already let go. ALONG the wall they climb on slip + the
+      // local liquid speed (buoyancy is parallel to the electrode). WALL-NORMAL
+      // they stay put: the Tomiyama lift beats the Antal wall force at every
+      // standoff for these sizes, so they are pressed onto the catalyst and
+      // skim it at y = their own radius (engine: 23 mm of rise, +-20 um of wall
+      // distance; equilibrium standoff ~1.05 r).
+      // bubble drift = local liquid (near-wall magnitude, solved direction)
+      //              + buoyant slip along +y. The panel's tangential axis IS
+      // this resultant, so `t` is distance along the bubble's own path.
       const vSlip = vT * Math.pow(rd / Math.max(rDep, 1e-9), 2);   // mm/s
       const y = rd * 1e-3;                                         // mm off the wall
-      const vT_here = vSlip + uAt(y);                              // mm/s downstream
+      const uw = uAt(y);
+      const vT_here = Math.hypot(uw * ly + vSlip, uw * lz);        // |drift| mm/s
       if (y > winN) continue;
       for (let k = 1; k <= 24; k++) {
         const age = ph + (k - 1) * per;                            // ms since detach
@@ -327,30 +380,56 @@ function drawHero() {
         // each released bubble wanders its own way through the slab depth (the
         // lateral wobble the engine gives free risers) — successive ones do not
         // ride a single line
-        drawBub(TX(t), NY(y), rd * 1e-3 * sx, 0.85, hash(s * 31 + k * 7 + 53));
+        drawBub(NX(y), TY(t), rd * 1e-3 * sx, 0.85, hash(s * 31 + k * 7 + 53));
         n++; rmax = Math.max(rmax, rd); if (t0 < 0) nUp++;
       }
     }
   }
   paint();
 
-  // flow / buoyancy direction arrow
-  c.strokeStyle = INK.dim; c.fillStyle = INK.dim; c.lineWidth = 1.2;
-  const ay = pad + 26, ax0 = W - pad - 96, ax1 = W - pad - 30;
-  c.beginPath(); c.moveTo(ax0, ay); c.lineTo(ax1, ay); c.stroke();
-  c.beginPath(); c.moveTo(ax1, ay); c.lineTo(ax1-6, ay-3.5); c.lineTo(ax1-6, ay+3.5);
-  c.closePath(); c.fill();
-  c.font = "10px system-ui"; c.textAlign = "right";
-  c.fillText("부력 + 유동", ax1, ay - 7);
+  // Direction compass, drawn in the CELL frame (up = +y up-cell, right = +z
+  // across the width). Buoyancy always points up; the LOCAL liquid velocity
+  // points wherever the solver says — along the pass, reversing each pass — and
+  // the bubble follows their sum. The panel's tangential axis is that sum.
+  {
+    const vsRef = vT;                                    // slip at r_dep [mm/s]
+    const uw = uAt(rDep * 1e-3);                         // near-wall liquid [mm/s]
+    const dy = uw * ly + vsRef, dz = uw * lz;
+    const dmag = Math.hypot(dy, dz) || 1;
+    const cx = W - pad - 46, cy = pad + 48, R = 30;
+    c.fillStyle = "rgba(255,255,255,0.75)"; c.strokeStyle = INK.line; c.lineWidth = 1;
+    c.beginPath(); c.arc(cx, cy, R + 8, 0, 6.2832); c.fill(); c.stroke();
+    const arrow = (vx, vy2, mag, col, wid) => {
+      if (!(mag > 0)) return;
+      const ex = cx + (vy2 === 0 && vx === 0 ? 0 : (vx / mag) * R);
+      const ey = cy - (vy2 / mag) * R;
+      c.strokeStyle = col; c.fillStyle = col; c.lineWidth = wid;
+      c.beginPath(); c.moveTo(cx, cy); c.lineTo(ex, ey); c.stroke();
+      const a = Math.atan2(ey - cy, ex - cx);
+      c.beginPath(); c.moveTo(ex, ey);
+      c.lineTo(ex - 6*Math.cos(a - 0.4), ey - 6*Math.sin(a - 0.4));
+      c.lineTo(ex - 6*Math.cos(a + 0.4), ey - 6*Math.sin(a + 0.4));
+      c.closePath(); c.fill();
+    };
+    arrow(0, vsRef, Math.max(vsRef, 1e-9), INK.grn, 1.4);          // buoyancy (up)
+    arrow(uw * lz, uw * ly, Math.max(uw, 1e-9), C_H2, 1.4);        // local liquid
+    arrow(dz, dy, dmag, INK.warn, 2.2);                            // resultant
+    c.font = "9px system-ui"; c.textAlign = "center"; c.fillStyle = INK.dim;
+    c.fillText("+y", cx, cy - R - 11);
+    c.fillText("+z", cx + R + 12, cy + 3);
+  }
 
-  // 100 um scale bar (horizontal, on the wall)
+  // 100 um scale bar, laid along the WALL-NORMAL axis (the one that is to scale)
   const sb = 0.1 * sx;
   c.strokeStyle = INK.tx; c.lineWidth = 1.5;
-  c.beginPath(); c.moveTo(W - pad - sb - 12, H - pad - 16); c.lineTo(W - pad - 12, H - pad - 16); c.stroke();
+  c.beginPath(); c.moveTo(pad + 14, H - pad - 14); c.lineTo(pad + 14 + sb, H - pad - 14); c.stroke();
   c.fillStyle = INK.tx; c.font = "11px system-ui"; c.textAlign = "center";
-  c.fillText("100 µm", W - pad - sb/2 - 12, H - pad - 21);
-  c.textAlign = "left"; c.fillStyle = INK.dim; c.font = "11px system-ui";
-  c.fillText(side === 0 ? "촉매면 (음극 · H₂)" : "촉매면 (양극 · O₂)", pad + 12, H - pad - 14);
+  c.fillText("100 µm", pad + 14 + sb/2, H - pad - 19);
+  // electrode label, written up the wall
+  c.save(); c.translate(pad + 20, H - pad - 40); c.rotate(-Math.PI/2);
+  c.fillStyle = INK.dim; c.font = "11px system-ui"; c.textAlign = "left";
+  c.fillText(side === 0 ? "촉매면 (음극 · H₂)" : "촉매면 (양극 · O₂)", 0, 0);
+  c.restore();
 
   if (jFac === 0) {
     c.fillStyle = INK.warn; c.font = "12px system-ui"; c.textAlign = "center";
@@ -362,10 +441,22 @@ function drawHero() {
   document.getElementById("mHeroN").textContent = n;
   document.getElementById("mHeroR").textContent = rmax.toFixed(0);
   document.getElementById("heroLoc").innerHTML =
-    `창 ${(winT*1000)|0}×${(winN*1000)|0} µm (z-투영 ${WIN_Z.toFixed(2)} mm) · ` +
+    `창 ${(winN*1000)|0}(벽 법선)×${(winT*1000)|0}(기포 이동) µm · z-투영 ${WIN_Z.toFixed(2)} mm · ` +
     `국소 전류 <b style="color:var(--tx)">${jFac.toFixed(2)}×</b> 평균 · ` +
     `사이트 ${dens.toFixed(1)}/mm² · 한 사이클 <b style="color:var(--gold)">${per0 ? per0.toFixed(1) : "–"} ms</b> · ` +
     `상류 유입 <b style="color:var(--tx)">${nUp}</b>개<br>` +
+    (flow ? (flow.mag < 1
+              ? `국소 유동 <b style="color:var(--dim)">거의 없음</b> (리브 아래 / 정체 구간) · `
+              : `국소 유동 <b style="color:var(--tx)">${flow.mag.toFixed(0)} mm/s</b> ` +
+                `(${Math.abs(flow.vz) > Math.abs(flow.vy)
+                     ? (flow.vz > 0 ? "→ 폭방향 +z" : "← 폭방향 −z")
+                     : (flow.vy > 0 ? "↑ 위" : "↓ 아래")}, 연직에서 ` +
+                `<b style="color:var(--tx)">${Math.round(flow.ang)}°</b> — ` +
+                `<b style="color:var(--accent)">${flow.zone}</b>) · `) +
+            `근벽에서 <b style="color:var(--tx)">${uAt(rDep*1e-3).toFixed(0)} mm/s</b> · ` +
+            `부력 슬립 <b style="color:var(--grn)">${vT.toFixed(1)} mm/s</b> → ` +
+            `기포 이동 <b style="color:var(--warn)">${Math.hypot(uAt(rDep*1e-3)*ly + vT, uAt(rDep*1e-3)*lz).toFixed(0)} mm/s</b>` +
+            `<br>` : "") +
     `합체 확률 <b style="color:var(--tx)">${pm.toFixed(2)}</b> ` +
     `(${pm < 0.5 ? "진한 전해질 — 억제" : "묽은 전해질 — 활발"}) · ` +
     `출구 기포 <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> ` +
@@ -374,8 +465,12 @@ function drawHero() {
     `${capped ? " — 반대편 플레이트가 이탈 크기를 결정" : ""} · ` +
     `기포층 두께 ≈ <b style="color:var(--tx)">${(2*rDep).toFixed(0)} µm</b><br>` +
     `<span style="color:var(--dim)">대표 버블을 실제 사이트 밀도로 되펼친 재구성 — 성장률·이탈크기·상승속도는 모두 시뮬레이션 값. ` +
-    `이탈한 기포는 벽을 따라 미끄러집니다: 부력이 전극면과 <b>나란하고</b>, Tomiyama 전단 양력이 ` +
-    `Antal 벽 윤활력을 이겨 기포를 전극에 <b>눌러붙이기</b> 때문(평형 이격거리 ≈ 1.05 r).</span>`;
+    `이탈한 기포는 벽에 <b>눌린 채</b>(Tomiyama 양력 > Antal 벽력, 평형 이격거리 ≈ 1.05 r) ` +
+    `<b>부력 + 국소 유동</b>의 합 방향으로 미끄러집니다. 유동 방향은 <b>위치마다 다릅니다</b>: ` +
+    `패스 중앙에서는 유로를 따라 거의 <b>가로</b>이고 패스마다 좌우가 뒤집히지만, ` +
+    `<b>턴 갭(양 끝)</b>에서는 다음 패스로 올라가느라 거의 <b>수직 상승</b>입니다 ` +
+    `(음극면 실측: 가로 87%, 수직 5%, 비스듬 8%). 이 창의 세로축은 그 <b>합(빨강 화살표)</b> 방향이고, ` +
+    `나침반은 셀 좌표계(위 = +y, 오른쪽 = +z)에서 부력·유동·합을 각각의 실제 각도로 그립니다.</span>`;
 }
 
 // =================== PANEL 2: whole cell, gas blocking =======================
@@ -494,6 +589,8 @@ async function poll() {
     glEl.style.color = gl > 1 ? "var(--warn)" : "var(--tx)";
     const ck = document.getElementById("choke");
     ck.style.display = gl > 1 ? "block" : "none";
+    document.getElementById("deadflow").style.display =
+      (d.flow_ok === false) ? "block" : "none";
     document.getElementById("chokeNum").textContent =
       `가스 ${(d.q_gas_mLs ?? 0).toFixed(2)} mL/s vs 액체 ${(d.q_liq_mLs ?? 0).toFixed(2)} mL/s`;
     document.getElementById("mBub").innerHTML =
@@ -501,6 +598,22 @@ async function poll() {
       `1개 ≈ <b style="color:var(--gold)">${(d.mult ?? 1).toFixed(0)}</b>개 실제 → 실제 약 ` +
       `<b style="color:var(--tx)">${(d.n_real_est ?? 0).toLocaleString()}</b>개 · ` +
       `θ ${(d.theta_c ?? 0).toFixed(3)}/${(d.theta_a ?? 0).toFixed(3)} · ${(s.speed_actual ?? 0).toFixed(2)}× 실시간`;
+    // what the GRID resolves vs what the sliders asked for. The pass pitch is
+    // H/n_ch (the width sliders only set the RATIO), and both are quantised to
+    // whole cells — so say the achieved numbers instead of letting them puzzle.
+    const gm = document.getElementById("mGeom");
+    if (d.pitch_mm != null) {
+      const off = Math.abs(d.rib_mm - d.rib_req_mm) > 0.05 * d.rib_req_mm
+               || Math.abs(d.chan_mm - d.chan_req_mm) > 0.05 * d.chan_req_mm;
+      gm.innerHTML =
+        `유로 주기 <b style="color:var(--tx)">${d.pitch_mm.toFixed(1)} mm</b> = 전극 높이 / 채널 수 · ` +
+        `실제 리브 <b style="color:${off?"var(--gold)":"var(--tx)"}">${d.rib_mm.toFixed(1)}</b> / ` +
+        `채널 <b style="color:${off?"var(--gold)":"var(--tx)"}">${d.chan_mm.toFixed(1)} mm</b> ` +
+        `(복셀 ${d.h_mm.toFixed(1)} mm)` +
+        (off ? `<br><span style="color:var(--dim)">요청 ${d.rib_req_mm}/${d.chan_req_mm} mm — ` +
+               `폭 슬라이더는 <b>비율</b>만 정하고, 격자가 셀 단위로 양자화합니다. ` +
+               `복셀 해상도를 낮추면 가까워집니다.</span>` : "");
+    } else { gm.innerHTML = `복셀 ${(d.h_mm ?? 0).toFixed(1)} mm · 직접 그린 유로`; }
   } catch {
     document.getElementById("conn").style.display = "inline";
     dt = 1200;
@@ -547,6 +660,13 @@ addEventListener("resize", () => { drawHero(); drawFace(); });
 // verification handles (headless: rAF is throttled in some hosts)
 window.__st = () => st;
 window.__frame = () => { drawHero(); drawFace(); };
+window.__heroProbe = () => {
+  const g = st && st.grid;
+  return { heroY, heroZ, side,
+           j: g ? Math.min(g.ny-1, Math.max(0, Math.floor(heroY * g.ny))) : null,
+           k: g ? Math.min(g.nz-1, Math.max(0, Math.floor(heroZ * g.nz))) : null,
+           flow: localFlow() };
+};
 window.__probe = id => { const cv = document.getElementById(id), c = cv.getContext("2d");
   const d = c.getImageData(0,0,cv.width,cv.height).data; let nz = 0;
   for (let i = 0; i < d.length; i += 4) if (d[i]+d[i+1]+d[i+2] > 24) nz++;
