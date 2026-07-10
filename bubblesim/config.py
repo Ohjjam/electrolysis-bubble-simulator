@@ -48,6 +48,21 @@ class Operating:
     cell_width_cm: float = 5.0        # electrode width [cm] (serpentine run length)
     drill_inlet_gas: float = 0.0      # flow2d: upstream gas entering the inlet (set when drilling a channel region)
     custom_path: "list | None" = None # user-drawn flow channel [[x,y],...] in [0,1] cell coords (design tool)
+    chan_depth_mm: float = 1.0        # channel depth [mm] (channel model; 1.0 = legacy D_CHAN)
+    channel_void_ohmic: bool = False  # channel: feed path-mean void into the scalar solve
+                                      # (bulk gas raises electrolyte R; off = legacy behaviour)
+    void_ohmic_frac: float = 1.0      # fraction of the electrolyte path the channel void
+                                      # actually obstructs (zero-gap MEA: gas sits BEHIND the
+                                      # electrode -> only the porous-electrode/film part, <<1;
+                                      # gap cells: ~1). Calibrate on the baseline cell.
+    # --- bubble-management mesh interlayer on the anode face (kernel.meshlayer) ---
+    # A hydrophobic (aerophilic) mesh laid on the electrode inside the channel.
+    # t=0 disables everything (legacy behaviour, bit-identical).
+    mesh_hole_mm: float = 0.0         # mesh opening size [mm] (0 = no mesh)
+    mesh_open: float = 1.0            # open-area fraction phi [0..1]
+    mesh_t_mm: float = 0.0            # mesh thickness [mm] (0 = no mesh)
+    mesh_cover: float = 0.0           # fraction of the flow path covered [0..1] (1 = full)
+    mesh_pos: str = "outlet"          # partial-cover anchor: "inlet" | "middle" | "outlet"
 
 
 @dataclass

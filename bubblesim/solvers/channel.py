@@ -23,8 +23,14 @@ import numpy as np
 from .base import ElectroState
 from .zerod import ZeroDTwoElectrodeSolver
 from ..constants import F, R_GAS
+from ..kernel.meshlayer import mesh_factors, path_mask
 
-D_CHAN = 1.0e-3        # channel depth [m]
+D_CHAN = 1.0e-3        # legacy channel depth [m] (op.chan_depth_mm overrides)
+EPS_FILM = 0.70        # slug/annular flow transition void: below this a wall
+                       # liquid film keeps the ionic path wet (zero-gap cell),
+                       # so only the void EXCESS above it starves the path.
+                       # ~0.7 is the packed-bubble/churn transition (literature
+                       # anchor, fixed a priori -- not fitted).
 
 
 class _Stub:
@@ -88,7 +94,30 @@ class ChannelSolver:
             Lscale, m = H, max(8, self.m_per)
             polys = channel_polylines(ctype, n_pass)
         ds = Lscale / (m - 1)
-        KA = (R_GAS * T / op.P) / (z * F * u * D_CHAN)   # Vgas/Q per (A/m) of cumulative j
+        d_ch = max(0.05, float(getattr(op, "chan_depth_mm", 1.0))) * 1e-3
+        KA = (R_GAS * T / op.P) / (z * F * u * d_ch)     # Vgas/Q per (A/m) of cumulative j
+
+        # --- bubble-management mesh interlayer (kernel.meshlayer) --------------
+        # A hydrophobic mesh over part of the path wicks gas off the catalyst
+        # (theta relief), sheds it downstream faster (retention cut, helped by
+        # the encroachment velocity boost), but blocks some liquid access
+        # (theta_add floor). Defaults (t=0 / cover=0) are bit-identical legacy.
+        mesh_cover = min(1.0, max(0.0, float(getattr(op, "mesh_cover", 0.0))))
+        mf = mesh_factors(float(getattr(op, "mesh_hole_mm", 0.0)),
+                          float(getattr(op, "mesh_open", 1.0)),
+                          float(getattr(op, "mesh_t_mm", 0.0)),
+                          d_ch * 1e3)
+        mesh_on = mf["fits"] and mf["theta_factor"] < 1.0 and mesh_cover > 0.0
+        mmask = (np.array(path_mask(m, mesh_cover, getattr(op, "mesh_pos", "outlet")))
+                 if mesh_on else np.zeros(m, dtype=bool))
+        # mesh acts LOCALLY: gas volume is conserved along the channel (it all
+        # exits at the outlet), but under the mesh the bubbles ride the fast
+        # core flow (slip up, slugs broken) -> the local HOLDUP that blankets
+        # the wall drops. So the factor multiplies eps in covered segments,
+        # never the production integral (that would delete gas downstream).
+        hold_mesh = np.where(mmask, mf["retention_factor"], 1.0)
+        th_amp = 0.9 * np.where(mmask, mf["theta_factor"], 1.0)
+        th_add = np.where(mmask, mf["theta_add"], 0.0)
 
         # --- channel ORIENTATION vs gravity -----------------------------------
         # The cell stands in a vertical plane (y = height, gravity points down).
@@ -107,20 +136,33 @@ class ChannelSolver:
 
         base = ZeroDTwoElectrodeSolver(n_outer=40, n_inner=28)
         eps0 = surfaces[0].void_fraction()
+        # channel_void_ohmic: let the path-mean bulk void raise the electrolyte
+        # resistance in the scalar solve (real at gas-choking flow ratios).
+        # Off (default) keeps the legacy behaviour: the stub carries eps0 only.
+        void_ohmic = bool(getattr(op, "channel_void_ohmic", False))
+        vfrac_ohm = min(1.0, max(0.0, float(getattr(op, "void_ohmic_frac", 1.0))))
+        eps_mean = eps0
         theta = np.zeros(m)
+        eps = np.zeros(m)
         st = None
         for _ in range(5):                               # theta <-> reaction <-> scalar
-            st = base.solve(op, context, [_Stub(float(theta.mean()), eps0)])
+            st = base.solve(op, context, [_Stub(float(theta.mean()), eps_mean)])
             omt = 1.0 - theta
             jprof = st.j * omt / max(1e-6, float(omt.mean()))     # redistribute at common eta
             cumj = np.cumsum(jprof * ret) * ds           # integral j ds [A/m], weighted by path orientation
             V = KA * cumj
-            eps = V / (1.0 + V)
+            eps = (V / (1.0 + V)) * hold_mesh            # local wall holdup (mesh relieves in place)
             # coverage closure: surface coverage is a SATURATING function of the
             # bulk void, not theta=eps (bulk gas fraction != electrode blanketing).
             # theta = theta_max (1 - exp(-k eps)) keeps the downstream monotonicity
             # while decoupling coverage magnitude from void (Vogt & Balzer 2005).
-            theta = 0.9 * (1.0 - np.exp(-3.0 * eps))
+            theta = np.minimum(0.92, th_amp * (1.0 - np.exp(-3.0 * eps)) + th_add)
+            if void_ohmic:
+                # threshold-excess void: the wall film survives to ~EPS_FILM,
+                # beyond it the two-phase flow goes slug/annular and the liquid
+                # supply (ionic path through the porous electrode) starves.
+                eps_x = np.clip((eps - EPS_FILM) / (1.0 - EPS_FILM), 0.0, 1.0)
+                eps_mean = vfrac_ohm * float(eps_x.mean())
 
         # local "voltage efficiency" = E_rev / (E_rev + overpotentials), where the
         # coverage penalty eta_cov = (RT/aF) ln(1/(1-theta)) grows at the bottleneck.
@@ -156,4 +198,25 @@ class ChannelSolver:
             "up_frac": round(up_frac, 3),                # how much of the path runs upward (self-purging)
             "inlet": [round(float(polys[0][0][0]), 3), round(float(polys[0][0][1]), 3)],
         })
+        if mesh_on:                                      # add-only diagnostics
+            fields.update({
+                "mesh_on": True, "mesh_cover": mesh_cover,
+                "mesh_pos": getattr(op, "mesh_pos", "outlet"),
+                "mesh_wick": round(mf["wick"], 3),
+                "mesh_u_boost": round(mf["u_boost"], 2),
+                "mesh_warn": mf["warn"],
+                "mesh_mask_frac": float(mmask.mean()),
+            })
+        # compact along-path profiles (<= 60 pts) for curve/analysis panels
+        k = max(1, (m - 1) // 59)
+        idx = list(range(0, m, k))
+        if idx[-1] != m - 1:
+            idx.append(m - 1)
+        fields["path_prof"] = {
+            "s": [round(i / (m - 1), 4) for i in idx],
+            "theta": [round(float(theta[i]), 4) for i in idx],
+            "eps": [round(float(eps[i]), 4) for i in idx],
+            "j": [round(float(jprof[i]), 1) for i in idx],
+            "mesh": [bool(mmask[i]) for i in idx],
+        }
         return ElectroState(j=st.j, overpotentials=ov, fields=fields, V=st.V)

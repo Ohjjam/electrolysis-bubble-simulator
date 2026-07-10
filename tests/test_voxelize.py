@@ -196,6 +196,46 @@ def test_custom_mask_becomes_the_flow_field():
         assert _percolates_2d(~land)                  # still one connected channel
 
 
+def test_resampling_never_deletes_a_drawn_rib():
+    """A rib drawn on ANY row must reach the physics grid.
+
+    Nearest-neighbour resampling of 32 drawn rows onto 25 grid rows never samples
+    7 of them (rows 2, 6, 11, 15, 20, 25, 29), so a one-cell rib drawn on 22% of
+    the canvas silently vanished — you drew and nothing happened. Area-weighted
+    coverage keeps every rib that is at least half a cell thick, and the editor
+    now draws AT the grid resolution so the common case is the identity.
+    """
+    from bubblesim3d.geometry import _resample_mask
+
+    # identity: what the editor actually sends (drawn on the physics grid)
+    for j in range(25):
+        m = np.zeros((25, 25), bool); m[j, :] = True
+        assert _resample_mask(m, 25, 25)[j].all(), f"row {j} lost at identity"
+
+    # a coarser grid may thin a sub-cell rib, but a 2-cell rib always survives
+    for j in range(0, 30, 2):
+        m = np.zeros((32, 32), bool); m[j:j+2, :] = True
+        assert _resample_mask(m, 25, 25).any(), f"2-cell rib at {j} vanished"
+
+    # and the land fraction is preserved, unlike nearest-neighbour
+    rng = np.random.default_rng(0)
+    for f in (0.2, 0.5):
+        m = rng.random((32, 32)) < f
+        assert abs(_resample_mask(m, 24, 24).mean() - f) < 0.06
+
+
+def test_mask_string_carries_its_shape():
+    """The grid is rectangular and changes size, so the mask encodes ny,nz."""
+    from bubblesim3d.params3d import decode_mask, encode_mask
+    m = np.zeros((18, 31), bool); m[7, 3:20] = True
+    txt = encode_mask(m)
+    assert txt.startswith("18,31:")
+    assert np.array_equal(decode_mask(txt), m)
+    assert decode_mask("0" * 1024).shape == (32, 32)      # legacy square form
+    assert decode_mask("5,5:0101") is None                # wrong bit count
+    assert decode_mask("") is None
+
+
 def test_custom_mask_degenerate_drawings_stay_solvable():
     """An empty drawing is an open duct; a fully-ribbed one still keeps one
     channel — otherwise the projection has no fluid cells and nothing nucleates."""

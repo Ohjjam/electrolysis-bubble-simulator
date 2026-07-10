@@ -35,7 +35,9 @@
     ["촉매 / 막", [
       { k:"j0_cathode", nm:"음극 j₀ (HER)", un:"A/m²", num:1, v:130, lo:1e-6, hi:1e5 },
       { k:"j0_anode", nm:"양극 j₀ (OER)", un:"A/m²", num:1, v:1.3e-7, lo:1e-12, hi:1e2 },
+      { k:"alpha_a", nm:"양극 α (Tafel 기울기)", un:"–", min:0.3, max:1.6, step:0.01, v:1, lo:0.1, hi:2 },
       { k:"r_mem", nm:"막 면저항", un:"Ω·m²", num:1, v:3.2e-6, lo:0, hi:1e-3 },
+      { k:"gap_mm", nm:"전해질 갭 (모델 관례, r_mem과 짝)", un:"mm", min:0.1, max:3, step:0.05, v:2, lo:0.05, hi:10 },
       { k:"t_mem_um", nm:"막 두께", un:"µm", min:10, max:200, step:5, v:50, lo:1, hi:1000 },
       { k:"t_ptl_um", nm:"PTL 두께", un:"µm", min:50, max:600, step:10, v:200, lo:5, hi:3000 },
       { k:"eps_ptl", nm:"PTL 공극률", un:"–", min:0.3, max:0.9, step:0.01, v:0.7, lo:0.05, hi:0.95 },
@@ -54,6 +56,7 @@
       { k:"w_ch_mm", nm:"채널 폭", un:"mm", min:0.2, max:5, step:0.1, v:1, lo:0.05, hi:20 },
       { k:"d_ch_mm", nm:"채널 깊이 (기포 크기 상한)", un:"mm", min:0.2, max:5, step:0.1, v:1, lo:0.05, hi:20 },
       { k:"w_land_mm", nm:"리브 폭", un:"mm", min:0.2, max:5, step:0.1, v:1, lo:0.05, hi:20 },
+      { k:"h_mm", nm:"복셀 해상도 (작을수록 정밀↑ 속도↓)", un:"mm", min:0.4, max:3, step:0.05, v:2, lo:0.4, hi:3 },
     ]],
     // Real boundary conditions, not decoration: the inlet is the prescribed
     // normal velocity on y=0, the outlet is the Dirichlet p=0 face on y=Ly.

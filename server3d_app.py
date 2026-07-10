@@ -23,9 +23,13 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from bubblesim import Params
-from bubblesim3d.params3d import (DESIGNER_DEFAULTS, cell_config_from_designer,
-                                  operating_from_designer)
+from bubblesim import Params, Simulator
+from bubblesim.config import ElectrodeParams
+from bubblesim.kernel.meshlayer import mesh_factors
+from bubblesim.solvers.channel import ChannelSolver
+from bubblesim3d.params3d import (DESIGNER_DEFAULTS, MESH_CATALOG,
+                                  cell_config_from_designer, mesh_spec,
+                                  operating_from_designer, sweep_operating)
 from bubblesim3d.cell3d import CellSim3D
 
 ROOT = Path(__file__).resolve().parent
@@ -53,7 +57,7 @@ class LiveSim3D:
     DT = 3.0e-3              # sim step [s] (semi-Lagrangian is unconditionally stable)
     BLOCK = 0.012            # wall-clock chunk per loop [s]: small -> lock freed
                              # often (snapshots stay fresh) + frequent frames
-    PROJ_ITERS = 200      # CAP; CellSim3D.PROJ_TOL stops the solve early          # pressure sweeps/step (warm-started -> plenty live)
+    PROJ_ITERS = 80       # CAP; CellSim3D.PROJ_TOL stops the solve early (~52 avg)
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -77,6 +81,7 @@ class LiveSim3D:
         d = self.designer
         self.params.cathode.j0_ref = max(1e-9, float(d.get("j0_cathode", 130.0)))
         self.params.anode.j0_ref = max(1e-12, float(d.get("j0_anode", 1.3e-7)))
+        self.params.anode.alpha_a = min(2.0, max(0.1, float(d.get("alpha_a", 1.0))))
         self.params.r_membrane_area = max(0.0, float(d.get("r_mem", 3.2e-6)))
 
     def _build(self):
@@ -93,7 +98,8 @@ class LiveSim3D:
                  "w_land_mm", "t_ptl_um", "eps_ptl", "t_mem_um",
                  # ports + the user-drawn plate: all rebuild the voxel domain
                  "in_z", "in_w", "out_z", "out_w", "mask",
-                 "in_face", "out_face"}
+                 "in_face", "out_face",
+                 "h_mm"}                    # voxel size: resolution rebuild
 
     def update(self, data: dict):
         with self.lock:
@@ -162,6 +168,94 @@ class LiveSim3D:
                 "vslice": self.sim.velocity_slice(0.5),
             })
             return snap
+
+
+# ---------------------------------------------------------------- j-V sweep
+# The experiment tab's polarization curves: the 1-D channel bottleneck model
+# (bubblesim.solvers.channel) run point-by-point in CP mode with the designer's
+# calibrated kinetics. Stateless w.r.t. the live 3-D sim; cached by settings.
+SWEEP_J = [10, 20, 50, 100, 200, 300, 400, 500, 625, 750, 875,
+           1000, 1250, 1500, 2000, 2250]                 # mA/cm^2
+_sweep_cache = {}
+
+_SWEEP_KEYS = ("W_cm", "H_cm", "ff", "n_ch", "d_ch_mm", "u_flow", "electrolyte",
+               "c_mol", "T", "Pbar", "theta", "j0_cathode", "j0_anode",
+               "alpha_a", "r_mem", "gap_mm", "void_frac",
+               "mesh_id", "mesh_cover", "mesh_pos")
+
+
+def _sweep_params(d: dict) -> Params:
+    return Params(
+        anode=ElectrodeParams("OER", j0_ref=max(1e-12, float(d.get("j0_anode", 1.3e-7))),
+                              alpha_a=min(2.0, max(0.1, float(d.get("alpha_a", 1.0)))),
+                              Ea_j0=50.0e3),
+        cathode=ElectrodeParams("HER", j0_ref=max(1e-9, float(d.get("j0_cathode", 130.0))),
+                                Ea_j0=30.0e3),
+        r_membrane_area=max(0.0, float(d.get("r_mem", 3.2e-6))))
+
+
+def _sweep_one(d: dict, with_mesh: bool):
+    """One polarization curve (channel model). with_mesh=False strips the mesh."""
+    d = dict(d)
+    if not with_mesh:
+        d["mesh_id"] = ""
+    solver = ChannelSolver()
+    params = _sweep_params(d)
+    out = {"V": [], "theta_out": [], "eps_out": []}
+    st = None
+    for j in SWEEP_J:
+        op = sweep_operating(d, j)
+        sim = Simulator(op=op, params=params)
+        st = solver.solve(op, sim.props(), sim.surfaces)
+        out["V"].append(round(float(st.V), 4))
+        out["theta_out"].append(round(st.fields["theta_out"], 4))
+        out["eps_out"].append(round(st.fields["eps_out"], 4))
+    ov = st.overpotentials                                # split at the last (max) j
+    out["split_jmax"] = {k: round(float(v), 4) for k, v in ov.items()
+                         if isinstance(v, (int, float))}
+    out["prof_jmax"] = st.fields.get("path_prof")
+    out["mesh_warn"] = st.fields.get("mesh_warn", "")
+    out["mesh_on"] = bool(st.fields.get("mesh_on", False))
+    return out
+
+
+def sweep_polarization(designer: dict, overrides: dict) -> dict:
+    d = {k: designer.get(k, DESIGNER_DEFAULTS.get(k)) for k in _SWEEP_KEYS}
+    for k, v in (overrides or {}).items():
+        if k in _SWEEP_KEYS:
+            d[k] = v
+    key = json.dumps(d, sort_keys=True)
+    if key in _sweep_cache:
+        return _sweep_cache[key]
+    res = {"j": SWEEP_J, "pristine": _sweep_one(d, False)}
+    ms = mesh_spec(str(d.get("mesh_id", "")))
+    if ms is not None:
+        res["mesh"] = _sweep_one(d, True)
+        res["mesh_info"] = dict(ms)
+        res["mesh_info"].update(mesh_factors(
+            ms["hole_mm"], ms["open"], ms["t_mm"],
+            max(0.05, float(d.get("d_ch_mm", 1.0)))))
+    else:
+        res["mesh"] = None
+        res["mesh_info"] = None
+    res["settings"] = d
+    if len(_sweep_cache) > 40:                            # tiny LRU-ish reset
+        _sweep_cache.clear()
+    _sweep_cache[key] = res
+    return res
+
+
+def mesh_catalog_status(designer: dict) -> list:
+    """Catalog + mountability at the CURRENT channel depth (fits badges)."""
+    d_ch = max(0.05, float(designer.get("d_ch_mm", DESIGNER_DEFAULTS["d_ch_mm"])))
+    out = []
+    for ms in MESH_CATALOG:
+        f = mesh_factors(ms["hole_mm"], ms["open"], ms["t_mm"], d_ch)
+        e = dict(ms)
+        e.update({"fits": f["fits"], "warn": f["warn"], "wick": round(f["wick"], 3),
+                  "u_boost": round(f["u_boost"], 2)})
+        out.append(e)
+    return out
 
 
 def list_runs() -> list:
@@ -275,6 +369,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(LIVE.snapshot(faces=q.get("faces") == "1"))
         if p == "/api3d/runs":
             return self._json({"runs": list_runs()})
+        if p == "/api3d/meshes":
+            with LIVE.lock:
+                dsn = dict(LIVE.designer)
+            return self._json({"catalog": mesh_catalog_status(dsn)})
         if p == "/api3d/manifest":
             return self._run_json(self.path, "manifest.json")
         if p == "/api3d/scaffold":
@@ -332,6 +430,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api3d/op":
             LIVE.update(data)
             return self._json({"ok": 1})
+        if self.path == "/api3d/sweep":
+            with LIVE.lock:
+                dsn = dict(LIVE.designer)
+            try:
+                return self._json(sweep_polarization(dsn, data))
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
         if self.path == "/api3d/reset":
             LIVE.reset()
             return self._json({"ok": 1})

@@ -33,12 +33,33 @@ def _land_bands_y(cfg: Cell3DConfig, ny):
     return centres, half
 
 
+def _overlap(n_out, n_in):
+    """(n_out, n_in) fractional-overlap matrix; each row sums to 1."""
+    edges = np.linspace(0.0, float(n_in), n_out + 1)
+    W = np.zeros((n_out, n_in))
+    for o in range(n_out):
+        lo, hi = edges[o], edges[o + 1]
+        for i in range(int(np.floor(lo)), min(int(np.ceil(hi)), n_in)):
+            W[o, i] = max(0.0, min(hi, i + 1.0) - max(lo, float(i)))
+        tot = W[o].sum()
+        if tot > 0:
+            W[o] /= tot
+    return W
+
+
 def _resample_mask(mask, ny, nz):
-    """Nearest-neighbour resample a (M,N) bool mask onto the (ny,nz) face."""
+    """AREA-weighted resample of a (M,N) bool mask onto the (ny,nz) face.
+
+    Nearest-neighbour (the old rule) simply SKIPS input rows when downsampling:
+    32 drawn rows onto a 25-cell grid never sample 7 of them, so a one-cell rib
+    drawn on 22% of the rows vanished from the physics entirely — you drew a rib
+    and nothing happened. Here each output cell takes the fraction of its
+    footprint that is land and becomes land above 50%, so a drawn rib always
+    survives and the land fraction is preserved.
+    """
     my, mz = mask.shape
-    jj = np.clip((np.arange(ny) + 0.5) / ny * my, 0, my - 1e-9).astype(int)
-    kk = np.clip((np.arange(nz) + 0.5) / nz * mz, 0, mz - 1e-9).astype(int)
-    return mask[jj[:, None], kk[None, :]]
+    frac = _overlap(ny, my) @ mask.astype(float) @ _overlap(nz, mz).T
+    return frac >= 0.5
 
 
 def _port(nz, centre, width, open_row):

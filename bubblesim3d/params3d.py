@@ -48,7 +48,51 @@ DESIGNER_DEFAULTS = {
     "u_flow": 0.35, "tilt": 0.0, "B": 0.0, "E": 0.0,
     "theta": 60.0, "T": 60.0, "Pbar": 1.0,
     "drag_K": 60.0,              # bubble->flow blocking strength [1/s per void]
+    # --- electrode kinetics shape + electrolyte-path convention -------------
+    "alpha_a": 1.0,              # OER anodic transfer coefficient (Tafel slope lever)
+    "gap_mm": 2.0,               # electrode-to-membrane electrolyte gap CONVENTION [mm]
+                                 # (calibrated r_mem pairs with a gap value; keep them together)
+    "h_mm": 2.0,                 # live-grid voxel size [mm] (smaller = finer channels, slower)
+    # --- PP-mesh bubble-management interlayer (experiment tab; sweep only) --
+    "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)
+    "mesh_cover": 1.0,           # fraction of the flow path covered (1 = full)
+    "mesh_pos": "outlet",        # partial-cover anchor: inlet | middle | outlet
+    "void_frac": 0.82,           # void_ohmic_frac for the polarization sweep
+                                 # (fraction of the electrolyte path the channel
+                                 # void obstructs; calibrated on the pristine cell)
 }
+
+# Polypropylene mesh catalog (industrial PP porous mesh line; hole = mean of
+# the two opening dims, inches -> mm). Geometry only -- performance is
+# PREDICTED from it, never fitted (blind protocol).
+MESH_CATALOG = [
+    {"id": "pp_015x015", "name": '0.015"×0.015" — 구멍 0.46 mm · 24% · t 0.76 mm',
+     "hole_mm": 0.457, "open": 0.24, "t_mm": 0.762},
+    {"id": "pp_025x030", "name": '0.025"×0.030" — 구멍 0.70 mm · 35% · t 0.36 mm',
+     "hole_mm": 0.699, "open": 0.35, "t_mm": 0.356},
+    {"id": "pp_030x037", "name": '0.030"×0.037" — 구멍 0.85 mm · 20% · t 0.91 mm',
+     "hole_mm": 0.851, "open": 0.20, "t_mm": 0.914},
+    {"id": "pp_040x053", "name": '0.040"×0.053" — 구멍 1.18 mm · 50% · t 0.48 mm (실측에 사용)',
+     "hole_mm": 1.181, "open": 0.50, "t_mm": 0.483},
+    {"id": "pp_085x115", "name": '0.085"×0.115" — 구멍 2.54 mm · 35% · t 1.75 mm',
+     "hole_mm": 2.540, "open": 0.35, "t_mm": 1.753},
+    {"id": "pp_094x094", "name": '0.094"×0.094" — 구멍 2.39 mm · 45% · t 2.03 mm',
+     "hole_mm": 2.388, "open": 0.45, "t_mm": 2.032},
+    {"id": "pp_120x175", "name": '0.120"×0.175" — 구멍 3.75 mm · 60% · t 0.89 mm',
+     "hole_mm": 3.747, "open": 0.60, "t_mm": 0.889},
+    {"id": "pp_145x175", "name": '0.145"×0.175" — 구멍 4.06 mm · 70% · t 0.89 mm',
+     "hole_mm": 4.064, "open": 0.70, "t_mm": 0.889},
+    {"id": "pp_3x3", "name": '3×3 strand/inch — 구멍 7.06 mm · 65% · t 2.29 mm',
+     "hole_mm": 7.061, "open": 0.65, "t_mm": 2.286},
+]
+
+
+def mesh_spec(mesh_id):
+    for mitem in MESH_CATALOG:
+        if mitem["id"] == mesh_id:
+            return mitem
+    return None
+
 
 _ELYTES = {"KOH", "H2SO4", "PB"}
 
@@ -82,7 +126,37 @@ def operating_from_designer(d: dict) -> Operating:
         B_field=max(0.0, _num(d, "B")),
         E_ext=max(0.0, _num(d, "E")) * 1.0e6,           # MV/m -> V/m
         A_cm2=max(1e-3, _num(d, "W_cm") * _num(d, "H_cm")),
+        gap_mm=max(0.05, _num(d, "gap_mm")),
     )
+
+
+def sweep_operating(d: dict, j_macm2: float) -> Operating:
+    """Designer dict -> a CP channel-model Operating for the polarization
+    sweep (the experiment tab's j-V curves). Maps the 3-D designer's flow
+    field onto the 1-D channel solver and attaches the mesh interlayer."""
+    op = operating_from_designer(d)
+    op.mode = "CP"
+    op.j_set = max(1.0, float(j_macm2)) * 10.0          # mA/cm^2 -> A/m^2
+    op.model = "channel"
+    ff = str(d.get("ff", "serp"))
+    op.channel_type = "serpentine" if ff in ("serp", "custom") else "parallel"
+    op.n_pass = max(1, _num(d, "n_ch", int))
+    op.cell_width_cm = max(0.2, _num(d, "W_cm"))
+    op.face_height_cm = max(0.2, _num(d, "H_cm"))
+    op.chan_depth_mm = max(0.05, _num(d, "d_ch_mm"))
+    op.u_flow = max(0.005, _num(d, "u_flow"))
+    op.high_fidelity = True          # Gilliam/Pitzer properties: the calibrated
+                                     # (j0, alpha_a, r_mem, void_frac) set pairs with these
+    op.channel_void_ohmic = True
+    op.void_ohmic_frac = min(1.0, max(0.0, _num(d, "void_frac")))
+    ms = mesh_spec(str(d.get("mesh_id", "")))
+    if ms is not None:
+        op.mesh_hole_mm = ms["hole_mm"]
+        op.mesh_open = ms["open"]
+        op.mesh_t_mm = ms["t_mm"]
+        op.mesh_cover = min(1.0, max(0.0, _num(d, "mesh_cover")))
+        op.mesh_pos = str(d.get("mesh_pos", "outlet"))
+    return op
 
 
 @dataclass
@@ -168,28 +242,48 @@ def cell_config_from_designer(d: dict) -> Cell3DConfig:
         in_z=_num(d, "in_z"), in_w=_num(d, "in_w"),
         out_z=_num(d, "out_z"), out_w=_num(d, "out_w"),
         land_mask=decode_mask(d.get("mask", "")),
+        # voxel size is a designer lever now (fine channels need h < w_ch);
+        # clamped so the grid stays live-interactive
+        h=min(3.0, max(0.4, _num(d, "h_mm"))) * 1e-3,
     )
 
 
 def decode_mask(txt):
-    """'0'/'1' string -> (M, M) bool array, or None. Row-major from y=0 up."""
+    """'ny,nz:0101...' -> (ny, nz) bool array, or None. Row-major from y=0 up.
+
+    The editor draws at the PHYSICS grid resolution, which is rectangular and
+    changes with the electrode size, so the mask has to carry its own shape.
+    A bare square bit-string (the old format) is still accepted.
+    """
     if not txt:
         return None
-    t = "".join(ch for ch in str(txt) if ch in "01")
-    m = int(round(len(t) ** 0.5))
-    if m < 2 or m * m != len(t):
-        return None
     import numpy as _np
-    return _np.frombuffer(t.encode(), dtype="S1").reshape(m, m) == b"1"
+    t = str(txt)
+    if ":" in t:
+        hdr, bits = t.split(":", 1)
+        try:
+            ny, nz = (int(v) for v in hdr.split(","))
+        except ValueError:
+            return None
+        bits = "".join(ch for ch in bits if ch in "01")
+        if ny < 2 or nz < 2 or len(bits) != ny * nz:
+            return None
+        return _np.frombuffer(bits.encode(), dtype="S1").reshape(ny, nz) == b"1"
+    bits = "".join(ch for ch in t if ch in "01")
+    m = int(round(len(bits) ** 0.5))
+    if m < 2 or m * m != len(bits):
+        return None
+    return _np.frombuffer(bits.encode(), dtype="S1").reshape(m, m) == b"1"
 
 
 def encode_mask(arr):
-    """(M, M) bool array -> '0'/'1' string (inverse of decode_mask)."""
+    """(ny, nz) bool array -> 'ny,nz:0101...' (inverse of decode_mask)."""
     if arr is None:
         return ""
     import numpy as _np
     a = _np.asarray(arr, dtype=bool)
-    return "".join("1" if v else "0" for v in a.ravel())
+    ny, nz = a.shape
+    return "%d,%d:" % (ny, nz) + "".join("1" if v else "0" for v in a.ravel())
 
 
 @dataclass

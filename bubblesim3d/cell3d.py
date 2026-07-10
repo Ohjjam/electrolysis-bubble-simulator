@@ -159,12 +159,12 @@ class CellSim3D:
     # ----------------------------------------------------------------- step
     # Relative divergence (div*h/v_max) the pressure solve must reach before it
     # may stop early; `proj_iters` is a CAP, not a fixed budget. Measured on the
-    # default serpentine cell: a flat 12 sweeps left 1.3% residual, this leaves
-    # 0.17% at ~36 sweeps on average (1.4x the step cost). Easy steps cost less
-    # than the old fixed budget; hard steps get the sweeps they need.
+    # default serpentine cell: a flat 12 sweeps left 1.27% residual at 0.24x
+    # realtime; cap 80 + this tol leaves 0.21% at ~52 sweeps and 0.16x realtime.
+    # Easy steps cost less than the old fixed budget; hard steps get what they need.
     PROJ_TOL = 2.0e-3
 
-    def step(self, dt, proj_iters=200, tol=None):
+    def step(self, dt, proj_iters=80, tol=None):
         # refresh the scalar electrochem occasionally (it varies slowly)
         if self._n % self._every == 0:
             self._resolve()

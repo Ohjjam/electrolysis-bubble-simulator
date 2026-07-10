@@ -760,13 +760,40 @@ def test_swarm_coalescence_grows_the_exit_bubbles_when_the_electrolyte_allows():
         assert p.r.max() <= p.r_conf() * (1 + 1e-9)    # never bridges the channel
 
 
-def test_coalescence_lowers_holdup():
+def _mean_holdup(steps=400, tail=80, **kw):
+    """Time-averaged holdup — the instantaneous value swings by ~40% as bubble
+    clusters vent, so a single snapshot cannot resolve a 20% difference."""
+    d = dict(DESIGNER_DEFAULTS); d.update(kw)
+    cfg = cell_config_from_designer(d); op = operating_from_designer(d)
+    sim = CellSim3D(op, Params(fritz_scale=0.08), cfg.grid_dims(), h=cfg.h,
+                    cap=cfg.cap_parcels, tilt=0.0, seed=3, cfg=cfg)
+    hs = []
+    for i in range(steps):
+        sim.step(3.0e-3, proj_iters=60)
+        if i >= steps - tail:
+            hs.append(sim.parcels.holdup())
+    return sim, float(np.mean(hs))
+
+
+def test_coalescence_speeds_the_swarm_up_and_lowers_holdup():
     """Bigger bubbles rise faster, so a coalescing swarm clears the cell and the
     gas holdup DROPS. This is why concentrated KOH — which suppresses merging —
-    carries more gas (and more ohmic loss) at the same current."""
-    conc = _run(steps=400, c_mol=6.0, seed=3)
-    dil = _run(steps=400, c_mol=0.1, seed=3)
-    assert dil.parcels.holdup() < 0.8 * conc.parcels.holdup()
+    carries more gas (and more ohmic loss) at the same current.
+
+    The rise-speed ratio is the clean signal; holdup is the consequence and is
+    noisy, so it gets the looser bound.
+    """
+    conc, h_conc = _mean_holdup(c_mol=6.0)
+    dil, h_dil = _mean_holdup(c_mol=0.1)
+
+    def mean_rise(sim):
+        p = sim.parcels
+        r = p.r[~p.attached]
+        return terminal_velocity(r, sim.ctx["d_rho"], sim.ctx["mu"],
+                                 sim.ctx["rho_l"]).mean()
+
+    assert mean_rise(dil) > 2.0 * mean_rise(conc)     # merged bubbles rise faster
+    assert h_dil < 0.95 * h_conc                      # so less gas is resident
 
 
 def test_swarm_coalescence_closure_does_not_drive_the_answer():

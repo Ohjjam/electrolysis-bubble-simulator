@@ -80,11 +80,13 @@ from bubblesim.kernel.sources import faradaic_gas_rate
 from bubblesim.kernel.bubbles import forces
 
 
-def terminal_velocity(r, d_rho, mu, rho_l, iters=40):
+def terminal_velocity(r, d_rho, mu, rho_l, iters=20):
     """Vectorized bubble rise speed [m/s] (Schiller-Naumann drag balance).
 
     Identical scheme to population.Surface._terminal_velocity over an array of
     radii: Stokes seed, then damped fixed-point on Cd = 24/Re (1 + 0.15 Re^0.687).
+    20 sweeps land within 3e-4 of the kernel over 1 um - 3 mm (40 gave 1e-4 for
+    twice the cost, and this is called twice per bubble step).
     """
     r = np.asarray(r, dtype=np.float64)
     if r.size == 0:

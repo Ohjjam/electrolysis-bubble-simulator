@@ -72,6 +72,7 @@
   <div class="seg" id="modeSeg">
     <button data-m="live" class="on">셀 3D (라이브)</button>
     <button data-m="play">포어 3D (재생)</button>
+    <button data-m="exp">🧪 실험</button>
   </div>
 
   <div id="liveCtls"><!-- controls injected --></div>
@@ -130,6 +131,54 @@
       </div>
       <div class="row"><button class="btn" id="bPlay">▶ 재생</button></div>
       <div id="frScal" class="note">–</div>
+    </div>
+  </div>
+
+  <div id="expCtls" style="display:none">
+    <div class="box" style="border-color:#4a5f2c"><h3>실험: NF + PP mesh (AEM 수전해)</h3>
+      <div class="note" style="border:none;margin:0;padding:0;font-size:11px;line-height:1.55">
+        <b>실측 셀</b>: NiFe/NF 양극 600µm · Pt/C 음극(dry) · PiperION ·
+        1M KOH 65°C · 13ch 서펜타인 2.2×2.2cm (채널 0.88/깊이 0.9mm) · 4mL/min.<br>
+        <b>질문</b>: 소수성 PP mesh를 양극 위에 올리면 기포 배출이 좋아져 고전류 전압이
+        내려가는가? 어떤 mesh를, 어디에 덮는 게 최적인가?<br>
+        <b>방법</b>: pristine 실측 곡선으로만 캘리브레이션(점선 대비 ●) →
+        mesh 효과는 기하(구멍·개구율·두께)에서 <b>순수 예측</b>(실측 mesh 데이터 미사용).</div>
+    </div>
+    <div class="box"><h3>① 셀 프리셋</h3>
+      <div class="row"><button class="btn" id="exPreset" style="border-color:var(--gold);color:var(--gold)">⚙ 실측 셀 프리셋 적용 (격자 재생성)</button></div>
+      <div id="exPresetStat" class="note">13채널·0.88mm를 해상하려 복셀 0.55mm로 재구축 — 몇 초 걸림.</div>
+    </div>
+    <div class="box"><h3>② PP mesh 선택 · 배치</h3>
+      <div class="ctl"><div class="lab"><span class="nm">mesh (두께&gt;채널깊이 = 장착불가)</span></div>
+        <select id="exMesh" style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
+          <option value="">— mesh 없음 (pristine) —</option>
+        </select></div>
+      <div class="ctl">
+        <div class="lab"><span class="nm">덮는 비율 (유로 경로 기준)</span><span class="un" id="exCovLbl">100%</span></div>
+        <input id="exCover" type="range" min="0" max="100" step="5" value="100" style="width:100%;accent-color:var(--accent)">
+      </div>
+      <div class="ctl"><div class="lab"><span class="nm">부분 커버 위치</span></div>
+        <div class="seg mini" id="exPos">
+          <button data-v="inlet">입구쪽</button>
+          <button data-v="middle">중간</button>
+          <button data-v="outlet" class="on">출구쪽</button>
+        </div></div>
+      <div class="row"><button class="btn" id="exGo" style="border-color:var(--grn);color:var(--grn)">▶ 분극곡선 예측 계산</button></div>
+      <div id="exWarn" class="note" style="display:none"></div>
+    </div>
+    <div class="box"><h3>③ 분극곡선 — 실측(캘리브레이션) vs 예측</h3>
+      <canvas id="exCurve" width="272" height="235" style="width:100%;border-radius:8px;background:var(--surf)"></canvas>
+      <div class="leg" style="margin-top:5px">
+        <span><span class="dot" style="background:#c9c9d4"></span>실측 pristine</span>
+        <span><span class="dot" style="background:#5aa7e8"></span>모델 pristine</span>
+        <span><span class="dot" style="background:#39b26a"></span>mesh 예측</span>
+      </div>
+      <div id="exRead" class="note">곡선을 계산하면 ΔV 요약이 표시됩니다.</div>
+    </div>
+    <div class="box"><h3>④ 경로를 따라 — 기포 막힘 θ(s)</h3>
+      <canvas id="exProf" width="272" height="86" style="width:100%;border-radius:8px;background:var(--surf)"></canvas>
+      <div class="note" style="margin-top:4px">가로 = 유로 입구→출구. 회색 = pristine, 초록 = mesh
+        (음영 구간 = mesh 덮인 곳). 최대전류에서의 프로파일.</div>
     </div>
   </div>
 
@@ -829,13 +878,18 @@ document.getElementById("pbMs").addEventListener("input", e => {
 });
 
 // ============================ modes ========================================
-let mode = "live";
+// `mode` drives rendering/polling (live | play). The EXPERIMENT tab is a
+// panel over the LIVE mode: the 3-D cell keeps running behind its curves.
+let mode = "live", panelMode = "live";
 const modeSeg = document.getElementById("modeSeg");
 modeSeg.querySelectorAll("button").forEach(b => b.onclick = () => {
   modeSeg.querySelectorAll("button").forEach(x => x.classList.remove("on"));
-  b.classList.add("on"); mode = b.dataset.m;
-  document.getElementById("liveCtls").style.display = mode === "live" ? "" : "none";
-  document.getElementById("playCtls").style.display = mode === "play" ? "" : "none";
+  b.classList.add("on"); panelMode = b.dataset.m;
+  mode = panelMode === "play" ? "play" : "live";
+  document.getElementById("liveCtls").style.display = panelMode === "live" ? "" : "none";
+  document.getElementById("playCtls").style.display = panelMode === "play" ? "" : "none";
+  document.getElementById("expCtls").style.display = panelMode === "exp" ? "" : "none";
+  document.getElementById("plateEd").style.display = panelMode === "live" ? "" : "none";
   const live = mode === "live";
   cellGroup.visible = live; inst.visible = live; playGroup.visible = !live;
   if (!live) loadRuns();
@@ -843,9 +897,175 @@ modeSeg.querySelectorAll("button").forEach(b => b.onclick = () => {
     playing = false;
     document.getElementById("scrubBox").style.display = "none";
   }
+  if (panelMode === "exp") expEnter();
   setView(viewMode);                              // re-frame the active group
   drawSlice(); updateClip();
 });
+
+// ==================== experiment tab (NF + PP mesh) ========================
+// Blind-prediction workflow: the model is calibrated on the measured PRISTINE
+// curve only (points drawn on the chart); mesh curves are computed from mesh
+// GEOMETRY via kernel.meshlayer — measured mesh data never enters the model.
+const EXP_PRESET = {
+  W_cm: 2.2, H_cm: 2.2, ff: "serp", n_ch: 13, w_ch_mm: 0.88, d_ch_mm: 0.9,
+  w_land_mm: 0.88, t_ptl_um: 600, eps_ptl: 0.95, electrolyte: "KOH", c_mol: 1.0,
+  T: 65, u_flow: 0.08, j0_anode: 7.94e-4, j0_cathode: 3000, alpha_a: 1.14,
+  r_mem: 9.6e-6, gap_mm: 0.5, void_frac: 0.82, h_mm: 0.55, mode: "CP", j: 0.5,
+};
+// measured pristine polarization (the calibration reference), j mA/cm^2 -> V
+const EXP_MEAS = [[10,1.48294],[20,1.4937],[50,1.5184],[100,1.55191],[200,1.60495],
+  [300,1.65078],[400,1.69504],[500,1.74178],[625,1.80051],[750,1.86602],
+  [875,1.94376],[1000,2.03323],[1250,2.20449],[1500,2.37841],[2000,2.6616],
+  [2250,2.78376]];
+let expCatalogLoaded = false, expLast = null;
+
+async function expEnter() {
+  if (!expCatalogLoaded) await expLoadCatalog();
+}
+
+async function expLoadCatalog() {
+  try {
+    const r = await (await fetch("/api3d/meshes")).json();
+    const sel = document.getElementById("exMesh");
+    sel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
+    for (const m of r.catalog || []) {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = (m.fits ? "" : "🚫 ") + m.name + (m.fits ? "" : " — 장착불가");
+      o.disabled = !m.fits;
+      if (m.id === "pp_040x053") o.selected = true;
+      sel.appendChild(o);
+    }
+    expCatalogLoaded = true;
+  } catch {}
+}
+
+document.getElementById("exCover").addEventListener("input", e => {
+  document.getElementById("exCovLbl").textContent = e.target.value + "%";
+});
+document.getElementById("exPos").querySelectorAll("button").forEach(b => b.onclick = () => {
+  document.getElementById("exPos").querySelectorAll("button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+});
+
+document.getElementById("exPreset").onclick = () => {
+  const stat = document.getElementById("exPresetStat");
+  stat.textContent = "프리셋 전송 중… (격자 재구축, 몇 초)";
+  for (const k in EXP_PRESET) send(k, EXP_PRESET[k]);
+  setTimeout(() => {
+    stat.textContent =
+      "적용됨: 2.2×2.2cm · 13ch 서펜타인 0.88/0.9mm · 1M KOH 65°C · " +
+      "캘리브레이션 키네틱스 (pristine 저전류 RMSE 7mV). 복셀 0.55mm.";
+    expLoadCatalog();          // fits badges depend on the (new) channel depth
+  }, 900);
+};
+
+document.getElementById("exGo").onclick = expSweep;
+async function expSweep() {
+  const go = document.getElementById("exGo");
+  go.disabled = true; go.textContent = "계산 중…";
+  const pos = document.getElementById("exPos").querySelector(".on").dataset.v;
+  const body = {
+    mesh_id: document.getElementById("exMesh").value,
+    mesh_cover: (+document.getElementById("exCover").value) / 100,
+    mesh_pos: pos,
+  };
+  // keep the shared designer in sync so app2d / state agree with the sweep
+  for (const k in body) send(k, body[k]);
+  try {
+    const res = await (await fetch("/api3d/sweep", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+    if (res.error) throw new Error(res.error);
+    expLast = res;
+    expDrawCurves(res); expDrawProfile(res); expReadout(res);
+    const w = document.getElementById("exWarn");
+    const warn = (res.mesh_info && res.mesh_info.warn) || (res.mesh && res.mesh.mesh_warn) || "";
+    w.style.display = warn ? "" : "none";
+    if (warn) w.textContent = "⚠ " + warn;
+  } catch (e) {
+    document.getElementById("exRead").textContent = "계산 실패: " + e.message;
+  }
+  go.disabled = false; go.textContent = "▶ 분극곡선 예측 계산";
+}
+
+function expAxes(ctx, W, H, pad, jmax, vlo, vhi) {
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = "rgba(128,138,160,.35)"; ctx.lineWidth = 1;
+  ctx.font = "9px system-ui"; ctx.fillStyle = "rgba(128,138,160,.9)";
+  for (let v = Math.ceil(vlo * 2) / 2; v <= vhi; v += 0.5) {
+    const y = H - pad - (v - vlo) / (vhi - vlo) * (H - 2 * pad);
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - 6, y); ctx.stroke();
+    ctx.fillText(v.toFixed(1), 2, y + 3);
+  }
+  for (let j = 0; j <= jmax; j += 500) {
+    const x = pad + j / jmax * (W - pad - 6);
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, H - pad); ctx.stroke();
+    if (j) ctx.fillText(j >= 1000 ? (j / 1000) + "k" : j, x - 8, H - 3);
+  }
+  ctx.fillText("V", 2, 10); ctx.fillText("mA/cm²", W - 44, H - 3);
+}
+
+function expDrawCurves(res) {
+  const cv = document.getElementById("exCurve"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, pad = 22, jmax = 2400, vlo = 1.3, vhi = 3.0;
+  const X = j => pad + j / jmax * (W - pad - 6);
+  const Y = v => H - pad - (v - vlo) / (vhi - vlo) * (H - 2 * pad);
+  expAxes(ctx, W, H, pad, jmax, vlo, vhi);
+  const line = (js, vs, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.beginPath();
+    js.forEach((j, i) => i ? ctx.lineTo(X(j), Y(vs[i])) : ctx.moveTo(X(j), Y(vs[i])));
+    ctx.stroke();
+  };
+  line(res.j, res.pristine.V, "#5aa7e8");
+  if (res.mesh) line(res.j, res.mesh.V, "#39b26a");
+  ctx.fillStyle = "#c9c9d4";
+  for (const [j, v] of EXP_MEAS) { ctx.fillRect(X(j) - 2, Y(v) - 2, 4, 4); }
+}
+
+function expDrawProfile(res) {
+  const cv = document.getElementById("exProf"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, pad = 6;
+  ctx.clearRect(0, 0, W, H);
+  const pp = res.pristine.prof_jmax, pm = res.mesh && res.mesh.prof_jmax;
+  if (!pp) return;
+  const X = s => pad + s * (W - 2 * pad);
+  const Y = t => H - 4 - t * (H - 10);
+  if (pm) {                                       // shade the mesh-covered stretch
+    ctx.fillStyle = "rgba(57,178,106,.12)";
+    pm.s.forEach((s, i) => { if (pm.mesh[i]) ctx.fillRect(X(s) - 1.5, 4, 3, H - 8); });
+  }
+  const line = (pr, color) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.beginPath();
+    pr.s.forEach((s, i) => i ? ctx.lineTo(X(s), Y(pr.theta[i])) : ctx.moveTo(X(s), Y(pr.theta[i])));
+    ctx.stroke();
+  };
+  line(pp, "#9aa2b1");
+  if (pm) line(pm, "#39b26a");
+  ctx.fillStyle = "rgba(128,138,160,.9)"; ctx.font = "9px system-ui";
+  ctx.fillText("입구", pad, H - 1); ctx.fillText("출구", W - 26, H - 1);
+  ctx.fillText("θ 0–0.92", pad, 9);
+}
+
+function expReadout(res) {
+  const el = document.getElementById("exRead");
+  const at = jt => res.j.indexOf(jt);
+  const rows = [1000, 1500, 2250].map(jt => {
+    const i = at(jt);
+    const vp = res.pristine.V[i];
+    const dv = res.mesh ? (vp - res.mesh.V[i]) * 1000 : null;
+    return `${jt}: ${vp.toFixed(3)}V` + (dv !== null
+      ? ` → <b style="color:#39b26a">−${dv.toFixed(0)}mV</b>` : "");
+  });
+  const eo = res.pristine.eps_out[res.pristine.eps_out.length - 1];
+  const gl = eo < 1 ? (eo / (1 - eo)).toFixed(1) : "∞";
+  let html = `<b>예측 ΔV (mesh − pristine)</b><br>${rows.join(" · ")}<br>` +
+    `최대전류 기액비 ≈ ${gl}:1 (출구 ε ${eo.toFixed(2)})`;
+  if (res.mesh_info) {
+    html += `<br>mesh: 흡착지수 ${res.mesh_info.wick} · 국소유속 ×${(+res.mesh_info.u_boost).toFixed(1)}`;
+  }
+  html += `<br><span style="color:var(--gold)">블라인드 예측 — 실측 mesh 곡선과 직접 비교해보세요.</span>`;
+  el.innerHTML = html;
+}
 
 const runsById = {};
 async function loadRuns() {

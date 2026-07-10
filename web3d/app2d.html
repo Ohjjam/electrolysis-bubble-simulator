@@ -357,7 +357,7 @@ function drawHero() {
     c.fillText("리브(유로 벽) 아래 — 전해질이 없어 반응하지 않는 지점", W/2, pad + ah/2);
   }
 
-  const pm = d.p_merge || 0, conf = d.r_conf_um || 0;
+  const pm = d.p_merge || 0, conf = d.r_conf_um || 0, nmf = d.n_merge_free || 0;
   const capped = rDep > 0 && conf > 0 && rDep >= conf - 0.05;
   document.getElementById("mHeroN").textContent = n;
   document.getElementById("mHeroR").textContent = rmax.toFixed(0);
@@ -368,12 +368,14 @@ function drawHero() {
     `상류 유입 <b style="color:var(--tx)">${nUp}</b>개<br>` +
     `합체 확률 <b style="color:var(--tx)">${pm.toFixed(2)}</b> ` +
     `(${pm < 0.5 ? "진한 전해질 — 억제" : "묽은 전해질 — 활발"}) · ` +
-    `출구 기포 <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> · ` +
+    `출구 기포 <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> ` +
+    `(무리 합체 ${nmf.toLocaleString()}회) · ` +
     `벽 구속 한계 <b style="color:${capped ? "var(--gold)" : "var(--dim)"}">${conf.toFixed(0)} µm</b>` +
     `${capped ? " — 반대편 플레이트가 이탈 크기를 결정" : ""} · ` +
     `기포층 두께 ≈ <b style="color:var(--tx)">${(2*rDep).toFixed(0)} µm</b><br>` +
     `<span style="color:var(--dim)">대표 버블을 실제 사이트 밀도로 되펼친 재구성 — 성장률·이탈크기·상승속도는 모두 시뮬레이션 값. ` +
-    `부력은 전극면과 <b>나란한</b> 방향이라 이탈한 기포는 벽을 따라 미끄러집니다 (양력·난류 분산은 이 모델에 없음).</span>`;
+    `이탈한 기포는 벽을 따라 미끄러집니다: 부력이 전극면과 <b>나란하고</b>, Tomiyama 전단 양력이 ` +
+    `Antal 벽 윤활력을 이겨 기포를 전극에 <b>눌러붙이기</b> 때문(평형 이격거리 ≈ 1.05 r).</span>`;
 }
 
 // =================== PANEL 2: whole cell, gas blocking =======================
