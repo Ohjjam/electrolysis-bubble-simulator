@@ -1,4 +1,12 @@
 __pycache__/
 *.pyc
 outputs/
+results/
+server3d_error.log
 .claude/launch.json
+# local tunnel / server runtime junk (never publish)
+cloudflared.exe
+tunnel.log
+tunnel_url.txt
+tunnel_config.json
+server_error.log

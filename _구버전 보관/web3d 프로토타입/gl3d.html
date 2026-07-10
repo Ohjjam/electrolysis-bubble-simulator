@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D 전기화학 버블 엔진 (실험)</title>
+<style>
+  :root{--bg:#0b0f14;--card:#121821;--line:#1f2937;--tx:#dbe4f0;--dim:#8a93a3;--accent:#4da3ff;--grn:#37d39a;--gold:#ffd166;}
+  *{box-sizing:border-box} html,body{margin:0;height:100%}
+  body{color:var(--tx);font:13px/1.45 "Segoe UI",system-ui,sans-serif;overflow:hidden;
+    background:radial-gradient(130% 100% at 50% 12%, #1a2740 0%, #0e151f 52%, #06090d 100%);}
+  #stage{position:fixed;inset:0;display:block}
+  #panel{position:fixed;top:12px;left:12px;width:262px;background:rgba(16,22,31,.78);
+    border:1px solid var(--line);border-radius:14px;padding:13px 14px;backdrop-filter:blur(9px);
+    box-shadow:0 8px 30px rgba(0,0,0,.4);max-height:calc(100vh - 24px);overflow:auto}
+  h1{font-size:15px;margin:0 0 2px} .sub{color:var(--dim);font-size:11px;margin-bottom:11px}
+  .ctl{margin-bottom:9px}
+  .lab{display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px}
+  .val{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);height:18px}
+  .row{display:flex;gap:6px;margin-top:9px}
+  .btn{flex:1;background:#0e1420;color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:7px 4px;font-size:12px;cursor:pointer}
+  .btn:hover{border-color:var(--accent);background:#16243a}
+  #hud{position:fixed;top:12px;right:12px;background:rgba(16,22,31,.78);border:1px solid var(--line);
+    border-radius:14px;padding:11px 13px;font-variant-numeric:tabular-nums;min-width:152px;backdrop-filter:blur(9px);
+    box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  #hud .k{color:var(--dim);font-size:11px} #hud .v{font-size:14px;font-weight:600;margin-bottom:5px}
+  .leg{display:flex;gap:12px;margin-top:8px;font-size:11px;color:var(--dim)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  .note{color:var(--dim);font-size:10.5px;margin-top:9px;border-top:1px solid var(--line);padding-top:8px}
+  #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);z-index:50}
+</style>
+</head>
+<body>
+<div id="boot">3D 엔진 로딩 중…</div>
+<canvas id="stage"></canvas>
+
+<div id="panel">
+  <h1>3D 버블 엔진 <span style="font-size:10px;color:var(--gold)">실험 · M1(CPU)</span></h1>
+  <div class="sub">진짜 3D 결합 물리 — 유동(NS)+Lagrangian 버블, self-stirring 창발. 드래그=회전, 휠=줌</div>
+
+  <div class="ctl"><div class="lab">전류밀도 j<span class="val"><span id="vJ">0.40</span> A/cm²</span></div>
+    <input id="sJ" type="range" min="0.02" max="2" step="0.01" value="0.4"></div>
+  <div class="ctl"><div class="lab">유속 (전해액)<span class="val"><span id="vU">0.00</span> m/s</span></div>
+    <input id="sU" type="range" min="0" max="0.3" step="0.005" value="0"></div>
+  <div class="ctl"><div class="lab">접촉각 (이탈크기)<span class="val"><span id="vA">60</span>°</span></div>
+    <input id="sA" type="range" min="20" max="150" step="1" value="60"></div>
+  <div class="ctl"><div class="lab">셀 기울기 (중력)<span class="val"><span id="vT">0</span>°</span></div>
+    <input id="sT" type="range" min="0" max="90" step="1" value="0">
+    <div style="font-size:10px;color:var(--dim)">0=수직 · 90=수평(한 전극은 가스 갇힘)</div></div>
+  <div class="ctl"><div class="lab">버블 크기(시각)<span class="val"><span id="vS">3.0</span>×</span></div>
+    <input id="sS" type="range" min="1" max="8" step="0.5" value="3"></div>
+  <div class="ctl"><div class="lab">재생 속도<span class="val"><span id="vSp">1.0</span>×</span></div>
+    <input id="sSp" type="range" min="0.1" max="3" step="0.1" value="1"></div>
+
+  <div class="row">
+    <button class="btn" id="bPause">⏸ 정지</button>
+    <button class="btn" id="bReset">↺ 리셋</button>
+    <button class="btn" id="bCam">⌖ 시점</button>
+  </div>
+  <div class="leg">
+    <span><span class="dot" style="background:#7fdcff"></span>H₂ (음극)</span>
+    <span><span class="dot" style="background:#ffc266"></span>O₂ (양극)</span>
+  </div>
+  <div class="note">M1 = CPU 레퍼런스(24×48×24 격자). 물리 정답지이자 WebGPU(M2) 백엔드의 기준. 전기화학 V–j는 Python 커널과 결합 예정(지금 j는 입력).</div>
+</div>
+
+<div id="hud">
+  <div class="k">버블 수</div><div class="v" id="hN">–</div>
+  <div class="k">θ 음극 / 양극</div><div class="v" id="hTh">–</div>
+  <div class="k">가스 holdup</div><div class="v" id="hHold">–</div>
+  <div class="k">유속 max</div><div class="v" id="hV">–</div>
+  <div class="k">fps</div><div class="v" id="hFps">–</div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { Sim3D } from './sim3d.js';
+
+const sim = new Sim3D();
+sim.setParams({ visScale: 3 });
+window.__sim3d = sim;
+
+const SCALE = 40, FLOOR = 0.006, MAXB = 9000;
+const Lx = sim.Lx * SCALE, Ly = sim.Ly * SCALE, Lz = sim.Lz * SCALE;
+
+// ---------- renderer ----------
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(0x000000, 0);                 // CSS gradient shows through
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;   // reflections
+
+const camera = new THREE.PerspectiveCamera(48, 1, 0.01, 100);
+const CAM0 = new THREE.Vector3(Lx * 1.9, Ly * 0.5, Lz * 2.4);
+camera.position.copy(CAM0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.target.set(0, -Ly * 0.04, 0);
+
+scene.add(new THREE.HemisphereLight(0xcfe2ff, 0x141a22, 0.5));
+const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(1.2, 2.2, 1.6); scene.add(key);
+const rim = new THREE.DirectionalLight(0x88bbff, 0.6); rim.position.set(-1.5, 0.4, -1.2); scene.add(rim);
+
+// ---------- cell (centred on origin) ----------
+const world = new THREE.Group();
+world.position.set(-Lx / 2, -Ly / 2, -Lz / 2);
+scene.add(world);
+
+// faint glass side panels (z faces) + crisp edges = a tank, not a wireframe
+const glass = new THREE.MeshPhysicalMaterial({ color: 0x9fc4ff, transparent: true, opacity: 0.05,
+  roughness: 0.15, metalness: 0, side: THREE.DoubleSide });
+for (const z of [0, Lz]) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(Lx, Ly), glass);
+  m.position.set(Lx / 2, Ly / 2, z); world.add(m);
+}
+const edges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(Lx, Ly, Lz)),
+  new THREE.LineBasicMaterial({ color: 0x4a5d7a, transparent: true, opacity: 0.55 }));
+edges.position.set(Lx / 2, Ly / 2, Lz / 2); world.add(edges);
+
+// electrodes as thin metallic plates: cathode (HER) steel-blue, anode (OER) dark oxide
+function plate(x, color, emis) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.025, Ly * 0.98, Lz * 0.98),
+    new THREE.MeshStandardMaterial({ color, metalness: 0.92, roughness: 0.34,
+      emissive: emis, emissiveIntensity: 0.25 }));
+  m.position.set(x, Ly / 2, Lz / 2); world.add(m);
+}
+plate(0, 0x6f8bb0, 0x16314f); plate(Lx, 0x8a6f63, 0x3a1d16);
+// membrane / separator in the middle
+const mem = new THREE.Mesh(new THREE.PlaneGeometry(Lz * 0.98, Ly * 0.98),
+  new THREE.MeshPhysicalMaterial({ color: 0xeaf2ff, transparent: true, opacity: 0.06, roughness: 0.4 }));
+mem.rotation.y = Math.PI / 2; mem.position.set(Lx / 2, Ly / 2, Lz / 2); world.add(mem);
+
+// soft contact shadow under the cell (fake, cheap)
+{
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'); const rad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+  rad.addColorStop(0, 'rgba(0,0,0,0.5)'); rad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rad; g.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  const sh = new THREE.Mesh(new THREE.PlaneGeometry(Lx * 2.2, Lz * 2.2),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sh.rotation.x = -Math.PI / 2; sh.position.set(0, -Ly / 2 - 0.01, 0); scene.add(sh);
+}
+
+// gravity arrow
+const grav = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0),
+  new THREE.Vector3(Lx + 0.22, Ly, Lz / 2), 0.55, 0xb39bff, 0.16, 0.1);
+world.add(grav);
+
+// ---------- bubbles: glassy reflective spheres, per-instance colour ----------
+const sph = new THREE.SphereGeometry(1, 24, 16);     // smoother spheres
+const bmat = new THREE.MeshPhysicalMaterial({ color: 0xdff3ff, roughness: 0.15, metalness: 0,
+  clearcoat: 1, clearcoatRoughness: 0.18, envMapIntensity: 1.25 });   // opaque -> no sort artifacts
+const inst = new THREE.InstancedMesh(sph, bmat, MAXB);
+inst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
+inst.frustumCulled = false; world.add(inst);
+const C_H2 = new THREE.Color(0x7fdcff), C_O2 = new THREE.Color(0xffc266);
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
+
+function resize() {
+  const w = canvas.clientWidth || innerWidth || 1280;     // fallback if the host
+  const h = canvas.clientHeight || innerHeight || 720;     // reports a 0-size viewport
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio));  // crisp on HiDPI
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+// ---------- sliders ----------
+const bind = (sid, vid, fmt, fn) => {
+  const el = document.getElementById(sid);
+  el.addEventListener('input', () => { document.getElementById(vid).textContent = fmt(el.value); fn(+el.value); });
+};
+bind('sJ', 'vJ', v => (+v).toFixed(2), v => sim.setParams({ j: v }));
+bind('sU', 'vU', v => (+v).toFixed(2), v => sim.setParams({ u_in: v }));
+bind('sA', 'vA', v => v, v => sim.setParams({ theta: v }));
+bind('sT', 'vT', v => v, v => sim.setParams({ tilt: v }));
+bind('sS', 'vS', v => (+v).toFixed(1), v => sim.setParams({ visScale: v }));
+let speed = 1; bind('sSp', 'vSp', v => (+v).toFixed(1), v => speed = v);
+let paused = false;
+document.getElementById('bPause').onclick = (e) => { paused = !paused; e.target.textContent = paused ? '▶ 재생' : '⏸ 정지'; };
+document.getElementById('bReset').onclick = () => sim.reset();
+document.getElementById('bCam').onclick = () => { camera.position.copy(CAM0); controls.target.set(0, -Ly * 0.04, 0); };
+
+// ---------- loop ----------
+let last = performance.now(), fps = 0, hudT = 0;
+function instances() {
+  const b = sim.bubbleSnapshot();
+  const n = Math.min(MAXB, b.length / 5);
+  for (let q = 0; q < n; q++) {
+    const o = q * 5, rr = Math.max(FLOOR, b[o + 3] * SCALE);
+    _p.set(b[o] * SCALE, b[o + 1] * SCALE, b[o + 2] * SCALE); _s.set(rr, rr, rr);
+    _m.compose(_p, _q, _s); inst.setMatrixAt(q, _m);
+    inst.setColorAt(q, b[o + 4] < 0.5 ? C_H2 : C_O2);
+  }
+  inst.count = n;
+  inst.instanceMatrix.needsUpdate = true;
+  if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+}
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  fps = 0.9 * fps + 0.1 / Math.max(1e-3, dt);
+  if (!paused) { let acc = dt * speed, k = 0; while (acc > 1e-4 && k++ < 3) { const s = Math.min(0.005, acc); sim.step(s); acc -= s; } }
+  const up = sim.diag.up; grav.setDirection(new THREE.Vector3(-up[0], -up[1], -up[2]).normalize());
+  instances(); controls.update(); renderer.render(scene, camera);
+  if (now - hudT > 180) {
+    hudT = now; const d = sim.diag;
+    document.getElementById('hN').textContent = d.nBub;
+    document.getElementById('hTh').textContent = d.thetaC.toFixed(2) + ' / ' + d.thetaA.toFixed(2);
+    document.getElementById('hHold').textContent = (d.holdup * 100).toFixed(2) + ' %';
+    document.getElementById('hV').textContent = (d.vmax * 100).toFixed(1) + ' cm/s';
+    document.getElementById('hFps').textContent = fps.toFixed(0);
+  }
+  requestAnimationFrame(loop);
+}
+document.getElementById('boot').style.display = 'none';
+requestAnimationFrame(loop);
+window.__step = (n) => { for (let i = 0; i < (n || 1); i++) sim.step(0.005); return sim.diag; };
+window.__tick = loop;
+window.__rinfo = () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles,
+                          instCount: inst.count, w: renderer.domElement.width, h: renderer.domElement.height });
+// headless verify: render the scene DIRECTLY (composer clobbers info with its last
+// pass) and read back centre pixels to confirm real geometry -> visible pixels.
+window.__verify = () => {
+  instances(); renderer.render(scene, camera);
+  const d = { calls: renderer.info.render.calls, tris: renderer.info.render.triangles, count: inst.count };
+  const gl = renderer.getContext(), w = renderer.domElement.width, h = renderer.domElement.height;
+  const px = new Uint8Array(4 * 100);
+  gl.readPixels((w / 2 | 0) - 5, (h / 2 | 0) - 5, 10, 10, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let nonzero = 0, lum = 0;
+  for (let i = 0; i < px.length; i += 4) { const sgb = px[i] + px[i + 1] + px[i + 2]; if (sgb > 10) nonzero++; lum += sgb; }
+  return { ...d, w, h, sampledNonzeroPx: nonzero, avgLum: (lum / 100 / 3) | 0 };
+};
+window.__ready = true;
+</script>
+</body>
+</html>

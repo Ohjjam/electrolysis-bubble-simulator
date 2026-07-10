@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>전기화학 버블 시뮬레이터 — live Python kernel</title>
+<style>
+  :root{--bg:#0b0f14;--card:#121821;--line:#1f2937;--tx:#dbe4f0;--dim:#8a93a3;
+        --accent:#4da3ff;--warn:#ff6b6b;--gold:#ffd166;--vio:#9b7bff;--grn:#37d39a;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.45 "Segoe UI",system-ui,sans-serif;padding:14px 16px;}
+  h1{font-size:19px;margin:0 0 2px} .sub{color:var(--dim);font-size:12px;margin-bottom:12px}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:99px;
+        padding:1px 9px;font-size:11px;color:var(--grn)}
+  .app{display:grid;grid-template-columns:340px minmax(540px,1fr) 350px;gap:12px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .ctl{margin-bottom:9px} .lab{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:2px;align-items:baseline}
+  .val{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);height:20px}
+  input[type=number]{width:90px;background:#0e1420;color:var(--tx);border:1px solid var(--line);
+    border-radius:7px;padding:4px 6px;font-size:12.5px;font-variant-numeric:tabular-nums}
+  .hint{color:var(--dim);font-size:11px}
+  .warn{color:var(--warn);font-size:11px;font-weight:600}
+  .seg{display:flex;gap:6px;margin:4px 0 2px} .seg button{flex:1;background:#0e1420;color:var(--dim);
+    border:1px solid var(--line);border-radius:8px;padding:5px 4px;font-size:12px;cursor:pointer}
+  .seg button.on{color:#fff;border-color:var(--accent);background:#16243a}
+  select{width:100%;background:#0e1420;color:var(--tx);border:1px solid var(--line);
+    border-radius:8px;padding:5px 6px;font-size:12.5px}
+  .box{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:10px}
+  .box h3{margin:0 0 7px;font-size:12.5px;color:var(--dim);font-weight:600;letter-spacing:.4px}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:12.5px}
+  .row label{flex:1;color:var(--dim)}
+  .btn{background:#0e1420;color:var(--tx);border:1px solid var(--line);border-radius:8px;
+    padding:6px 10px;font-size:12.5px;cursor:pointer;margin-right:6px}
+  .btn:hover{border-color:var(--accent)}
+  canvas{display:block;background:#0d121b;border:1px solid var(--line);border-radius:10px;width:100%}
+  .plotlab{display:flex;justify-content:space-between;color:var(--dim);font-size:11.5px;margin:8px 1px 4px}
+  .met{background:#0e1420;border:1px solid var(--line);border-radius:9px;padding:7px 9px}
+  .met .k{color:var(--dim);font-size:11px} .met .v{font-size:16px;font-weight:650;margin-top:1px;
+    font-variant-numeric:tabular-nums} .met .u{font-size:11px;color:var(--dim)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .stack{display:flex;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line)}
+  .stack div{height:100%} .leg{display:flex;flex-wrap:wrap;gap:3px 10px;font-size:11px;color:var(--dim);margin-top:5px}
+  .leg b{font-variant-numeric:tabular-nums;color:var(--tx)} .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+  .ph{display:flex;gap:8px;margin-top:6px} .ph .met{flex:1;text-align:center}
+  .bn{margin-top:4px} .bn .bnrow{display:flex;align-items:center;gap:7px;font-size:11.5px;margin-bottom:3px}
+  .bn .bnname{width:128px;color:var(--dim)} .bn .bnbarw{flex:1;background:#0e1420;border-radius:4px;height:11px;overflow:hidden}
+  .bn .bnbar{height:100%;border-radius:4px} .bn .bnval{width:84px;text-align:right;font-variant-numeric:tabular-nums}
+  .bn .top .bnname{color:var(--gold);font-weight:700}
+  #conn{color:var(--warn);font-size:12px;display:none}
+  .only2e.off{display:none} .onlyLumped.off{display:none}
+  .onlyCP.off{display:none} .onlyCA.off{display:none} .only1d.off{display:none}
+  .onlyPorous.off{display:none} .onlyFace.off{display:none} .onlyChannel.off{display:none}
+  .ffbtn{padding:2px 8px;font-size:11px;background:#141c2e;color:var(--dim);border:1px solid #2a3550;border-radius:5px;cursor:pointer}
+  .ffbtn.on{background:#1f6feb;color:#fff;border-color:#1f6feb}
+  .fitbox{border-top:1px solid #1f2937;margin-top:8px;padding-top:7px}
+  .fitbox.off{display:none}
+  .fitta{width:100%;box-sizing:border-box;font-family:monospace;font-size:11px;background:#0e1422;color:#cfd6e4;border:1px solid #2a3550;border-radius:6px;padding:6px;margin-top:4px}
+</style>
+
+<!-- ===== Pyodide bootstrap: in-browser Python kernel (replaces the server) ===== -->
+<script src="https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pyodide.js"></script>
+<script>
+"use strict";
+var _realFetch = window.fetch.bind(window);
+function _jsonResp(s){ return { ok:true, status:200, json:function(){ return Promise.resolve(JSON.parse(s)); } }; }
+function _okResp(){ return { ok:true, status:200, json:function(){ return Promise.resolve({ok:1}); } }; }
+function _boot(m){ var e=document.getElementById("bootmsg"); if(e) e.textContent=m; }
+
+window.__readyPromise = (async function(){
+  _boot("Python 런타임 다운로드 중… (최초 1회만, 이후 캐시)");
+  var pyodide = await loadPyodide();
+  _boot("수치 라이브러리(numpy) 로딩 중…");
+  await pyodide.loadPackage("numpy");
+  _boot("물리 커널 푸는 중…");
+  var buf = await _realFetch("bubblesim_pkg.zip").then(function(r){ return r.arrayBuffer(); });
+  await pyodide.unpackArchive(buf, "zip");
+  pyodide.runPython("import sys; sys.path.insert(0, '.')");
+  _boot("시뮬레이터 초기화 중…");
+  window.__bridge = pyodide.runPython("import sim_bridge\nsim_bridge");
+  var pump = function(){
+    try { window.__bridge.pump(performance.now()/1000); } catch(e){ console.error(e); }
+    requestAnimationFrame(pump);
+  };
+  requestAnimationFrame(pump);
+  var ov = document.getElementById("bootoverlay"); if(ov) ov.style.display="none";
+  return true;
+})().catch(function(err){
+  console.error(err);
+  var e=document.getElementById("bootmsg");
+  if(e) e.innerHTML = "초기화 실패: " + String(err)
+    + "<br><span style='font-size:12px'>새로고침 해보세요 (최초 로딩엔 인터넷 필요).</span>";
+  throw err;
+});
+
+// route the page's /api/* calls into the in-browser kernel instead of the network
+window.fetch = function(url, opts){
+  if(typeof url === "string" && url.indexOf("/api/") === 0){
+    return window.__readyPromise.then(function(){
+      if(url === "/api/state") return _jsonResp(window.__bridge.state());
+      if(url === "/api/eis")   return _jsonResp(window.__bridge.eis());
+      if(url === "/api/op"){    window.__bridge.op((opts&&opts.body)||"{}"); return _okResp(); }
+      if(url === "/api/reset"){ window.__bridge.reset(); return _okResp(); }
+      return _okResp();
+    });
+  }
+  return _realFetch.apply(this, arguments);
+};
+</script>
+</head>
+<body>
+
+<div id="bootoverlay" style="position:fixed;inset:0;background:#0b0f14;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dbe4f0;font:15px 'Segoe UI',system-ui,sans-serif">
+  <div style="font-size:21px;margin-bottom:12px">⚗️ 전기화학 버블 시뮬레이터</div>
+  <div style="width:42px;height:42px;border:4px solid #1f2937;border-top-color:#4da3ff;border-radius:50%;animation:bsp .9s linear infinite"></div>
+  <div id="bootmsg" style="color:#8a93a3;margin-top:16px">시작 중…</div>
+  <div style="color:#5a6577;margin-top:8px;font-size:12px">브라우저 안에서 Python 물리 커널이 직접 계산합니다 — 서버 없음</div>
+  <style>@keyframes bsp{to{transform:rotate(360deg)}}</style>
+</div>
+
+<h1>전기화학 버블 시뮬레이터 <span class="pill">물리 = Python 커널 (live)</span></h1>
+<div class="sub">브라우저는 렌더링만 — 모든 수치는 bubblesim 커널이 실시간 계산.
+  <span id="conn">⚠ 서버 연결 끊김 — bat 창이 닫혔는지 확인</span></div>
+
+<div class="app">
+
+  <!-- ===================== controls ===================== -->
+  <div class="card">
+    <div class="box">
+      <h3>운전 모드</h3>
+      <div class="seg" id="segMode">
+        <button data-mo="CP" class="on">CP 정전류 (상업 표준)</button>
+        <button data-mo="CA">CA 정전압</button>
+      </div>
+      <div class="hint">CP: 전류 고정 → 버블이 <b>전압 톱니파</b>를 만듦 · CA: 전압 고정 → 전류 톱니파</div>
+    </div>
+
+    <div class="box">
+      <h3>모델 — 무엇을 분해해서 볼까</h3>
+      <div class="seg" id="segModel">
+        <button data-m="two_electrode" class="on">셀 전체 (0D)</button>
+        <button data-m="porous">다공전극 깊이</button>
+        <button data-m="channel">유로 병목 (셀 설계)</button>
+        <button data-m="flow2d">2D 유동 (CFD)</button>
+      </div>
+      <div class="hint" id="modelHint">0D: 두 전극 Butler–Volmer + 직렬저항. 빠른 실시간 탐색(주력)</div>
+      <div class="onlyChannel off">
+        <div class="seg" id="segChan" style="margin-top:7px">
+          <button data-ct="serpentine" class="on">사행</button>
+          <button data-ct="parallel">병렬</button>
+          <button data-ct="straight">직선</button>
+        </div>
+        <div class="grid2" style="margin-top:6px">
+          <div class="ctl"><div class="lab">패스 수 (사행 줄)<span class="val"><span id="vNP">4</span></span></div>
+            <input id="sNP" type="range" min="1" max="12" step="1" value="4"></div>
+          <div class="ctl"><div class="lab">셀 폭 (가로=한 줄 길이)<span class="val"><span id="vCW">5.0</span> cm</span></div>
+            <input id="sCW" type="range" min="1" max="30" step="0.5" value="5"></div>
+        </div>
+        <div class="ctl" style="margin-top:6px"><div class="lab">셀 높이 (세로)<span class="val"><span id="vFH">10</span> cm</span></div>
+          <input id="sFH" type="range" min="1" max="50" step="1" value="10"></div>
+        <div style="display:inline-flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+          <button id="cfEff" class="ffbtn on">효율%</button>
+          <button id="cfT" class="ffbtn">θ 병목</button>
+          <button id="cfJ" class="ffbtn">j 전류</button>
+          <button id="cfE" class="ffbtn">ε void</button></div>
+        <div style="display:inline-flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+          <button id="btnDraw" class="ffbtn">✏️ 유로 직접 그리기</button>
+          <button id="btnDrawDone" class="ffbtn" style="display:none">완료</button>
+          <button id="btnDrawClear" class="ffbtn" style="display:none">지우기</button></div>
+        <div class="hint">유로 총길이 ≈ 패스수 × 셀폭 → 길수록 하류 병목↑ (유속이 완화). 유로 클릭 → 그 구역 2D 유동. <b>직접 그리기</b>로 내 유로 설계</div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>설정 저장 / 불러오기</h3>
+      <div class="row" style="gap:6px">
+        <button class="btn" id="btnSaveDesign" style="flex:1;margin:0">💾 저장(JSON)</button>
+        <button class="btn" id="btnLoadDesign" style="flex:1;margin:0">📂 불러오기</button>
+      </div>
+      <input type="file" id="fileDesign" accept=".json,application/json" style="display:none">
+      <div class="hint">현재 모델·전극·촉매·형상·유로·운전조건 전체를 .json으로 저장/복원</div>
+    </div>
+
+    <div class="ctl onlyCP">
+      <div class="lab"><b>전류밀도 j<sub>set</sub></b><span class="val"><span id="vJ">0.20</span> A/cm²</span></div>
+      <input id="sJ" type="range" min="0.01" max="2" step="0.01" value="0.2">
+      <div class="hint">상업 알칼라인 0.2–0.6, PEM 1–2 A/cm² 수준</div>
+    </div>
+    <div class="ctl onlyCA off">
+      <div class="lab"><b>전압 V<sub>cell</sub></b><span class="val"><span id="vV">2.30</span> V</span></div>
+      <input id="sV" type="range" min="1.4" max="2.8" step="0.01" value="2.3">
+    </div>
+
+    <div class="box">
+      <h3>전해질</h3>
+      <select id="selMed">
+        <option value="KOH" selected>KOH (알칼리, 수전해 표준)</option>
+        <option value="H2SO4">H₂SO₄ (산, PEM류/산성 셀)</option>
+        <option value="PB">인산 버퍼 PB (중성, pH≈7.2)</option>
+      </select>
+      <div class="ctl" style="margin-top:7px">
+        <div class="lab">농도<span class="val"><span id="vC">6.0</span> M</span></div>
+        <input id="sC" type="range" min="0.5" max="10" step="0.1" value="6">
+        <div class="hint" id="medHint">κ 최대 ~6 M · 합체억제 임계 0.3 M · pH≈14+</div>
+      </div>
+      <label style="font-size:12px;display:block;margin-top:6px"><input type="checkbox" id="cbHF"> 정량 물성 (KOH: Pitzer 활동도·Gilliam 전도도)</label>
+    </div>
+
+    <div class="box only2e" id="boxCatC">
+      <h3>HER 음극 촉매</h3>
+      <div class="ctl"><select id="preC"></select></div>
+      <div class="row"><label>j₀ (비표면, A/m²)</label><input id="nJ0C" type="number" step="any" value="1"></div>
+      <div class="row"><label>Tafel 기울기 (mV/dec)</label><input id="nBC" type="number" step="any" value="120"></div>
+      <div class="row ecsaRow"><label>ECSA 조도 R_f (실면적/기하면적)</label><input id="nRfC" type="number" step="any" value="1"></div>
+      <div class="hint" id="outC">유효 j₀(기하) = 1 A/m² · η@10mA/cm² ≈ 240 mV</div>
+      <div class="warn" id="warnC"></div>
+      <div class="fitbox off" id="fitBoxC">
+        <div class="hint" style="margin-bottom:4px">측정 (전위, 전류밀도)을 붙여넣으면 Tafel 선형구간을 자동으로 찾아 위 j₀·기울기를 채웁니다 (구간 자동 탐지)</div>
+        <div class="grid2">
+          <div class="ctl"><div class="lab" style="font-size:11px">전위 기준</div>
+            <select id="fitScaleC"><option value="rhe">vs RHE</option><option value="eta">이미 η</option><option value="eeq">E_eq 입력</option></select></div>
+          <div class="ctl"><div class="lab" style="font-size:11px">전류 단위</div>
+            <select id="fitUnitC"><option value="10">mA/cm²</option><option value="1">A/m²</option></select></div>
+        </div>
+        <div class="row" id="fitEeqRowC" style="display:none"><label>E_eq (V)</label><input id="fitEeqC" type="number" step="any" value="0"></div>
+        <textarea id="fitDataC" class="fitta" rows="4" placeholder="0.05  1.0&#10;0.10  10&#10;0.15  100"></textarea>
+        <button class="btn" id="fitBtnC">곡선 피팅 → 적용</button>
+        <div class="hint" id="fitOutC"></div>
+        <canvas id="fitPlotC" width="300" height="110"></canvas>
+      </div>
+    </div>
+
+    <div class="box only2e" id="boxCatA">
+      <h3>OER 양극 촉매</h3>
+      <div class="ctl"><select id="preA"></select></div>
+      <div class="row"><label>j₀ (비표면, A/m²)</label><input id="nJ0A" type="number" step="any" value="0.01"></div>
+      <div class="row"><label>Tafel 기울기 (mV/dec)</label><input id="nBA" type="number" step="any" value="60"></div>
+      <div class="row ecsaRow"><label>ECSA 조도 R_f (실면적/기하면적)</label><input id="nRfA" type="number" step="any" value="1"></div>
+      <div class="hint" id="outA">유효 j₀(기하) = 0.01 A/m² · η@10mA/cm² ≈ 240 mV</div>
+      <div class="warn" id="warnA"></div>
+      <div class="fitbox off" id="fitBoxA">
+        <div class="hint" style="margin-bottom:4px">측정 (전위, 전류밀도)을 붙여넣으면 Tafel 선형구간을 자동으로 찾아 위 j₀·기울기를 채웁니다 (구간 자동 탐지)</div>
+        <div class="grid2">
+          <div class="ctl"><div class="lab" style="font-size:11px">전위 기준</div>
+            <select id="fitScaleA"><option value="rhe">vs RHE</option><option value="eta">이미 η</option><option value="eeq">E_eq 입력</option></select></div>
+          <div class="ctl"><div class="lab" style="font-size:11px">전류 단위</div>
+            <select id="fitUnitA"><option value="10">mA/cm²</option><option value="1">A/m²</option></select></div>
+        </div>
+        <div class="row" id="fitEeqRowA" style="display:none"><label>E_eq (V)</label><input id="fitEeqA" type="number" step="any" value="1.23"></div>
+        <textarea id="fitDataA" class="fitta" rows="4" placeholder="1.45  1.0&#10;1.51  10&#10;1.57  100"></textarea>
+        <button class="btn" id="fitBtnA">곡선 피팅 → 적용</button>
+        <div class="hint" id="fitOutA"></div>
+        <canvas id="fitPlotA" width="300" height="110"></canvas>
+      </div>
+    </div>
+
+    <div class="box onlyPorous off" id="boxMorph">
+      <h3>전극 형상 (다공/나노구조)</h3>
+      <div class="hint" style="margin-bottom:5px">위 촉매 j₀·Tafel은 <b>실면적당 고유값</b>으로 쓰이고, 면적은 아래 형상이 정함(ECSA 입력 대체)</div>
+      <div class="ctl"><div class="lab">기재 substrate</div><select id="selSub"></select></div>
+      <div class="ctl" style="margin-top:6px"><div class="lab">나노촉매 형상</div><select id="selNano"></select></div>
+      <div class="ctl" style="margin-top:6px"><div class="lab">촉매 로딩<span class="val"><span id="vLoad">1.0</span>×</span></div>
+        <input id="sLoad" type="range" min="0.1" max="5" step="0.1" value="1"></div>
+      <div class="hint" id="outMorph">기재×나노촉매 → R_f · 이용률(폼이 다 일하나)</div>
+      <div class="warn" id="warnMorph"></div>
+      <label style="font-size:12px;display:block;margin-top:5px"><input type="checkbox" id="cbGas"> 기포 갇힘 되먹임 (폼 내부 s_g → 면적·κ↓)</label>
+      <div style="border-top:1px solid #1f2937;margin-top:8px;padding-top:7px">
+        <label style="font-size:12px"><input type="checkbox" id="ovrOn"> 📐 측정값으로 면적·구조 덮어쓰기 (내 재료)</label>
+        <div id="ovrFields" style="display:none;margin-top:6px">
+          <div class="row"><label>R_f (ECSA 조도)</label><input id="ovrRf" type="number" step="any" value="500"></div>
+          <div class="hint" style="margin:2px 0 5px">BET로 계산:
+            <input id="ovrBET" type="number" step="any" placeholder="m²/g" style="width:52px;background:#0e1422;color:#cfd6e4;border:1px solid #2a3550;border-radius:5px;padding:3px">×<input id="ovrLoad" type="number" step="any" placeholder="mg/cm²" style="width:62px;background:#0e1422;color:#cfd6e4;border:1px solid #2a3550;border-radius:5px;padding:3px">
+            <button class="btn" id="ovrBETbtn" style="width:auto;display:inline;padding:2px 8px;margin:0">→ R_f</button></div>
+          <div class="grid2">
+            <div class="row"><label>두께 L_e (mm)</label><input id="ovrLe" type="number" step="any" value="1.6"></div>
+            <div class="row"><label>공극률 ε_p</label><input id="ovrEps" type="number" step="any" value="0.95"></div>
+          </div>
+          <div class="row"><label>매트릭스 σ_s (S/m)</label><input id="ovrSig" type="number" step="any" value="1.4e7"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box only2e">
+      <h3>직렬 저항</h3>
+      <div class="ctl"><div class="lab">막(분리막) 저항<span class="val"><span id="vRm">0.0</span>×10⁻⁴ Ω·m²</span></div>
+        <input id="sRm" type="range" min="0" max="5" step="0.1" value="0"></div>
+      <div class="ctl"><div class="lab">전극·접촉 저항<span class="val"><span id="vRc">0.0</span>×10⁻⁴ Ω·m²</span></div>
+        <input id="sRc" type="range" min="0" max="2" step="0.05" value="0"></div>
+    </div>
+
+    <div class="box only2e">
+      <h3>이중층 (과도응답·EIS)</h3>
+      <div class="row"><label>C_dl 음극 (µF/cm², 기하)</label><input id="nCdlC" type="number" step="any" value="20"></div>
+      <div class="row"><label>C_dl 양극 (µF/cm², 기하)</label><input id="nCdlA" type="number" step="any" value="20"></div>
+      <div class="hint">ECSA 큰 다공 전극은 비례해서 큼 (예: R_f=100 → ~2000). CP에서 전류 스텝 시 V가 τ=R_ct·C_dl로 완화</div>
+    </div>
+
+    <div class="box">
+      <h3>열 (에너지수지)</h3>
+      <label style="font-size:12.5px"><input type="checkbox" id="cbT"> T를 상태변수로 (발열–냉각)</label>
+      <div class="ctl" style="margin-top:6px"><div class="lab">냉각 hA<span class="val"><span id="vHA">0.30</span> W/K</span></div>
+        <input id="sHA" type="range" min="0.05" max="2" step="0.05" value="0.3"></div>
+    </div>
+
+    <div class="box onlyLumped off" id="boxElec">
+      <h3>버블 관찰 전극 (lumped 단일 패치)</h3>
+      <div class="seg" id="segElec">
+        <button data-e="HER" class="on">HER (H₂)</button>
+        <button data-e="OER">OER (O₂)</button>
+      </div>
+    </div>
+
+    <div class="ctl"><div class="lab"><b>접촉각 (wettability)</b><span class="val"><span id="vA">60</span>°</span></div>
+      <input id="sA" type="range" min="10" max="160" step="1" value="60"></div>
+    <div class="ctl"><div class="lab"><b>유속 (전해액 흐름)</b><span class="val"><span id="vU">0.05</span> m/s</span></div>
+      <input id="sU" type="range" min="0" max="0.6" step="0.005" value="0.05">
+      <div style="font-size:9px;color:#5a6577;margin-top:1px">0=자연대류만 · 높을수록 기포 빨리 쓸려나감</div></div>
+    <div class="grid2">
+      <div class="ctl"><div class="lab">자기장 B<span class="val"><span id="vB">0.0</span> T</span></div>
+        <input id="sB" type="range" min="0" max="3" step="0.05" value="0"></div>
+      <div class="ctl"><div class="lab">전기장 E<span class="val"><span id="vE">0.0</span> MV/m</span></div>
+        <input id="sE" type="range" min="0" max="3" step="0.02" value="0"></div>
+    </div>
+    <div class="grid2">
+      <div class="ctl"><div class="lab">온도<span class="val"><span id="vT">60</span>°C</span></div>
+        <input id="sT" type="range" min="20" max="90" step="1" value="60"></div>
+      <div class="ctl"><div class="lab">압력<span class="val"><span id="vP">1.0</span> bar</span></div>
+        <input id="sP" type="range" min="1" max="10" step="0.1" value="1"></div>
+    </div>
+    <div class="grid2">
+      <div class="ctl"><div class="lab">전극–막 gap<span class="val"><span id="vG">2.0</span> mm</span></div>
+        <input id="sG" type="range" min="0.5" max="10" step="0.1" value="2"></div>
+      <div class="ctl"><div class="lab">재생 속도<span class="val"><span id="vS">1.0</span>×</span></div>
+        <input id="sS" type="range" min="0.1" max="3" step="0.1" value="1"></div>
+    </div>
+    <button class="btn" id="btnPause">⏸ 일시정지</button>
+    <button class="btn" id="btnReset">↺ 버블 리셋</button>
+  </div>
+
+  <!-- ===================== stage ===================== -->
+  <div class="card">
+    <canvas id="stage" width="760" height="450" style="cursor:crosshair"></canvas>
+    <div class="hint" id="drillOut" style="margin:2px 0 4px;min-height:15px">전극/갭을 클릭하면 그 높이의 국소 상태가 여기 표시됩니다 (병목 드릴인)</div>
+    <button class="btn" id="btnBackChannel" style="display:none;width:auto;padding:3px 10px;margin:0 0 4px">← 유로 전체로 돌아가기</button>
+    <div class="plotlab"><span id="traceTitle">셀 전압 V(t) — 톱니파</span><span id="lblJ"></span></div>
+    <canvas id="trace" width="760" height="115"></canvas>
+    <div class="plotlab"><span>셀 온도 T(t)</span><span id="lblT"></span></div>
+    <canvas id="ttrace" width="760" height="65"></canvas>
+  </div>
+
+  <!-- ===================== metrics ===================== -->
+  <div class="card">
+    <div class="grid2">
+      <div class="met"><div class="k">셀 전압 V (응답)</div><div class="v"><span id="mV">–</span><span class="u"> V</span></div></div>
+      <div class="met"><div class="k">전류밀도 j</div><div class="v"><span id="mJ">–</span><span class="u"> A/cm²</span></div></div>
+      <div class="met"><div class="k">H₂ 발생률</div><div class="v"><span id="mQ">–</span><span class="u"> mL/min·cm²</span></div></div>
+      <div class="met"><div class="k">에너지 소비</div><div class="v"><span id="mWh">–</span><span class="u"> kWh/kg H₂</span></div></div>
+      <div class="met"><div class="k">θ 음극 / 양극</div><div class="v" style="font-size:14px"><span id="mTh">–</span></div></div>
+      <div class="met"><div class="k">버블 수 (합)</div><div class="v"><span id="mNb">–</span></div></div>
+      <div class="met"><div class="k">셀 온도</div><div class="v"><span id="mT">–</span><span class="u"> °C</span></div></div>
+      <div class="met"><div class="k">실효 속도</div><div class="v"><span id="mSp">–</span><span class="u"> ×실시간</span></div></div>
+    </div>
+
+    <div class="plotlab"><span>전압 분해 — V<sub>cell</sub>이 어디에 쓰이나</span></div>
+    <div class="stack" id="stack"></div>
+    <div class="leg" id="leg"></div>
+
+    <div class="plotlab" style="margin-top:10px"><span><b>병목 분석</b> — 가장 큰 전압 손실</span></div>
+    <div class="bn" id="bnMain"></div>
+    <div class="plotlab only2e"><span>그중 <b>버블이 깎아먹는</b> 전압</span></div>
+    <div class="bn only2e" id="bnBub"></div>
+
+    <div class="only2e" id="boxPH">
+      <div class="plotlab" style="margin-top:8px"><span>전극 표면 국소 pH</span></div>
+      <div class="ph">
+        <div class="met"><div class="k">양극(OER)</div><div class="v" id="phA">–</div></div>
+        <div class="met"><div class="k">벌크</div><div class="v" id="phB">–</div></div>
+        <div class="met"><div class="k">음극(HER)</div><div class="v" id="phC">–</div></div>
+      </div>
+    </div>
+
+    <div class="only1d off" id="boxProf">
+      <div class="plotlab" style="margin-top:10px"><span><b>1D 프로파일</b> — 전극(0) → 막</span><span class="hint" id="lblDelta"></span></div>
+      <canvas id="prof" width="320" height="150"></canvas>
+      <div class="leg"><span><span class="dot" style="background:#4da3ff"></span>ε(z) void</span>
+        <span><span class="dot" style="background:#37d39a"></span>c(z)/c_b 농도</span>
+        <span class="hint">실선=음극측 · 점선=양극측</span></div>
+    </div>
+
+    <div class="onlyFace off" id="boxFace">
+      <div class="plotlab" style="margin-top:10px"><span><b>면 병목맵 (2D)</b> — 전극면 분포 (아래→위)</span>
+        <span style="display:inline-flex;gap:4px">
+          <button id="ffJ" class="ffbtn on">j 전류</button>
+          <button id="ffT" class="ffbtn">θ 피복</button></span></div>
+      <canvas id="facemap" width="320" height="210"></canvas>
+      <div class="hint" id="faceOut"></div>
+    </div>
+
+    <div class="onlyPorous off" id="boxPorous">
+      <div class="plotlab" style="margin-top:10px"><span><b>다공전극 깊이 프로파일</b> — 콜렉터(0)→분리막</span><span class="hint" id="lblUtil"></span></div>
+      <canvas id="pprof" width="320" height="150"></canvas>
+      <div class="leg"><span><span class="dot" style="background:#ffb454"></span>반응분포 j_loc(d)</span>
+        <span><span class="dot" style="background:#4da3ff"></span>η(d) 과전압</span>
+        <span class="hint">실선=음극 · 점선=양극</span></div>
+    </div>
+
+    <div class="only2e" id="boxEIS">
+      <div class="plotlab" style="margin-top:10px"><span><b>EIS</b> — Nyquist (10 mHz~10 kHz, 선형화)</span><span class="hint" id="lblEIS"></span></div>
+      <canvas id="eis" width="320" height="170"></canvas>
+    </div>
+
+    <div class="plotlab" style="margin-top:10px"><span>분극 관계 V–j (누적)</span></div>
+    <canvas id="polar" width="320" height="160"></canvas>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------------- control channel (throttled merge) ----------------
+let pend = {}, timer = null;
+// ngrok-skip-browser-warning: lets API calls bypass the ngrok free-tier
+// interstitial (the page itself shows it once per browser session)
+const HDRS = {"Content-Type":"application/json", "ngrok-skip-browser-warning":"1"};
+function send(k, v){ pend[k] = v; if(!timer) timer = setTimeout(flush, 70); }
+function flush(){
+  const body = JSON.stringify(pend); pend = {}; timer = null;
+  fetch("/api/op", {method:"POST", headers:HDRS, body});
+}
+
+// ---------------- sliders ----------------
+const S = [
+  ["sV","vV", v=>(+v).toFixed(2), "V_cell",        v=>+v],
+  ["sJ","vJ", v=>(+v).toFixed(2), "j_set",         v=>v*1e4],
+  ["sA","vA", v=>v,               "contact_angle", v=>+v],
+  ["sC","vC", v=>(+v).toFixed(1), "c_electrolyte", v=>+v],
+  ["sU","vU", v=>(+v).toFixed(2), "u_flow",        v=>+v],
+  ["sB","vB", v=>(+v).toFixed(1), "B_field",       v=>+v],
+  ["sE","vE", v=>(+v).toFixed(1), "E_ext",         v=>v*1e6],
+  ["sT","vT", v=>v,               "T",             v=>+v+273.15],
+  ["sP","vP", v=>(+v).toFixed(1), "P",             v=>v*1e5],
+  ["sG","vG", v=>(+v).toFixed(1), "gap_mm",        v=>+v],
+  ["sS","vS", v=>(+v).toFixed(1), "speed",         v=>+v],
+  ["sRm","vRm", v=>(+v).toFixed(1), "r_membrane_area", v=>v*1e-4],
+  ["sRc","vRc", v=>(+v).toFixed(2), "r_contact_area",  v=>v*1e-4],
+  ["sHA","vHA", v=>(+v).toFixed(2), "hA_cool",         v=>+v],
+  ["sFH","vFH", v=>v,               "face_height_cm",  v=>+v],
+  ["sNP","vNP", v=>v,               "n_pass",          v=>+v],
+  ["sCW","vCW", v=>(+v).toFixed(1), "cell_width_cm",   v=>+v],
+];
+for(const [sid, vid, fmt, key, tx] of S){
+  const el = document.getElementById(sid);
+  el.addEventListener("input", () => {
+    document.getElementById(vid).textContent = fmt(el.value);
+    send(key, tx(el.value));
+  });
+}
+// push the initial flow speed once so flow2d/channel start with mild flow (server
+// default u_flow is 0 -> a stagnant 2-D channel would just freeze bubbles at the top)
+send("u_flow", +document.getElementById("sU").value);
+
+// ---------------- electrolyte ----------------
+const MED = {
+  KOH:  {cmin:0.5, cmax:10, cdef:6,   hint:"κ 최대 ~6 M (≈60 S/m) · 합체억제 임계 0.3 M · 강알칼리"},
+  H2SO4:{cmin:0.1, cmax:5,  cdef:0.5, hint:"κ 최대 ~4 M (≈83 S/m, 최고 전도) · 합체억제 0.07 M · 강산"},
+  PB:   {cmin:0.05,cmax:2,  cdef:1,   hint:"pH≈7.2 고정(버퍼) · κ는 KOH의 ~1/10 → 옴손실 큼 · 국소 pH는 버퍼가 방어"},
+};
+document.getElementById("selMed").addEventListener("change", e => {
+  const m = e.target.value, cfg = MED[m];
+  const sc = document.getElementById("sC");
+  sc.min = cfg.cmin; sc.max = cfg.cmax; sc.value = cfg.cdef;
+  document.getElementById("vC").textContent = (+cfg.cdef).toFixed(1);
+  document.getElementById("medHint").textContent = cfg.hint;
+  send("electrolyte", m); send("c_electrolyte", cfg.cdef);
+  fillPresets(m);
+});
+
+// ---------------- catalysts: real numbers ----------------
+// per-medium presets: [표시명, j0_specific A/m^2, Tafel b mV/dec, 경고문]
+// 값은 문헌 차수(order-of-magnitude) 근사 — 기준점이며, 숫자는 직접 수정 가능.
+const PRESETS = {
+  cathode: {
+    KOH:  [["Pt급 (j₀≈5, b≈120)", 5, 120, ""],
+           ["Ni — 기본 (j₀≈1, b≈120)", 1, 120, ""],
+           ["저활성 강재 (j₀≈0.05)", 0.05, 130, ""]],
+    H2SO4:[["Pt급 — 산에서 최고 (j₀≈10, b≈30)", 10, 30, ""],
+           ["Ni (j₀≈0.5)", 0.5, 120, "⚠ Ni는 산에서 서서히 부식"],
+           ["강재 (j₀≈0.01)", 0.01, 130, "⚠ 산에서 부식"]],
+    PB:   [["Pt급 (j₀≈2)", 2, 120, ""],
+           ["Ni (j₀≈0.3)", 0.3, 130, ""],
+           ["강재 (j₀≈0.02)", 0.02, 140, ""]],
+  },
+  anode: {
+    KOH:  [["NiFe-LDH급 — 알칼리 최고 (j₀≈0.1, b≈40)", 0.1, 40, ""],
+           ["IrO₂급 (j₀≈0.02, b≈50)", 0.02, 50, ""],
+           ["Ni — 기본 (j₀≈0.01, b≈60)", 0.01, 60, ""]],
+    H2SO4:[["IrO₂급 — 산 OER 표준 (j₀≈0.05, b≈55)", 0.05, 55, ""],
+           ["RuO₂급 (j₀≈0.1, b≈50)", 0.1, 50, "⚠ 고전위에서 용해 가능"],
+           ["Ni/NiFe (산)", 0.0001, 60, "⚠ 산에서 용해됨 — 사용 불가 수준"]],
+    PB:   [["IrO₂급 (j₀≈0.02)", 0.02, 60, ""],
+           ["CoPi급 — 중성 특화 (j₀≈0.005)", 0.005, 60, ""],
+           ["NiFe (중성)", 0.001, 70, "⚠ 중성에서 활성·안정성 저하"]],
+  },
+};
+const CAT = {
+  cathode: {sel:"preC", j0:"nJ0C", b:"nBC", rf:"nRfC", out:"outC", warn:"warnC",
+            kJ0:"j0_cathode", kRf:"Rf_cathode", kAl:"alpha_cathode"},
+  anode:   {sel:"preA", j0:"nJ0A", b:"nBA", rf:"nRfA", out:"outA", warn:"warnA",
+            kJ0:"j0_anode", kRf:"Rf_anode", kAl:"alpha_anode"},
+};
+function alphaFromB(b_mV){ return 2.303 * 8.314 * 298.15 / (96485 * (b_mV/1000)); }
+function catApply(side){
+  const c = CAT[side];
+  const j0 = Math.max(1e-9, +document.getElementById(c.j0).value || 0);
+  const b  = Math.max(5, +document.getElementById(c.b).value || 120);
+  const rf = Math.max(0.01, +document.getElementById(c.rf).value || 1);
+  send(c.kJ0, j0); send(c.kRf, rf); send(c.kAl, alphaFromB(b));
+  const j0eff = j0 * rf;
+  const eta10 = Math.max(0, b * Math.log10(100 / j0eff));   // @ 10 mA/cm^2 = 100 A/m^2
+  document.getElementById(c.out).textContent =
+    `유효 j₀(기하) = ${j0eff.toPrecision(3)} A/m² · η@10mA/cm² ≈ ${eta10.toFixed(0)} mV`;
+}
+function fillPresets(med){
+  for(const side of ["cathode","anode"]){
+    const c = CAT[side], sel = document.getElementById(c.sel);
+    const fitBox = document.getElementById(side === "cathode" ? "fitBoxC" : "fitBoxA");
+    sel.innerHTML = "";
+    PRESETS[side][med].forEach(([name], i) =>
+      sel.insertAdjacentHTML("beforeend", `<option value="${i}">${name}</option>`));
+    sel.insertAdjacentHTML("beforeend", `<option value="custom">✏️ 내 촉매 (값 직접 입력)</option>`);
+    sel.insertAdjacentHTML("beforeend", `<option value="fit">📈 내 촉매 (측정곡선에서 추출)</option>`);
+    const apply = v => {
+      fitBox.classList.toggle("off", v !== "fit");       // curve tool only for "측정곡선"
+      if(v === "fit" || v === "custom"){                 // my-catalyst: keep current j0/Tafel
+        if(v === "custom") document.getElementById(c.warn).textContent = "";
+        return;
+      }
+      const [, j0, b, warn] = PRESETS[side][med][+v];
+      document.getElementById(c.j0).value = j0;
+      document.getElementById(c.b).value = b;
+      document.getElementById(c.warn).textContent = warn;
+      catApply(side);
+    };
+    sel.onchange = e => apply(e.target.value);
+    apply(String(side === "cathode" ? (med === "KOH" ? 1 : 0) : (med === "KOH" ? 2 : 0)));
+  }
+}
+for(const side of ["cathode","anode"])
+  for(const f of ["j0","b","rf"])
+    document.getElementById(CAT[side][f]).addEventListener("change", () => catApply(side));
+fillPresets("KOH");
+
+// ---------------- morphology (porous electrode) ----------------
+const SUBS = [["ni_foam","Ni 폼"],["ss_foam","STS 폼"],["carbon_paper","카본 페이퍼(GDL)"],
+              ["ni_mesh","Ni 메쉬"],["flat_plate","평판(기준)"]];
+const NANOS = [["nanoparticle","나노입자"],["nanowire","나노와이어"],["nanosphere","나노구"],
+               ["nanoporous","나노다공/덴드라이트"],["planar_film","평막"]];
+{
+  const ss = document.getElementById("selSub"), sn = document.getElementById("selNano");
+  SUBS.forEach(([k,n]) => ss.insertAdjacentHTML("beforeend", `<option value="${k}">${n}</option>`));
+  NANOS.forEach(([k,n]) => sn.insertAdjacentHTML("beforeend", `<option value="${k}">${n}</option>`));
+  ss.onchange = e => send("substrate", e.target.value);
+  sn.onchange = e => send("nanostructure", e.target.value);
+  const sl = document.getElementById("sLoad");
+  sl.addEventListener("input", () => {
+    document.getElementById("vLoad").textContent = (+sl.value).toFixed(1);
+    send("cat_loading", +sl.value);
+  });
+}
+
+// ---------------- morphology measured-value overrides ----------------
+{
+  const OVR = {rf_override:"ovrRf", Le_override_mm:"ovrLe", eps_override:"ovrEps", sigma_override:"ovrSig"};
+  const on = () => document.getElementById("ovrOn").checked;
+  const push = () => { for(const [k,id] of Object.entries(OVR)) send(k, on() ? (+document.getElementById(id).value) : null); };
+  document.getElementById("ovrOn").addEventListener("change", e => {
+    document.getElementById("ovrFields").style.display = e.target.checked ? "" : "none";
+    push();                                       // send current values, or null to clear
+  });
+  for(const id of Object.values(OVR))
+    document.getElementById(id).addEventListener("change", () => { if(on()) push(); });
+  document.getElementById("ovrBETbtn").addEventListener("click", () => {
+    const a = +document.getElementById("ovrBET").value, l = +document.getElementById("ovrLoad").value;
+    if(a > 0 && l > 0){
+      document.getElementById("ovrRf").value = Math.max(1, a*l*10).toFixed(0);   // R_f = area*loading*10
+      if(on()) push();
+    }
+  });
+}
+
+// ---------------- polarization-curve fit (measured -> kinetics) ----------------
+// Tafel:  eta = b * log10(j / j0).  Regress eta vs log10|j| over the auto-detected
+// linear region; slope = b, j0 = 10^(-intercept/b). Pure data transform -> fills
+// the chosen electrode's j0/Tafel inputs (geometric basis, R_f=1).
+function _linreg(w){
+  const n = w.length; let sx=0,sy=0,sxx=0,sxy=0;
+  for(const [x,y] of w){ sx+=x; sy+=y; sxx+=x*x; sxy+=x*y; }
+  const slope = (n*sxy - sx*sy) / (n*sxx - sx*sx), intercept = (sy - slope*sx)/n;
+  const my = sy/n; let ssr=0, sst=0;
+  for(const [x,y] of w){ const yh = slope*x+intercept; ssr+=(y-yh)**2; sst+=(y-my)**2; }
+  return { slope, intercept, r2: sst>0 ? 1-ssr/sst : 0 };
+}
+function tafelFit(side){
+  const X = side === "cathode" ? "C" : "A";
+  const $ = id => document.getElementById(id + X);
+  const out = $("fitOut");
+  const scale = $("fitScale").value, Eeq = +$("fitEeq").value || 0, umul = +$("fitUnit").value;
+  const pts = [];
+  for(const ln of $("fitData").value.trim().split(/\n+/)){
+    const m = ln.trim().split(/[\s,]+/).map(Number);
+    if(m.length < 2 || !isFinite(m[0]) || !isFinite(m[1])) continue;
+    const j = Math.abs(m[1]) * umul; if(j <= 0) continue;
+    let eta;                                                        // overpotential magnitude
+    if(scale === "eta") eta = Math.abs(m[0]);
+    else if(scale === "rhe") eta = side === "anode" ? m[0]-1.23 : Math.abs(m[0]);
+    else eta = Math.abs(m[0]-Eeq);
+    if(eta > 0) pts.push([Math.log10(j), eta]);                     // x=log10 j, y=eta
+  }
+  if(pts.length < 4){ out.textContent = "⚠ 유효한 점이 4개 이상 필요"; return; }
+  pts.sort((a,b) => a[0]-b[0]);
+  // pick the MOST LINEAR window (max R^2), longest span as tiebreak. Requiring
+  // >=1 decade (relax to 0.5) auto-excludes bent low-eta / iR-bent high-j ends.
+  const windows = minSpan => {
+    const cs = [];
+    for(let i=0; i<pts.length-3; i++) for(let k=i+3; k<pts.length; k++){
+      const span = pts[k][0]-pts[i][0]; if(span < minSpan) continue;
+      cs.push({..._linreg(pts.slice(i,k+1)), i, k, span, n:k-i+1});
+    }
+    return cs;
+  };
+  let cands = windows(1.0); if(!cands.length) cands = windows(0.5);
+  if(!cands.length){ out.textContent = "⚠ 선형 구간(≥0.5 decade)을 못 찾음 — 더 넓은 전류 범위를"; return; }
+  const maxr2 = Math.max(...cands.map(c => c.r2));
+  const best = cands.filter(c => c.r2 >= maxr2-1e-3).sort((a,b) => b.span-a.span)[0];
+  const b = best.slope, j0 = Math.pow(10, -best.intercept/b);
+  if(!(b > 0) || !(j0 > 0)){ out.textContent = "⚠ 비물리적 피팅 — 선형 Tafel 구간만 붙여보세요"; return; }
+  const c = CAT[side];
+  document.getElementById(c.j0).value = j0.toPrecision(3);
+  document.getElementById(c.b).value = (b*1000).toFixed(0);         // V/dec -> mV/dec
+  document.getElementById(c.rf).value = 1;
+  catApply(side);
+  out.innerHTML = `<b>b=${(b*1000).toFixed(0)} mV/dec · j₀=${j0.toPrecision(3)} A/m²</b> · R²=${best.r2.toFixed(4)} (${best.n}점·${best.span.toFixed(1)} dec) 적용됨`;
+  drawFitPlot("fitPlot"+X, pts, best);
+}
+function drawFitPlot(cid, pts, best){
+  const cv = document.getElementById(cid); const {c,W,H} = prep(cv); if(W<10) return;
+  c.clearRect(0,0,W,H);
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const PX = x => 26 + (W-34)*(x-x0)/Math.max(1e-9,x1-x0);
+  const PY = y => H-16 - (H-26)*(y-y0)/Math.max(1e-9,y1-y0);
+  c.fillStyle = "#5a6577";
+  for(const p of pts){ c.beginPath(); c.arc(PX(p[0]),PY(p[1]),2.4,0,6.2832); c.fill(); }
+  c.fillStyle = "#4da3ff";
+  for(let i=best.i;i<=best.k;i++){ c.beginPath(); c.arc(PX(pts[i][0]),PY(pts[i][1]),2.8,0,6.2832); c.fill(); }
+  c.strokeStyle = "#ffb454"; c.lineWidth = 1.8; c.beginPath();
+  c.moveTo(PX(pts[best.i][0]), PY(best.slope*pts[best.i][0]+best.intercept));
+  c.lineTo(PX(pts[best.k][0]), PY(best.slope*pts[best.k][0]+best.intercept));
+  c.stroke();
+  c.fillStyle = "#8a93a3"; c.font = "9px monospace";
+  c.fillText("η", 4, 12); c.fillText("log₁₀ j", W-46, H-3);
+}
+for(const X of ["C","A"]){
+  document.getElementById("fitScale"+X).addEventListener("change", e =>
+    document.getElementById("fitEeqRow"+X).style.display = e.target.value === "eeq" ? "" : "none");
+}
+document.getElementById("fitBtnC").addEventListener("click", () => tafelFit("cathode"));
+document.getElementById("fitBtnA").addEventListener("click", () => tafelFit("anode"));
+for(const [bid, fld] of [["ffJ","j"],["ffT","theta"]])
+  document.getElementById(bid).addEventListener("click", () => {
+    faceField = fld;
+    document.getElementById("ffJ").classList.toggle("on", fld === "j");
+    document.getElementById("ffT").classList.toggle("on", fld === "theta");
+  });
+const CHAN_BTN = [["cfEff","eff"],["cfT","theta"],["cfJ","j"],["cfE","eps"]];
+for(const [bid, fld] of CHAN_BTN)
+  document.getElementById(bid).addEventListener("click", () => {
+    chanField = fld;
+    for(const [b, f] of CHAN_BTN) document.getElementById(b).classList.toggle("on", f === fld);
+  });
+// design tool: draw a custom flow path by clicking on the cell face
+function setDrawMode(on){
+  drawMode = on;
+  document.getElementById("btnDraw").classList.toggle("on", on);
+  document.getElementById("btnDrawDone").style.display = on ? "" : "none";
+  document.getElementById("btnDrawClear").style.display = on ? "" : "none";
+  if(on) drawPath = [];
+}
+document.getElementById("btnDraw").addEventListener("click", () => setDrawMode(!drawMode));
+document.getElementById("btnDrawClear").addEventListener("click", () => { drawPath = []; });
+document.getElementById("btnDrawDone").addEventListener("click", () => {
+  if(drawPath.length >= 2) send("custom_path", drawPath);   // use the drawn path as the channel
+  setDrawMode(false);
+});
+
+// ---------------- segments / buttons ----------------
+function segWire(id, attr, key, after){
+  const seg = document.getElementById(id);
+  seg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    seg.querySelectorAll("button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on"); send(key, b.dataset[attr]); if(after) after(b.dataset[attr]);
+  }));
+}
+let opMode = "CP";
+segWire("segMode", "mo", "mode", mo => {
+  opMode = mo;
+  document.querySelectorAll(".onlyCP").forEach(el => el.classList.toggle("off", mo !== "CP"));
+  document.querySelectorAll(".onlyCA").forEach(el => el.classList.toggle("off", mo !== "CA"));
+});
+segWire("segElec", "e", "electrode");
+const MODEL_HINT = {
+  two_electrode: "0D: 두 전극 Butler–Volmer + 직렬저항. 빠른 실시간 탐색(주력)",
+  oned: "1D: gap(전극→막)을 48층으로 — ε(z)·c(z)·확산층 δ를 펼쳐 봄",
+  porous: "다공전극: 전극 두께를 Newman BVP로 — 깊이별 반응분포·이용률(폼이 다 일하는지)",
+  face2d: "면 2D: 전극면을 셀로 나눠 버블 누적→전류 재분배(병목맵). 다단 전극망 근사(CFD 아님)",
+  channel: "유로 셀 설계: 유로(사행/병렬/직선)를 따라 가스가 하류로 쌓임 → 병목 위치를 봄. 1D 경로 2상 근사",
+  flow2d: "2D 결합 CFD: 액체 Navier–Stokes를 실제로 풀고 버블 양방향 결합 → 와류·self-stirring 창발. 채널 단면(아래=전극). 2D·서브격자 버블(계면해상·3D 아님)",
+};
+segWire("segModel", "m", "model", m => {
+  const porous = m === "porous", chan = m === "channel";
+  const twoE = m === "two_electrode" || porous || chan;   // all use the BV catalyst inputs
+  document.querySelectorAll(".only2e").forEach(el => el.classList.toggle("off", !twoE));
+  document.querySelectorAll(".onlyPorous").forEach(el => el.classList.toggle("off", !porous));
+  document.querySelectorAll(".onlyChannel").forEach(el => el.classList.toggle("off", !chan));
+  document.querySelectorAll(".only1d").forEach(el => el.classList.toggle("off", m !== "oned"));
+  document.querySelectorAll(".ecsaRow").forEach(el => el.classList.toggle("off", porous));
+  document.getElementById("boxEIS").classList.toggle("off", m !== "two_electrode");  // EIS only for 0D 2-electrode
+  document.getElementById("modelHint").textContent = MODEL_HINT[m] || "";
+  if(porous){ send("Rf_cathode", 1); send("Rf_anode", 1); }           // morphology owns the area
+  if(m !== "flow2d") drillInfo = null;                                 // left the drilled region
+  document.getElementById("btnBackChannel").style.display = (m === "flow2d" && drillInfo) ? "" : "none";
+});
+segWire("segChan", "ct", "channel_type", () => { send("custom_path", null); setDrawMode(false); });
+document.getElementById("btnBackChannel").addEventListener("click", () => {
+  drillInfo = null; send("drill_inlet_gas", 0);
+  const b = document.querySelector('[data-m="channel"]'); if(b) b.click();   // back to the whole channel
+});
+document.getElementById("nCdlC").addEventListener("change", e =>
+  send("C_dl_cathode", Math.max(0.1, +e.target.value) * 0.01));   // uF/cm^2 -> F/m^2
+document.getElementById("nCdlA").addEventListener("change", e =>
+  send("C_dl_anode", Math.max(0.1, +e.target.value) * 0.01));
+document.getElementById("cbT").addEventListener("change", e => {
+  send("thermal", e.target.checked);
+  document.getElementById("sT").disabled = e.target.checked;
+});
+document.getElementById("cbHF").addEventListener("change", e => send("high_fidelity", e.target.checked));
+document.getElementById("cbGas").addEventListener("change", e => send("gas_feedback", e.target.checked));
+
+// ---------------- cell design save / load (parametric designer) ----------------
+const DESIGN_NUM = ["sJ","sV","sA","sC","sU","sB","sE","sT","sP","sG","sFH","sLoad","sNP","sCW","sRm","sRc","sHA",
+  "selMed","selSub","selNano","nJ0C","nBC","nRfC","nJ0A","nBA","nRfA","nCdlC","nCdlA",
+  "ovrRf","ovrLe","ovrEps","ovrSig"];
+const DESIGN_CB = ["cbT","ovrOn","cbHF","cbGas"];
+function activeSeg(id){ const b = document.querySelector(`#${id} button.on`); return b ? Object.values(b.dataset)[0] : null; }
+function saveDesign(){
+  const d = {_v:1, model:activeSeg("segModel"), mode:activeSeg("segMode"), channel_type:activeSeg("segChan")};
+  for(const id of DESIGN_NUM){ const el = document.getElementById(id); if(el) d[id] = el.value; }
+  for(const id of DESIGN_CB){ const el = document.getElementById(id); if(el) d[id] = el.checked; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], {type:"application/json"}));
+  a.download = "cell_design.json"; a.click(); URL.revokeObjectURL(a.href);
+}
+function loadDesign(d){
+  if(d.mode){ const b = document.querySelector(`#segMode button[data-mo="${d.mode}"]`); if(b) b.click(); }
+  if(d.model){ const b = document.querySelector(`#segModel button[data-m="${d.model}"]`); if(b) b.click(); }
+  if(d.channel_type){ const b = document.querySelector(`#segChan button[data-ct="${d.channel_type}"]`); if(b) b.click(); }
+  for(const id of ["selMed","selSub","selNano"]){ if(d[id]!=null){ const s=document.getElementById(id); s.value=d[id]; s.dispatchEvent(new Event("change")); } }
+  for(const id of ["preC","preA"]){ const s=document.getElementById(id); if(s){ s.value="custom"; s.dispatchEvent(new Event("change")); } }  // keep the loaded j0/Tafel
+  for(const id of DESIGN_NUM){
+    if(["selMed","selSub","selNano"].includes(id) || d[id]==null) continue;
+    const el = document.getElementById(id); if(!el) continue;
+    el.value = d[id]; el.dispatchEvent(new Event(el.type === "range" ? "input" : "change"));
+  }
+  for(const id of DESIGN_CB){ if(d[id]==null) continue; const el=document.getElementById(id); if(!el) continue; el.checked=!!d[id]; el.dispatchEvent(new Event("change")); }
+}
+document.getElementById("btnSaveDesign").addEventListener("click", saveDesign);
+document.getElementById("btnLoadDesign").addEventListener("click", () => document.getElementById("fileDesign").click());
+document.getElementById("fileDesign").addEventListener("change", (e) => {
+  const f = e.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { try { loadDesign(JSON.parse(rd.result)); } catch(err){ alert("불러오기 실패: " + err); } };
+  rd.readAsText(f); e.target.value = "";
+});
+let paused = false;
+document.getElementById("btnPause").addEventListener("click", () => {
+  paused = !paused; send("paused", paused);
+  document.getElementById("btnPause").textContent = paused ? "▶ 재생" : "⏸ 일시정지";
+});
+document.getElementById("btnReset").addEventListener("click", () =>
+  fetch("/api/reset", {method:"POST", headers:HDRS, body:"{}"}));
+
+// ---------------- voltage stack + bottleneck ----------------
+const SEG2E = [["E_rev","#8a93a3","E_rev"],["eta_act_anode","#ff6b6b","η OER"],
+               ["eta_act_cathode","#4da3ff","η HER"],["eta_conc","#ffd166","η 농도"],
+               ["eta_ohmic","#9b7bff","η 옴"]];
+const SEGLP = [["E_rev","#8a93a3","E_rev"],["eta_act","#37d39a","η 활성화"],
+               ["eta_ohmic","#9b7bff","η 옴"]];
+function drawStack(st){
+  const segs = (st.model === "two_electrode" || st.model === "porous" || st.model === "face2d" || st.model === "channel" || st.model === "flow2d") ? SEG2E : SEGLP;
+  const ov = st.ov || {}; const V = st.V_now || st.V_cell || 1;
+  let html = "", leg = "";
+  for(const [k, col, name] of segs){
+    const v = Math.max(0, ov[k] || 0);
+    html += `<div style="width:${(100*v/V).toFixed(2)}%;background:${col}"></div>`;
+    leg  += `<span><span class="dot" style="background:${col}"></span>${name} <b>${v.toFixed(3)}</b></span>`;
+  }
+  document.getElementById("stack").innerHTML = html;
+  document.getElementById("leg").innerHTML = leg;
+}
+function drawBars(elId, items, colors){
+  const mx = Math.max(1e-6, ...items.map(i => i[1]));
+  let html = "";
+  items.forEach(([name, v], i) => {
+    html += `<div class="bnrow ${i===0?"top":""}">
+      <span class="bnname">${name}${i===0?" ← 병목":""}</span>
+      <span class="bnbarw"><span class="bnbar" style="display:block;width:${(100*v/mx).toFixed(1)}%;background:${colors[i%colors.length]}"></span></span>
+      <span class="bnval">${(v*1000).toFixed(1)} mV</span></div>`;
+  });
+  document.getElementById(elId).innerHTML = html;
+}
+function drawBottleneck(st){
+  const ov = st.ov || {};
+  if(st.model !== "two_electrode" && st.model !== "porous" && st.model !== "face2d" && st.model !== "channel" && st.model !== "flow2d"){
+    drawBars("bnMain", [["η 활성화", ov.eta_act||0], ["η 옴", ov.eta_ohmic||0]]
+      .sort((a,b)=>b[1]-a[1]), ["#37d39a","#9b7bff"]);
+    return;
+  }
+  drawBars("bnMain", [
+      ["η 활성화 OER", ov.eta_act_anode||0],
+      ["η 활성화 HER", ov.eta_act_cathode||0],
+      ["η 농도(물질전달)", ov.eta_conc||0],
+      ["η 옴(전해질+막+접촉)", ov.eta_ohmic||0],
+    ].sort((a,b)=>b[1]-a[1]), ["#ff6b6b","#4da3ff","#ffd166","#9b7bff"]);
+  drawBars("bnBub", [
+      ["음극 버블 차폐 (θ)", ov.eta_bub_cov_cathode||0],
+      ["양극 버블 차폐 (θ)", ov.eta_bub_cov_anode||0],
+      ["void 저항 (ε)", ov.eta_bub_void||0],
+    ].sort((a,b)=>b[1]-a[1]), ["#4da3ff","#ff6b6b","#9b7bff"]);
+}
+
+// ---------------- stage (dual panels) ----------------
+function drawPanel(c, x0, w, yb, bubbles, rgb, label, theta, caDeg){
+  const scl = Math.min((w-16)/0.006, (yb-24)/0.005);
+  c.fillStyle = "#2a3550"; c.fillRect(x0+8, yb, 0.006*scl, 5);
+  c.fillStyle = "#8a93a3"; c.font = "11px sans-serif";
+  c.fillText(`${label}  θ=${theta.toFixed(2)}  (${bubbles.length})`, x0+8, yb+16);
+  // A wall-attached bubble is a sessile spherical cap, not a full circle centred on
+  // the electrode. Its sphere centre sits r*cos(contactAngle) above the surface, so
+  // the contact line (footprint) = r*sin(contactAngle) -- exactly the physics model.
+  // Clip to above the electrode so no bubble is ever drawn into the metal.
+  const cosA = Math.cos((caDeg || 90) * Math.PI / 180);
+  c.save();
+  c.beginPath(); c.rect(x0, -100, w, yb + 100); c.clip();
+  for(const b of bubbles){                       // [id, x_um, y_um, r_um, att]
+    const x = b[1]*1e-6, r = b[3]*1e-6, att = b[4];
+    const px = x0+8 + x*scl, pr = Math.max(1.2, r*scl);
+    let pcy;
+    if(att){
+      pcy = yb - (r * cosA) * scl;               // cap centre above (or below) surface
+    } else {
+      pcy = yb - b[2]*1e-6*scl;                   // detached: free sphere at its height
+      if(pcy < -20 || px > x0+w) continue;
+    }
+    c.beginPath(); c.arc(px, pcy, pr, 0, 6.2832);
+    c.fillStyle = `rgba(${rgb},${att ? 0.85 : 0.30})`; c.fill();
+    if(!att){ c.strokeStyle = `rgba(${rgb},0.8)`; c.lineWidth = 1; c.stroke(); }
+  }
+  c.restore();
+}
+
+// ---- snapshot interpolation: poll at ~10 Hz, render at 60 fps ----
+let prevSt = null, curSt = null, prevAt = 0, curAt = 0;
+// Per-bubble velocity EXTRAPOLATION from the last two snapshots. Unlike lerp
+// (which replays the past, one snapshot behind), this predicts each bubble's
+// CURRENT position and keeps it gliding between snapshots -- so fast risers and
+// slow snapshots (e.g. over a tunnel) still look continuous instead of popping.
+function predictBubbles(prevList, curList){
+  if(!prevList || !prevList.length) return curList;
+  const dtSnap = Math.max(1, curAt - prevAt);
+  const tEx = Math.min(performance.now() - curAt, 1.5 * dtSnap);  // cap to avoid runaway
+  const pm = new Map();
+  for(const p of prevList) pm.set(p[0], p);
+  const out = [];
+  for(const b of curList){
+    const p = pm.get(b[0]);
+    if(p){
+      const vx = (b[1] - p[1]) / dtSnap, vy = (b[2] - p[2]) / dtSnap;
+      out.push([b[0], b[1] + vx * tEx, b[2] + vy * tEx, b[3], b[4]]);
+    } else {
+      out.push(b);   // new bubble: no history yet
+    }
+  }
+  return out;
+}
+// flow2d bubbles carry a stable id ([id,x,y,r]) -> interpolate between polls so
+// the 2-D CFD looks continuously alive at 60fps, not a 18Hz jump every snapshot
+function predictFlow(prev, cur){
+  if(!cur || !cur.length) return cur;
+  if(!prev || !prev.length) return cur;
+  const dt = Math.max(1, curAt - prevAt), tEx = Math.min(performance.now() - curAt, 1.5 * dt);
+  const pm = new Map(); for(const p of prev) pm.set(p[0], p);
+  return cur.map(b => {
+    const p = pm.get(b[0]);
+    if(!p) return b;
+    return [b[0], b[1] + (b[1] - p[1]) / dt * tEx, b[2] + (b[2] - p[2]) / dt * tEx, b[3]];
+  });
+}
+function frame(){
+  if(curSt){
+    const st = Object.assign({}, curSt);
+    st.bubbles = predictBubbles(prevSt && prevSt.bubbles, curSt.bubbles);
+    st.bubbles_a = predictBubbles(prevSt && prevSt.bubbles_a, curSt.bubbles_a);
+    if(curSt.model === "flow2d"){                 // smooth the 2-D CFD bubbles too
+      if(curSt.flow) st.flow = Object.assign({}, curSt.flow,
+        {bub: predictFlow(prevSt && prevSt.flow && prevSt.flow.bub, curSt.flow.bub)});
+      if(curSt.flow_a) st.flow_a = Object.assign({}, curSt.flow_a,
+        {bub: predictFlow(prevSt && prevSt.flow_a && prevSt.flow_a.bub, curSt.flow_a.bub)});
+    }
+    drawStage(st);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// ---- click drill-in: click a height on an electrode -> local detail ----
+document.getElementById("stage").addEventListener("click", (e) => {
+  const out = document.getElementById("drillOut");
+  if(!curSt) return;
+  const cv = e.currentTarget, rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width * cv.clientWidth;
+  const y = (e.clientY - rect.top) / rect.height * cv.clientHeight;
+  if(curSt.model === "channel" && chanHit){
+    if(drawMode){                                  // design tool: add a waypoint to the drawn path
+      const fx = (x - chanHit.x0) / chanHit.w, fy = 1 - (y - chanHit.y0) / chanHit.h;
+      if(fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) drawPath.push([+fx.toFixed(3), +fy.toFixed(3)]);
+      return;
+    }
+    drillChannel(x, y, out); return;
+  }
+  if(!cellGeom) return;
+  const g = cellGeom, side = g.sides.find(s => x >= s.x0 && x <= s.x1);
+  if(!side || y < g.yTop || y > g.yBot){ out.textContent = "전극/갭 영역을 클릭하세요 (위=막힘, 아래=깨끗)"; return; }
+  const hfrac = Math.max(0, Math.min(1, (g.yBot - y) / (g.yBot - g.yTop)));   // 0 bottom .. 1 top
+  drillIn(side.name, side.label, hfrac, curSt, out);
+});
+let drillInfo = null;   // {pct, eff} of the channel region currently shown in 2D flow
+function drillChannel(x, y, out){
+  const {segs, PX, PY} = chanHit;
+  let best = null, bd = 1e9, bi = 0;
+  for(let k = 0; k < segs.length; k++){
+    const s = segs[k], mx = (PX(s[0]) + PX(s[2])) / 2, my = (PY(s[1]) + PY(s[3])) / 2;
+    const d = (x - mx) ** 2 + (y - my) ** 2;
+    if(d < bd){ bd = d; best = s; bi = k; }
+  }
+  if(!best || bd > 2000){ out.textContent = "유로 선을 클릭하세요 (초록=입구 → 빨강=출구)"; return; }
+  // drill into the LOCAL 2D flow for this region: upstream gas crowding ~ local coverage
+  drillInfo = {pct: Math.round(bi / Math.max(1, segs.length - 1) * 100), eff: Math.round(best[7] * 100)};
+  send("drill_inlet_gas", best[6] * 500);            // upstream gas entering this region
+  const b = document.querySelector('[data-m="flow2d"]'); if(b) b.click();   // show that region's 2D flow
+}
+function drillIn(name, label, hfrac, st, out){
+  let msg = `<b>${label} · 높이 ${Math.round(hfrac*100)}%</b>`;
+  if(st.model === "face2d" && st.face){
+    const f = st.face, r = Math.min(f.ny - 1, Math.floor(hfrac * f.ny));
+    const mean = a => a.reduce((p, q) => p + q, 0) / a.length;
+    const th = mean(f.theta_field[r]), jl = mean(f.j_field[r]);
+    msg += ` → θ=${th.toFixed(2)} · j_local=${(jl/1e4).toFixed(3)} A/cm² (셀평균 ${(st.j/1e4).toFixed(3)}) — ${th > 0.4 ? "버블 막힘 병목" : "양호"}`;
+  } else if(st.model === "porous" && st.porous){
+    const u = name === "anode" ? st.porous.util_a : st.porous.util_c;
+    msg += ` → 다공 이용률 ${(u*100).toFixed(0)}% · 침투 ${st.porous.pen_mm_c.toFixed(2)}/${st.porous.L_e_mm.toFixed(2)}mm (깊이 프로파일은 우측 패널)`;
+  } else {
+    const ov = st.ov || {};
+    const ea = name === "anode" ? ov.eta_act_anode : ov.eta_act_cathode;
+    msg += ` → η_활성 ${(ea||0).toFixed(3)} V · η_옴 ${(ov.eta_ohmic||0).toFixed(3)} V (0D: 높이 균일)`;
+  }
+  out.innerHTML = msg;
+}
+// High-DPI canvas: enlarge the backing store to devicePixelRatio and scale the
+// context so all canvas text/lines render crisp on retina/scaled displays.
+// Drawing code keeps using logical (CSS-pixel) W/H returned here.
+const _logH = new WeakMap();
+function prep(cv){
+  if(!_logH.has(cv)){ _logH.set(cv, cv.height); cv.style.width = "100%"; cv.style.height = cv.height + "px"; }
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = _logH.get(cv);
+  const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+  if(cv.width !== bw) cv.width = bw;
+  if(cv.height !== bh) cv.height = bh;
+  const c = cv.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return {c, W, H};
+}
+// integrated cell cross-section: membrane centre, the two electrodes facing it,
+// bubbles rising in each gap as sessile caps on the (now vertical) electrode face.
+const PW_M = 0.006, PH_M = 0.005;     // representative patch width/height [m]
+let cellGeom = null;                  // hit-test regions for click drill-in
+function drawStage(st){
+  const cv = document.getElementById("stage");
+  const {c, W, H} = prep(cv); if(W < 10) return;
+  c.clearRect(0,0,W,H);
+  const ca = st.contact_angle || 90;
+  if(st.model === "flow2d"){ cellGeom = null; drawFlow2D(c, W, H, st); return; }
+  if(st.model === "channel"){ cellGeom = null; drawChannelFace(c, W, H, st); return; }
+  const dual = st.track_both && (st.model === "two_electrode" || st.model === "porous" || st.model === "face2d");
+  if(dual){
+    drawCellCross(c, W, H, st, ca);
+  } else {
+    cellGeom = null;
+    const rgb = st.electrode === "HER" ? "77,163,255" : "255,107,107";
+    drawPanel(c, 4, W-8, H-26, st.bubbles, rgb,
+              st.electrode === "HER" ? "HER 음극 · H₂" : "OER 양극 · O₂", st.theta, ca);
+  }
+}
+function drawElectrodeBar(c, x0, x1, yTop, yBot, rgb, st, which){
+  const Hd = yBot - yTop, w = x1 - x0;
+  c.fillStyle = "#2a3550"; c.fillRect(x0, yTop, w, Hd);                 // metal
+  if(st.model === "face2d" && st.face){                                // bottleneck overlay
+    const g = st.face.theta_field, ny = st.face.ny;
+    for(let r = 0; r < ny; r++){
+      const t = g[r].reduce((a, b) => a + b, 0) / g[r].length;          // row-mean coverage
+      c.fillStyle = `rgba(${heatColor(t)},0.5)`;
+      c.fillRect(x0, yBot - (r + 1) * Hd / ny, w, Hd / ny + 0.6);
+    }
+  }
+  c.strokeStyle = `rgba(${rgb},0.6)`; c.lineWidth = 1; c.strokeRect(x0, yTop, w, Hd);
+}
+function drawGapBubbles(c, fx, mx, yTop, yBot, bubbles, rgb, caDeg, scl){
+  if(!bubbles) return;
+  const dir = Math.sign(mx - fx), gap = Math.abs(mx - fx), Hd = yBot - yTop;
+  const cosA = Math.cos((caDeg || 90) * Math.PI / 180);
+  c.save();
+  c.beginPath(); c.rect(Math.min(fx, mx) - 1, yTop - 30, gap + 2, Hd + 60); c.clip();
+  for(const b of bubbles){
+    const bx = b[1] * 1e-6, by = b[2] * 1e-6, r = b[3] * 1e-6, att = b[4];
+    const r_px = Math.max(1.5, r * scl);
+    let px, py;
+    if(att){                                  // cap spread up the vertical face by width-coord
+      py = yBot - Math.min(1, bx / PW_M) * Hd;
+      px = fx + dir * (r * cosA * scl);        // bulges into the gap; clipped at the face
+    } else {                                   // detached: rise up the gap
+      const rf = Math.min(1, by / (PH_M * 1.5));
+      py = yBot - rf * Hd;
+      px = fx + dir * (r_px + (bx / PW_M) * 0.55 * Math.max(0, gap - 2 * r_px));
+      if(py < yTop - 25) continue;
+    }
+    c.beginPath(); c.arc(px, py, r_px, 0, 6.2832);
+    c.fillStyle = `rgba(${rgb},${att ? 0.85 : 0.30})`; c.fill();
+    if(!att){ c.strokeStyle = `rgba(${rgb},0.8)`; c.lineWidth = 1; c.stroke(); }
+  }
+  c.restore();
+}
+function drawCellCross(c, W, H, st, ca){
+  // zero-gap (MEA): membrane in the centre, porous electrodes pressed onto it,
+  // flow channels on the OUTER side where solution flows and gas bubbles rise & exit.
+  const yTop = 20, yBot = H - 24, Hd = yBot - yTop;
+  const mw = 18, ew = 30, cw = 7, cx = W / 2;        // membrane, electrode, collector widths
+  const mL = cx - mw / 2, mR = cx + mw / 2;          // membrane edges (centre)
+  const eL0 = mL - ew, eR1 = mR + ew;                // electrode outer (channel-side) faces
+  const chL = 8 + cw, chR = W - 8 - cw;              // channel outer bound (inside collector)
+  const scl = Hd / (PH_M * 1.5);                     // metres -> px (vertical & radius)
+  c.fillStyle = "#161d2e";                           // collector / bipolar plates (outer)
+  c.fillRect(8, yTop, cw, Hd); c.fillRect(W - 8 - cw, yTop, cw, Hd);
+  drawElectrodeBar(c, eL0, mL, yTop, yBot, "77,163,255", st, "cathode");   // pressed on membrane
+  drawElectrodeBar(c, mR, eR1, yTop, yBot, "255,107,107", st, "anode");
+  c.fillStyle = "#39435c"; c.fillRect(mL, yTop, mw, Hd);                    // membrane (centre)
+  drawGapBubbles(c, eL0, chL, yTop, yBot, st.bubbles, "77,163,255", ca, scl);   // outer channel
+  drawGapBubbles(c, eR1, chR, yTop, yBot, st.bubbles_a, "255,107,107", ca, scl);
+  c.textAlign = "center"; c.fillStyle = "#8a93a3"; c.font = "10px sans-serif";
+  c.fillText("막", cx, yBot + 15);
+  c.fillStyle = "#5a6577"; c.font = "9px sans-serif";
+  c.fillText("zero-gap: 전극이 막에 밀착 · 유로(바깥)로 용액 흐르고 가스↑ 배출", cx, 12);
+  c.fillStyle = "#6b7689"; c.font = "11px sans-serif";
+  c.fillText("H₂ ↑", (chL + eL0) / 2, yTop + 24);
+  c.fillText("O₂ ↑", (eR1 + chR) / 2, yTop + 24);
+  c.textAlign = "left"; c.fillStyle = "#8a93a3"; c.font = "11px sans-serif";
+  c.fillText(`HER 음극  θ=${st.theta.toFixed(2)} (${st.bubbles.length})`, 6, yBot + 15);
+  c.textAlign = "right";
+  c.fillText(`OER 양극  θ=${st.theta_a.toFixed(2)} (${st.bubbles_a.length})`, W - 6, yBot + 15);
+  c.textAlign = "left";
+  if(st.model === "face2d"){
+    c.fillStyle = "#5a6577"; c.font = "9px sans-serif"; c.textAlign = "center";
+    c.fillText("전극 색 = 병목(위=막힘) · 클릭 → 상세", cx, yTop + 38); c.textAlign = "left";
+  }
+  cellGeom = {yTop, yBot, cx,
+              sides: [{name: "cathode", x0: 8, x1: mL, label: "HER 음극"},
+                      {name: "anode", x0: mR, x1: W - 8, label: "OER 양극"}]};
+}
+
+// ---------------- traces / polar ----------------
+function drawTrace(cv, ys, color, fmt, lblId){
+  const {c, W, H} = prep(cv); if(W < 10) return;
+  c.clearRect(0,0,W,H);
+  if(!ys || ys.length < 2) return;
+  let mn = Math.min(...ys), mx = Math.max(...ys);
+  if(mx - mn < 1e-12) mx = mn + 1e-12;
+  c.strokeStyle = color; c.lineWidth = 1.6; c.beginPath();
+  for(let i = 0; i < ys.length; i++){
+    const x = 4 + (W-8) * i / (ys.length-1);
+    const y = H-4 - (H-8) * (ys[i]-mn) / (mx-mn);
+    i ? c.lineTo(x,y) : c.moveTo(x,y);
+  }
+  c.stroke();
+  if(lblId) document.getElementById(lblId).textContent = fmt(mn) + " ~ " + fmt(mx);
+}
+function drawProfiles(st){
+  const p = st.profiles;
+  if(!p) return;
+  const cv = document.getElementById("prof");
+  const {c, W, H} = prep(cv); if(W < 10) return;
+  c.clearRect(0,0,W,H);
+  const n = p.z_mm.length, X = i => 6 + (W-12)*i/(n-1);
+  const line = (ys, color, dash, ymax) => {
+    c.strokeStyle = color; c.lineWidth = 1.6; c.setLineDash(dash);
+    c.beginPath();
+    ys.forEach((v,i) => { const y = H-6-(H-12)*Math.min(1,v/ymax);
+      i ? c.lineTo(X(i),y) : c.moveTo(X(i),y); });
+    c.stroke(); c.setLineDash([]);
+  };
+  line(p.c_c, "#37d39a", [], 1.0);
+  line(p.eps_c, "#4da3ff", [], 1.0);
+  if(p.c_a){ line(p.c_a, "#37d39a", [4,3], 1.0); line(p.eps_a, "#4da3ff", [4,3], 1.0); }
+  c.fillStyle = "#8a93a3"; c.font = "10px monospace";
+  c.fillText("1.0", 4, 11); c.fillText("0", 4, H-1);
+  c.fillText("전극", 24, H-1); c.fillText("막/벌크", W-50, H-1);
+  document.getElementById("lblDelta").textContent =
+    "δ = " + p.delta_mm.toFixed(2) + " mm";
+}
+let faceField = "j";   // "j" current | "theta" coverage
+function heatColor(t){  // t in [0,1] -> "r,g,b" (blue -> cyan -> green -> yellow -> red)
+  t = Math.max(0, Math.min(1, t));
+  const stops = [[30,60,200],[40,180,200],[60,200,90],[240,200,50],[230,60,60]];
+  const x = t*(stops.length-1), i = Math.min(stops.length-2, Math.floor(x)), f = x-i;
+  const a = stops[i], b = stops[i+1];
+  return `${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)}`;
+}
+// ---- flow-channel cell-design face view (model="channel") ----
+let chanField = "eff";     // eff = % of applied voltage usefully used (default) | theta | j | eps
+let chanHit = null;
+let drawMode = false, drawPath = [];   // freeform design tool: user-drawn flow path [[x,y],...]
+function chanColor(t, field){    // eff: high = blue (good); others: high = red (bottleneck)
+  return heatColor(field === "eff" ? 1 - t : t);
+}
+function drawChannelFace(c, W, H, st){
+  const ch = st.channel;
+  if(!ch || !ch.segments){ c.fillStyle="#8a93a3"; c.font="12px sans-serif"; c.fillText("유로 계산 중…", 24, 36); chanHit=null; return; }
+  const segs = ch.segments;
+  const idx = chanField === "j" ? 4 : chanField === "eps" ? 5 : chanField === "theta" ? 6 : 7;
+  let mn = Infinity, mx = -Infinity;
+  for(const s of segs){ if(s[idx] < mn) mn = s[idx]; if(s[idx] > mx) mx = s[idx]; }
+  const span = Math.max(1e-9, mx - mn);
+  const x0 = 28, y0 = 22, w = W - 28 - 130, h = H - 46;
+  const PX = fx => x0 + fx * w, PY = fy => y0 + (1 - fy) * h;
+  c.strokeStyle = "#2a3550"; c.lineWidth = 1; c.strokeRect(x0, y0, w, h);
+  c.lineCap = "round"; c.lineWidth = Math.max(8, h / (ch.n_pass * 2.0));
+  for(let k = 0; k < segs.length; k++){            // smooth: gradient to the next segment's value
+    const s = segs[k], nx = segs[k + 1] || s;
+    const x1 = PX(s[0]), y1 = PY(s[1]), x2 = PX(s[2]), y2 = PY(s[3]);
+    const g = c.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, `rgb(${chanColor((s[idx] - mn) / span, chanField)})`);
+    g.addColorStop(1, `rgb(${chanColor((nx[idx] - mn) / span, chanField)})`);
+    c.strokeStyle = g; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+  }
+  const inl = ch.inlet, out = segs[segs.length - 1];
+  c.fillStyle = "#37d39a"; c.beginPath(); c.arc(PX(inl[0]), PY(inl[1]), 5, 0, 6.2832); c.fill();
+  c.fillStyle = "#ff6b6b"; c.beginPath(); c.arc(PX(out[2]), PY(out[3]), 5, 0, 6.2832); c.fill();
+  c.fillStyle = "#8a93a3"; c.font = "10px sans-serif";
+  c.fillText("입구", PX(inl[0]) - 10, PY(inl[1]) + 16);
+  c.fillText("출구", PX(out[2]) - 10, PY(out[3]) - 9);
+  // legend: vertical colour bar + meaning + numbers
+  const lx = W - 120, by0 = 42, bh = 116, bw = 13;
+  const grad = c.createLinearGradient(0, by0, 0, by0 + bh);     // top -> bottom
+  for(let s = 0; s <= 10; s++){ const t = s / 10; grad.addColorStop(t, `rgb(${chanColor(1 - t, chanField)})`); }
+  c.fillStyle = grad; c.fillRect(lx, by0, bw, bh);
+  c.strokeStyle = "#2a3550"; c.strokeRect(lx, by0, bw, bh);
+  c.fillStyle = "#cfd6e4"; c.font = "11px sans-serif"; c.fillText(`${ch.ctype} ${ch.n_pass}패스`, lx - 2, 26);
+  c.fillStyle = "#8a93a3"; c.font = "10px sans-serif";
+  if(chanField === "eff"){
+    c.fillText("전압 효율", lx + bw + 4, by0 + 9);
+    c.fillText(`${Math.round(mx * 100)}%`, lx + bw + 4, by0 + 24);
+    c.fillText(`${Math.round(mn * 100)}%`, lx + bw + 4, by0 + bh);
+    c.fillStyle = "#cfd6e4"; c.font = "11px sans-serif";
+    c.fillText(`입구 ${Math.round(ch.eff_in * 100)}% → 출구 ${Math.round(ch.eff_out * 100)}%`, lx - 2, by0 + bh + 20);
+    c.fillStyle = "#5a6577"; c.font = "9.5px sans-serif";
+    c.fillText("파랑=전압 잘 쓰임", lx - 2, by0 + bh + 35);
+    c.fillText("빨강=병목 손실", lx - 2, by0 + bh + 48);
+  } else {
+    const u = chanField === "j" ? "A/m²" : chanField;
+    c.fillText(`${u} ↑`, lx + bw + 4, by0 + 9);
+    c.fillText(`${u} ↓`, lx + bw + 4, by0 + bh);
+    c.fillStyle = "#5a6577"; c.font = "9.5px sans-serif";
+    c.fillText("빨강=병목", lx - 2, by0 + bh + 20);
+  }
+  c.fillStyle = "#5a6577"; c.font = "9.5px sans-serif";
+  c.fillText(drawMode ? "그리기 모드: 클릭으로 점 찍기 → 완료" : "유로 클릭 → 그 구역 2D 유동", x0, y0 + h + 15);
+  if(!drawMode && ch.up_frac !== undefined)        // orientation: upward runs self-purge gas
+    c.fillText(`↑세로(위로) 구간 ${Math.round(ch.up_frac * 100)}% — 위로 흐를수록 기포 자가배출 ↑`, x0, y0 + h + 28);
+  if(drawMode){                                    // design tool: overlay the path being drawn
+    c.fillStyle = "rgba(14,18,30,0.55)"; c.fillRect(x0, y0, w, h);
+    c.strokeStyle = "#ffd166"; c.lineWidth = 2; c.beginPath();
+    drawPath.forEach((p, i) => { const px = PX(p[0]), py = PY(p[1]); i ? c.lineTo(px, py) : c.moveTo(px, py); });
+    c.stroke();
+    c.fillStyle = "#ffd166";
+    for(const p of drawPath){ c.beginPath(); c.arc(PX(p[0]), PY(p[1]), 3, 0, 6.2832); c.fill(); }
+    c.fillStyle = "#cfd6e4"; c.font = "11px sans-serif";
+    c.fillText(`점 ${drawPath.length}개 — 클릭으로 추가, [완료]로 적용`, x0 + 6, y0 + 16);
+  }
+  chanHit = {segs, PX, PY, idx, j: st.j, x0, y0, w, h};
+}
+function drawOneFlow(c, x0, y0, w, h, fl, bub, label){
+  if(!fl || !fl.speed) return;
+  const sp = fl.speed, ny = sp.length, nx = sp[0].length;
+  let mx = 1e-9; for(const row of sp) for(const v of row) if(v > mx) mx = v;
+  const off = drawOneFlow._off || (drawOneFlow._off = document.createElement("canvas"));
+  off.width = nx; off.height = ny;
+  const octx = off.getContext("2d"), img = octx.createImageData(nx, ny);
+  for(let r = 0; r < ny; r++) for(let i = 0; i < nx; i++){
+    const rgb = heatColor(Math.min(1, sp[r][i] / mx)).split(",");
+    const o = ((ny - 1 - r) * nx + i) * 4;                       // flip y (row 0 = bottom = electrode)
+    img.data[o] = +rgb[0]; img.data[o + 1] = +rgb[1]; img.data[o + 2] = +rgb[2]; img.data[o + 3] = 120;
+  }
+  octx.putImageData(img, 0, 0);
+  c.imageSmoothingEnabled = true; c.drawImage(off, x0, y0, w, h);
+  c.strokeStyle = "#1f2937"; c.strokeRect(x0, y0, w, h);
+  c.fillStyle = "#2a3550"; c.fillRect(x0, y0 + h, w, 3);          // electrode wall (bottom)
+  c.fillStyle = `rgba(${bub},0.9)`;
+  for(const b of fl.bub){                          // b = [id, x/Lx, y/Ly, r]
+    const br = Math.max(1.1, b[3] / fl.Ly * h);
+    c.beginPath(); c.arc(x0 + b[1] * w, y0 + (1 - b[2]) * h, br, 0, 6.2832); c.fill();
+  }
+  c.fillStyle = "#cfd6e4"; c.font = "10px sans-serif";
+  c.fillText(`${label}  (버블 ${fl.n_bub})`, x0 + 4, y0 + 12);
+  c.fillStyle = "#8a93a3"; c.fillText("입구→", x0 + 4, y0 + h - 3); c.fillText("→출구", x0 + w - 36, y0 + h - 3);
+}
+function drawFlow2D(c, W, H, st){
+  if(!st.flow || !st.flow.speed){ c.fillStyle = "#8a93a3"; c.font = "12px sans-serif"; c.fillText("2D 유동 계산 중…", 24, 36); return; }
+  const tag = drillInfo ? `유로 ${drillInfo.pct}% 구역(효율 ${drillInfo.eff}%) · ` : "";
+  c.fillStyle = "#5a6577"; c.font = "10px sans-serif";
+  c.fillText(`${tag}2D 결합 CFD (양 전극, 아래=전극벽) · 색=유속 · 와류 창발`, 8, 11);
+  const top = 16, g = 16, botM = 16, hh = (H - top - g - botM) / 2;   // two stacked channels (+margins)
+  drawOneFlow(c, 8, top, W - 16, hh, st.flow, "150,195,255", "HER 음극 · H₂");
+  drawOneFlow(c, 8, top + hh + g, W - 16, hh, st.flow_a, "255,140,140", "OER 양극 · O₂");
+}
+function drawFaceField(st){
+  const fd = st.face; if(!fd) return;
+  const cv = document.getElementById("facemap"); const {c,W,H} = prep(cv); if(W<10) return;
+  c.clearRect(0,0,W,H);
+  const grid = faceField === "theta" ? fd.theta_field : fd.j_field;   // [ny][nx]
+  const ny = fd.ny, nx = fd.nx;
+  let mn = Infinity, mx = -Infinity;
+  for(const row of grid) for(const v of row){ if(v<mn) mn=v; if(v>mx) mx=v; }
+  const span = Math.max(1e-12, mx-mn), padL = 24, padB = 16;
+  const gw = (W-padL-4)/nx, gh = (H-padB-4)/ny;
+  for(let r=0; r<ny; r++) for(let i=0; i<nx; i++){
+    const t = (grid[r][i]-mn)/span;
+    const py = 4 + (ny-1-r)*gh;                       // row 0 = bottom -> drawn at bottom
+    c.fillStyle = `rgb(${heatColor(t)})`;
+    c.fillRect(padL + i*gw, py, gw-1, gh-1);
+  }
+  c.fillStyle = "#8a93a3"; c.font = "9px monospace";
+  c.fillText("위", 4, 12); c.fillText("아래", 2, H-padB);
+  const u = faceField === "theta" ? "θ" : "A/m²";
+  const fix = faceField === "theta" ? 2 : 0;
+  c.fillText(`${u}  ${mn.toFixed(fix)} ~ ${mx.toFixed(fix)}`, padL, H-3);
+  document.getElementById("faceOut").innerHTML =
+    `θ 아래 ${fd.theta_bot.toFixed(2)} → 위 ${fd.theta_top.toFixed(2)} · j 비균일 <b>${(st.ov&&st.ov.j_spread||1).toFixed(1)}×</b> (위쪽이 병목)`;
+}
+function drawPorousProfile(st){
+  const p = st.porous; if(!p) return;
+  const cv = document.getElementById("pprof");
+  const {c, W, H} = prep(cv); if(W < 10) return;
+  c.clearRect(0,0,W,H);
+  const n = p.d_mm.length, X = i => 6 + (W-12)*i/(n-1);
+  const line = (ys, color, dash) => {
+    const mx = Math.max(1e-30, ...ys.map(v => Math.abs(v)));
+    c.strokeStyle = color; c.lineWidth = 1.6; c.setLineDash(dash); c.beginPath();
+    ys.forEach((v,i) => { const y = H-6 - (H-12)*Math.abs(v)/mx;
+      i ? c.lineTo(X(i),y) : c.moveTo(X(i),y); });
+    c.stroke(); c.setLineDash([]);
+  };
+  line(p.jloc_c, "#ffb454", []); line(p.eta_d_c, "#4da3ff", []);
+  if(p.jloc_a){ line(p.jloc_a, "#ffb454", [4,3]); line(p.eta_d_a, "#4da3ff", [4,3]); }
+  c.fillStyle = "#8a93a3"; c.font = "10px monospace";
+  c.fillText("콜렉터", 4, H-1); c.fillText("막", W-16, H-1);
+  document.getElementById("lblUtil").textContent =
+    `이용률 음극 ${(p.util_c*100).toFixed(0)}% · 침투 ${p.pen_mm_c.toFixed(2)}/${p.L_e_mm.toFixed(2)}mm`;
+}
+
+let eisData = null, eisTick = 0;
+async function pollEIS(){
+  try { eisData = await (await fetch("/api/eis", {headers:HDRS})).json(); }
+  catch(e){ eisData = null; }
+}
+function drawEIS(){
+  const cv = document.getElementById("eis");
+  const {c, W, H} = prep(cv); if(W < 10) return;
+  c.clearRect(0,0,W,H);
+  if(!eisData || eisData.error){ return; }
+  const re = eisData.re, im = eisData.im;
+  const rmax = Math.max(...re)*1.05, imax = Math.max(Math.max(...im)*1.15, rmax*0.3);
+  c.strokeStyle = "#ffd166"; c.lineWidth = 1.6; c.beginPath();
+  for(let i = 0; i < re.length; i++){
+    const x = 8 + (W-16)*re[i]/rmax, y = H-14-(H-22)*im[i]/imax;
+    i ? c.lineTo(x,y) : c.moveTo(x,y);
+  }
+  c.stroke();
+  c.fillStyle = "rgba(255,209,102,0.85)";
+  for(let i = 0; i < re.length; i += 4){
+    const x = 8 + (W-16)*re[i]/rmax, y = H-14-(H-22)*im[i]/imax;
+    c.fillRect(x-1.5, y-1.5, 3, 3);
+  }
+  c.fillStyle = "#8a93a3"; c.font = "10px monospace";
+  c.fillText("Re(Z) Ω·cm²  →  " + rmax.toFixed(2), 8, H-2);
+  c.fillText("-Im", 4, 11);
+  document.getElementById("lblEIS").textContent =
+    "R_s " + eisData.Rs.toFixed(2) + " · R_ct(OER) " + eisData.Rct_a.toFixed(2)
+    + " · R_ct(HER) " + eisData.Rct_c.toFixed(2) + " Ω·cm²";
+}
+
+const polarPts = [];
+function drawPolar(st){
+  if(st.t > 0.3 && st.j > 0) polarPts.push([st.V_now, st.j]);
+  if(polarPts.length > 700) polarPts.shift();
+  const cv = document.getElementById("polar");
+  const {c, W, H} = prep(cv); if(W < 10) return;
+  c.clearRect(0,0,W,H);
+  const jmax = Math.max(0.05, ...polarPts.map(p => p[1]));
+  c.fillStyle = "rgba(77,163,255,0.5)";
+  for(const [V, j] of polarPts){
+    const x = 6 + (W-12) * (V-1.4) / 1.4;
+    const y = H-6 - (H-12) * j / jmax;
+    c.fillRect(x, y, 2, 2);
+  }
+  c.fillStyle = "#8a93a3"; c.font = "10px monospace";
+  c.fillText(jmax.toFixed(2) + " A/cm²", 6, 11);
+  c.fillText("1.4V", 4, H-1); c.fillText("2.8V", W-30, H-1);
+}
+
+// ---------------- poll ----------------
+const F = 96485, R = 8.314;
+async function poll(){
+  const t0 = performance.now();
+  let rtt = 0;
+  try {
+    const st = await (await fetch("/api/state", {headers:HDRS})).json();
+    rtt = performance.now() - t0;
+    prevSt = curSt; prevAt = curAt;          // hand the snapshot to the 60fps loop
+    curSt = st; curAt = performance.now();
+    document.getElementById("conn").style.display = "none";
+    document.getElementById("mV").textContent  = st.V_now.toFixed(3);
+    document.getElementById("mJ").textContent  = st.j.toFixed(3);
+    const vm = (st.j*1e4/(2*F)) * R * st.T / 1e5;           // H2 volume rate
+    document.getElementById("mQ").textContent  = (vm*6000).toFixed(2);
+    document.getElementById("mWh").textContent = (26.59 * st.V_now).toFixed(1);
+    document.getElementById("mTh").textContent = st.theta.toFixed(2) + " / " + st.theta_a.toFixed(2);
+    document.getElementById("mNb").textContent = st.n_bub;
+    document.getElementById("mT").textContent  = (st.T-273.15).toFixed(1);
+    document.getElementById("mSp").textContent = st.speed_actual.toFixed(2);
+    if(st.thermal) document.getElementById("vT").textContent = (st.T-273.15).toFixed(0);
+    drawStack(st); drawBottleneck(st);
+    if((st.model === "two_electrode" || st.model === "porous" || st.model === "face2d" || st.model === "channel" || st.model === "flow2d") && st.ph && st.ph.pH_bulk !== undefined){
+      document.getElementById("phA").textContent = st.ph.pH_anode.toFixed(2);
+      document.getElementById("phB").textContent = st.ph.pH_bulk.toFixed(2);
+      document.getElementById("phC").textContent = st.ph.pH_cathode.toFixed(2);
+    }
+    const cp = st.mode === "CP";
+    document.getElementById("traceTitle").textContent =
+      cp ? "셀 전압 V(t) — 톱니파 (전류 고정)" : "전류밀도 j(t) — 톱니파 (전압 고정)";
+    drawTrace(document.getElementById("trace"),
+              cp ? st.trace.V : st.trace.j,
+              cp ? "#ffd166" : "#4da3ff",
+              cp ? (v => v.toFixed(3) + " V") : (v => v.toFixed(3) + " A/cm²"), "lblJ");
+    drawTrace(document.getElementById("ttrace"), st.trace.T, "#ffd166",
+              v => (v-273.15).toFixed(1) + "°C", "lblT");
+    drawPolar(st);
+    drawProfiles(st);
+    drawPorousProfile(st);
+    drawFaceField(st);
+    if(st.porous){
+      document.getElementById("outMorph").textContent =
+        `${st.porous.morph_name} · R_f≈${(st.ov && st.ov.R_f || 0).toFixed(0)} · 이용률 ${(st.porous.util_c*100).toFixed(0)}%`;
+      document.getElementById("warnMorph").textContent = (st.morph_warn || []).join("　");
+    }
+    if(++eisTick % 22 === 0 && st.model === "two_electrode") pollEIS();
+    drawEIS();
+  } catch(e) {
+    document.getElementById("conn").style.display = "inline";
+  }
+  // self-clocking: aim for ~55 ms between snapshots (finer sampling = smoother);
+  // on a slow tunnel (rtt large) fire the next request almost immediately and let
+  // the client-side prediction carry motion across the gap
+  setTimeout(poll, Math.max(20, 55 - rtt));
+}
+window.__readyPromise.then(function(){ poll(); pollEIS(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전기화학 셀 시뮬레이터 — 내 셀 (형상 우선)</title>
+<style>
+  :root{--bg:#0b0f14;--card:#121821;--line:#1f2937;--tx:#dbe4f0;--dim:#8a93a3;
+        --accent:#4da3ff;--grn:#37d39a;--gold:#ffd166;--vio:#9b7bff;--warn:#ff6b6b;}
+  *{box-sizing:border-box} html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--tx);font:13px/1.45 "Segoe UI",system-ui,sans-serif;padding:14px 16px}
+  h1{font-size:18px;margin:0 0 2px} .sub{color:var(--dim);font-size:12px;margin-bottom:12px}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:11px;color:var(--grn)}
+  .app{display:grid;grid-template-columns:320px 1fr;gap:13px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .box{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:10px}
+  .box h3{margin:0 0 8px;font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.4px}
+  .ctl{margin-bottom:9px}
+  .lab{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:2px}
+  .lab .nm{color:var(--tx)} .lab .un{color:var(--dim);font-size:11px}
+  .ri{display:flex;gap:7px;align-items:center}
+  .ri input[type=range]{flex:1;accent-color:var(--accent);height:18px;min-width:0}
+  .ri input[type=number]{width:74px;background:#0e1420;color:var(--tx);border:1px solid var(--line);
+    border-radius:7px;padding:4px 6px;font-size:12px;font-variant-numeric:tabular-nums}
+  .seg{display:flex;gap:6px;margin:2px 0} .seg button{flex:1;background:#0e1420;color:var(--dim);
+    border:1px solid var(--line);border-radius:8px;padding:5px 4px;font-size:11.5px;cursor:pointer}
+  .seg button.on{color:#fff;border-color:var(--accent);background:#16243a}
+  .hint{color:var(--dim);font-size:11px}
+  .plotlab{display:flex;justify-content:space-between;color:var(--dim);font-size:11.5px;margin-bottom:6px}
+  canvas{display:block;width:100%;background:#0d121b;border:1px solid var(--line);border-radius:9px}
+  #cHero{height:300px} #cFace{height:430px} #cCross{height:300px}
+  .dimbar{font-size:12px;color:var(--tx);background:#0e1420;border:1px solid var(--line);border-radius:9px;
+    padding:8px 11px;margin-bottom:11px;font-variant-numeric:tabular-nums}
+  .dimbar b{color:var(--accent)}
+</style>
+</head>
+<body>
+<h1>전기화학 셀 시뮬레이터 <span class="pill">형상 우선 · 내 셀 도면 (P1)</span></h1>
+<div class="sub">네가 조립한 셀을 <b>실제 치수대로</b> 그립니다. 모든 값은 슬라이더 + 직접 입력 둘 다 가능. (가스·전류·성능 물리는 다음 단계에서 이 위에 얹음)</div>
+
+<div class="app">
+  <div class="card" id="controls"><!-- controls injected --></div>
+
+  <div>
+    <div class="card" style="margin-bottom:13px">
+      <div class="plotlab"><span><b>전극 표면 확대</b> — 실시간 버블 (음극 H₂ · 양극 O₂)</span><span id="lblHero"></span></div>
+      <canvas id="cHero" height="300"></canvas>
+      <div class="hint">아래 <b>면 뷰를 클릭</b>하면 그 높이(입구→출구)를 확대 — 하류일수록 가스가 쌓여 더 빽빽</div>
+    </div>
+    <div class="dimbar" id="dimbar">–</div>
+    <div class="card" style="margin-bottom:13px">
+      <div class="plotlab"><span><b>활성면적 정면</b> — 전극 면 × 유로 (inlet 아래 → outlet 위) · 클릭=확대위치</span><span id="lblFace"></span></div>
+      <canvas id="cFace" height="360"></canvas>
+    </div>
+    <div class="card">
+      <div class="plotlab"><span><b>MEA 단면</b> — 폭 방향 절단(유로 리브 보임). 층 두께는 가독 위해 과장, 실수치는 라벨</span></div>
+      <canvas id="cCross" height="300"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------------- parameter model ----------------
+const P = {};                                    // live state, filled from CTRL defaults
+let posFrac = 0.6, faceRect = null;              // zoom position along flow (0 inlet..1 outlet)
+// groups of controls. type 'range' -> slider+number; 'seg' -> segmented buttons.
+const CTRL = [
+  ["활성 면적 (전극)", [
+    { k: "W_cm", nm: "전극 폭", un: "cm", min: 1, max: 20, step: 0.5, v: 5, lo: 0.2, hi: 100 },
+    { k: "H_cm", nm: "전극 높이(흐름방향)", un: "cm", min: 1, max: 30, step: 0.5, v: 5, lo: 0.2, hi: 200 },
+  ]],
+  ["유로 (flow field)", [
+    { k: "ff", nm: "유로 형식", seg: [["serp", "사행"], ["par", "병렬"], ["inter", "교차"]], v: "serp" },
+    { k: "L_flow_cm", nm: "유로 총길이", un: "cm", min: 1, max: 200, step: 1, v: 40, lo: 0.5, hi: 1000 },
+    { k: "n_ch", nm: "채널 수", un: "개", min: 1, max: 40, step: 1, v: 8, lo: 1, hi: 200 },
+    { k: "w_ch_mm", nm: "채널 폭", un: "mm", min: 0.2, max: 5, step: 0.1, v: 1, lo: 0.05, hi: 20 },
+    { k: "d_ch_mm", nm: "채널 깊이", un: "mm", min: 0.2, max: 5, step: 0.1, v: 1, lo: 0.05, hi: 20 },
+    { k: "w_land_mm", nm: "리브(land) 폭", un: "mm", min: 0.2, max: 5, step: 0.1, v: 1, lo: 0.05, hi: 20 },
+  ]],
+  ["막 (membrane)", [
+    { k: "t_mem_um", nm: "막 두께", un: "µm", min: 10, max: 300, step: 5, v: 50, lo: 5, hi: 1000 },
+    { k: "sigma_mem", nm: "막 전도도", un: "S/m", min: 1, max: 50, step: 0.5, v: 10, lo: 0.1, hi: 200 },
+  ]],
+  ["다공층 / 촉매", [
+    { k: "t_ptl_um", nm: "PTL/GDL 두께", un: "µm", min: 50, max: 1000, step: 10, v: 200, lo: 20, hi: 3000 },
+    { k: "eps_ptl", nm: "PTL 공극률", un: "", min: 0.3, max: 0.9, step: 0.01, v: 0.7, lo: 0.1, hi: 0.95 },
+    { k: "t_mpl_um", nm: "MPL 두께", un: "µm", min: 0, max: 100, step: 2, v: 30, lo: 0, hi: 300 },
+    { k: "cat_load", nm: "촉매 로딩", un: "mg/cm²", min: 0.1, max: 5, step: 0.1, v: 1, lo: 0.01, hi: 20 },
+  ]],
+  ["셀 / 스택", [
+    { k: "n_cell", nm: "스택 셀 수", un: "개", min: 1, max: 50, step: 1, v: 1, lo: 1, hi: 500 },
+    { k: "comp_pct", nm: "압축률", un: "%", min: 0, max: 40, step: 1, v: 20, lo: 0, hi: 60 },
+  ]],
+  ["운전 (물리는 P2에서 연결)", [
+    { k: "j", nm: "전류밀도 j", un: "A/cm²", min: 0.01, max: 3, step: 0.01, v: 0.5, lo: 0, hi: 10 },
+    { k: "u_flow", nm: "유량", un: "m/s", min: 0, max: 0.6, step: 0.005, v: 0.05, lo: 0, hi: 5 },
+    { k: "tilt", nm: "셀 기울기", un: "°", min: 0, max: 90, step: 1, v: 0, lo: 0, hi: 90 },
+    { k: "B", nm: "자기장 B", un: "T", min: 0, max: 3, step: 0.05, v: 0, lo: 0, hi: 20 },
+    { k: "E", nm: "전기장 E", un: "MV/m", min: 0, max: 3, step: 0.02, v: 0, lo: 0, hi: 50 },
+    { k: "theta", nm: "접촉각", un: "°", min: 10, max: 160, step: 1, v: 60, lo: 5, hi: 179 },
+    { k: "T", nm: "온도", un: "°C", min: 20, max: 90, step: 1, v: 60, lo: 0, hi: 250 },
+    { k: "Pbar", nm: "압력", un: "bar", min: 1, max: 30, step: 0.5, v: 1, lo: 0.1, hi: 200 },
+  ]],
+];
+
+// ---------------- build controls (slider + number input, two-way) ----------------
+const host = document.getElementById("controls");
+const fmtV = c => (c.step < 1 ? (+P[c.k]).toFixed(c.step < 0.1 ? 2 : 1) : String(P[c.k]));
+for (const [title, items] of CTRL) {
+  const box = document.createElement("div"); box.className = "box";
+  box.insertAdjacentHTML("beforeend", `<h3>${title}</h3>`);
+  for (const c of items) {
+    if (c.seg) {
+      P[c.k] = c.v;
+      const row = document.createElement("div"); row.className = "ctl";
+      row.insertAdjacentHTML("beforeend", `<div class="lab"><span class="nm">${c.nm}</span></div>`);
+      const seg = document.createElement("div"); seg.className = "seg";
+      for (const [val, label] of c.seg) {
+        const b = document.createElement("button"); b.textContent = label; b.dataset.v = val;
+        if (val === c.v) b.classList.add("on");
+        b.onclick = () => { seg.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on"); P[c.k] = val; redraw(); };
+        seg.appendChild(b);
+      }
+      row.appendChild(seg); box.appendChild(row);
+      continue;
+    }
+    P[c.k] = c.v;
+    const row = document.createElement("div"); row.className = "ctl";
+    row.innerHTML = `<div class="lab"><span class="nm">${c.nm}</span><span class="un">${c.un}</span></div>
+      <div class="ri"><input type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${c.v}">
+      <input type="number" step="${c.step}" value="${c.v}"></div>`;
+    const sl = row.querySelector('input[type=range]'), nu = row.querySelector('input[type=number]');
+    const clamp = x => Math.max(c.lo, Math.min(c.hi, x));      // physical limits, not slider limits
+    sl.addEventListener("input", () => { P[c.k] = +sl.value; nu.value = sl.value; redraw(); });
+    nu.addEventListener("change", () => {                       // typing exact values, even beyond slider range
+      let x = clamp(+nu.value); if (!isFinite(x)) x = c.v;
+      P[c.k] = x; nu.value = x;
+      sl.value = Math.max(c.min, Math.min(c.max, x));           // slider tracks within its range
+      redraw();
+    });
+    box.appendChild(row);
+  }
+  host.appendChild(box);
+}
+
+// ---------------- HiDPI-crisp canvas ----------------
+function prep(cv) {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const W = cv.clientWidth || 600, H = cv.clientHeight || 300;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, W, H);
+  return { c, W, H };
+}
+const dim = (c, x1, y1, x2, y2, txt) => {                       // simple dimension line + label
+  c.strokeStyle = "#3a4a63"; c.fillStyle = "#8a93a3"; c.lineWidth = 1; c.font = "10px system-ui";
+  c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  c.save(); c.translate(mx, my); if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) c.rotate(-Math.PI / 2);
+  c.textAlign = "center"; c.fillText(txt, 0, -3); c.restore();
+};
+
+// ---------------- active-area face view (W x H, real aspect) + flow field ----------------
+function drawFace() {
+  const cv = document.getElementById("cFace"); const { c, W, H } = prep(cv); if (W < 10) return;
+  const padL = 40, padR = 16, padT = 14, padB = 30;
+  const aw = W - padL - padR, ah = H - padT - padB;
+  // fit the W_cm x H_cm rectangle preserving aspect
+  const asp = (P.W_cm) / (P.H_cm);
+  let rw = aw, rh = aw / asp; if (rh > ah) { rh = ah; rw = ah * asp; }
+  const x0 = padL + (aw - rw) / 2, y0 = padT + (ah - rh) / 2;
+  // electrode plate
+  c.fillStyle = "#10202f"; c.strokeStyle = "#2b3b52"; c.lineWidth = 1.5;
+  c.fillRect(x0, y0, rw, rh); c.strokeRect(x0, y0, rw, rh);
+  // flow field channels to scale (channel : land across width)
+  const pitchMM = P.w_ch_mm + P.w_land_mm, n = Math.max(1, Math.round(P.n_ch));
+  c.fillStyle = "#1d4e6b";
+  const drawSerp = () => {
+    const passes = n, gap = rh / passes, chh = gap * P.w_ch_mm / pitchMM;
+    for (let i = 0; i < passes; i++) {
+      const yy = y0 + i * gap + (gap - chh) / 2;
+      c.fillRect(x0 + 6, yy, rw - 12, chh);                     // horizontal pass
+      if (i < passes - 1) {                                     // connector on alternating side
+        const sx = (i % 2 === 0) ? x0 + rw - 12 - chh : x0 + 6;
+        c.fillRect(sx, yy, chh, gap);
+      }
+    }
+  };
+  const drawPar = () => {
+    const gap = rw / n, chw = gap * P.w_ch_mm / pitchMM;
+    for (let i = 0; i < n; i++) c.fillRect(x0 + i * gap + (gap - chw) / 2, y0 + 6, chw, rh - 12);
+  };
+  const drawInter = () => {
+    const gap = rw / n, chw = gap * P.w_ch_mm / pitchMM;
+    for (let i = 0; i < n; i++) {                               // interdigitated: combs from alt ends
+      const x = x0 + i * gap + (gap - chw) / 2;
+      if (i % 2 === 0) c.fillRect(x, y0 + 6, chw, rh - 18);     // from bottom (inlet)
+      else c.fillRect(x, y0 + 12, chw, rh - 18);                // from top (outlet)
+    }
+  };
+  (P.ff === "par" ? drawPar : P.ff === "inter" ? drawInter : drawSerp)();
+  // inlet (green, bottom) / outlet (red, top)
+  c.fillStyle = "#37d39a"; c.fillRect(x0, y0 + rh - 3, rw, 3);
+  c.fillStyle = "#ff6b6b"; c.fillRect(x0, y0, rw, 3);
+  c.fillStyle = "#8a93a3"; c.font = "10px system-ui"; c.textAlign = "left";
+  c.fillText("outlet", x0 + 2, y0 + 12); c.fillText("inlet", x0 + 2, y0 + rh - 6);
+  // dimensions
+  dim(c, x0, y0 + rh + 14, x0 + rw, y0 + rh + 14, `폭 ${P.W_cm} cm`);
+  dim(c, x0 - 22, y0, x0 - 22, y0 + rh, `높이 ${P.H_cm} cm`);
+  document.getElementById("lblFace").textContent =
+    `유로길이 ${P.L_flow_cm} cm · ${n}채널 · 채널 ${P.w_ch_mm}/리브 ${P.w_land_mm} mm`;
+  faceRect = { x0, y0, rw, rh };
+  const my = y0 + rh * (1 - posFrac);                        // zoom-position marker
+  c.strokeStyle = "#ffd166"; c.setLineDash([5, 3]); c.beginPath(); c.moveTo(x0, my); c.lineTo(x0 + rw, my); c.stroke(); c.setLineDash([]);
+  c.fillStyle = "#ffd166"; c.textAlign = "right"; c.font = "10px system-ui"; c.fillText("◀ 확대 위치", x0 + rw - 4, my - 3); c.textAlign = "left";
+}
+
+// ---------------- MEA through-plane cross-section (width-cut, ribs visible) ----------------
+function drawCross() {
+  const cv = document.getElementById("cCross"); const { c, W, H } = prep(cv); if (W < 10) return;
+  const padX = 16, padT = 26, padB = 40;
+  const ax = W - padX * 2, top = padT, bot = H - padB, ah = bot - top;
+  // symmetric stack (cathode plate -> membrane -> anode plate). weight = visual width (compressed).
+  const t = P;
+  const layers = [
+    { nm: "유로/플레이트", real: `채널 ${t.d_ch_mm}mm`, wt: 2.4, col: "#16314f", plate: true },
+    { nm: "GDL/PTL", real: `${t.t_ptl_um}µm`, wt: 1.5, col: "#22506b" },
+    { nm: "MPL", real: `${t.t_mpl_um}µm`, wt: t.t_mpl_um > 0 ? 0.5 : 0.001, col: "#2f6e57" },
+    { nm: "촉매", real: `${t.cat_load}mg/cm²`, wt: 0.5, col: "#b5462a" },
+    { nm: "막", real: `${t.t_mem_um}µm`, wt: 1.0, col: "#9fb2c9" },
+    { nm: "촉매", real: `${t.cat_load}mg/cm²`, wt: 0.5, col: "#b5462a" },
+    { nm: "MPL", real: `${t.t_mpl_um}µm`, wt: t.t_mpl_um > 0 ? 0.5 : 0.001, col: "#2f6e57" },
+    { nm: "GDL/PTL", real: `${t.t_ptl_um}µm`, wt: 1.5, col: "#22506b" },
+    { nm: "유로/플레이트", real: `채널 ${t.d_ch_mm}mm`, wt: 2.4, col: "#16314f", plate: true },
+  ];
+  const sum = layers.reduce((s, l) => s + l.wt, 0);
+  let x = padX;
+  c.font = "10px system-ui"; c.textAlign = "center";
+  const n = Math.max(1, Math.round(t.n_ch));
+  for (const l of layers) {
+    const w = ax * l.wt / sum;
+    c.fillStyle = l.col; c.fillRect(x, top, w, ah);
+    if (l.plate) {                                              // draw rib/channel teeth across the width (y)
+      c.fillStyle = "#0d121b";
+      const pitch = ah / n, ch = pitch * t.w_ch_mm / (t.w_ch_mm + t.w_land_mm);
+      for (let i = 0; i < n; i++) c.fillRect(x, top + i * pitch + (pitch - ch) / 2, w, ch);
+    }
+    c.strokeStyle = "#0b0f14"; c.lineWidth = 1; c.strokeRect(x, top, w, ah);
+    c.fillStyle = "#cfd8e6"; c.fillText(l.nm, x + w / 2, top - 12);
+    c.fillStyle = "#8a93a3"; c.fillText(l.real, x + w / 2, top - 2);
+    x += w;
+  }
+  // width dimension (y) + through-plane note
+  dim(c, padX - 4, top, padX - 4, bot, `폭 ${t.W_cm} cm (리브 ${n}개)`);
+  c.fillStyle = "#8a93a3"; c.textAlign = "center";
+  c.fillText("← through-plane (음극 ↔ 막 ↔ 양극) →", W / 2, H - 8);
+}
+
+// ---------------- summary bar ----------------
+function drawSummary() {
+  const area = (P.W_cm * P.H_cm).toFixed(1);
+  const ffName = { serp: "사행", par: "병렬", inter: "교차" }[P.ff];
+  document.getElementById("dimbar").innerHTML =
+    `내 셀: 활성 <b>${P.W_cm}×${P.H_cm} cm</b> (${area} cm²) · 유로 <b>${ffName}</b> ${P.n_ch}채널 ${P.L_flow_cm} cm`
+    + ` · 막 <b>${P.t_mem_um} µm</b> · PTL <b>${P.t_ptl_um} µm</b>(ε ${P.eps_ptl}) · 촉매 ${P.cat_load} mg/cm²`
+    + ` · 스택 <b>${P.n_cell}셀</b> · 운전 j ${P.j} A/cm², ${P.T}°C, ${P.Pbar} bar, 기울기 ${P.tilt}°`;
+}
+
+function redraw() { drawSummary(); drawFace(); drawCross(); }
+addEventListener("resize", redraw);
+redraw();
+
+// ---------------- zoomed bubble detail (hero, top) ----------------
+// Lagrangian 2-D bubbles in a channel slice: nucleate on the PTL wall at a rate
+// set by j, grow to the Fritz departure radius (contact angle), detach, rise by
+// buoyancy (tilt-rotated) + flow sweep, exit the top. One channel per electrode.
+const RD_mm = () => {                                        // Fritz departure radius [mm]
+  const th = Math.max(10, P.theta) * Math.PI / 180;
+  return 0.5 * 0.0208 * th * Math.sqrt(0.07 / (9.81 * 1000)) * 1000;
+};
+class BubbleCh {
+  constructor(side) { this.side = side; this.att = []; this.bub = []; this.acc = 0; this.chW = 3.4; this.chH = 4.5; }
+  up() { const a = P.tilt * Math.PI / 180; return [Math.sin(a), Math.cos(a)]; }
+  step(dt, dens) {
+    const rd = RD_mm(), up = this.up();
+    // continuous nucleation at RANDOM wall positions (no fixed columns) ∝ j
+    this.acc += (this.side ? 32 : 64) * Math.max(0.05, P.j) * dens * dt;
+    const maxAtt = this.side ? 16 : 30;
+    while (this.acc >= 1 && this.att.length < maxAtt) {
+      this.att.push({ x: 0.04 + Math.random() * 0.32, y: 0.2 + Math.random() * (this.chH - 0.4),
+                      r: 0.008 + Math.random() * 0.01, sz: 0.8 + Math.random() * 0.55 });
+      this.acc -= 1;
+    }
+    const grow = 0.8 * Math.max(0.02, P.j) * dens;
+    for (let i = this.att.length - 1; i >= 0; i--) {
+      const s = this.att[i]; s.r += grow * dt;
+      if (s.r >= rd) { this.bub.push({ x: s.x + 0.15, y: s.y, r: rd * s.sz, ph: Math.random() * 6.283, sz: s.sz }); this.att.splice(i, 1); }
+    }
+    const slip = 3 + 28 * rd, sweep = P.u_flow * 1000 * 0.05;
+    for (const b of this.bub) {
+      const wob = Math.sin(b.y * 2.4 + b.ph) * 0.22;          // lateral meander -> organic, not columns
+      b.x += up[0] * slip * dt + (0.35 + wob) * dt;
+      b.y += (up[1] * slip + sweep) * dt;
+    }
+    this.bub = this.bub.filter(b => b.y < this.chH + 0.2 && b.y > -0.3 && b.x > -0.2 && b.x < this.chW);
+    if (this.bub.length > 700) this.bub.splice(0, this.bub.length - 700);
+  }
+  draw(c, x0, y0, w, h, label) {
+    const sx = w / this.chW, sy = h / this.chH, rd = RD_mm();
+    const X = mx => x0 + mx * sx, Y = my => y0 + h - my * sy;
+    const RPX = r => Math.max(3, r / rd * 7);                 // clearly visible, ∝ physical size
+    c.fillStyle = "#0e1a26"; c.fillRect(x0, y0, w, h);        // channel (liquid)
+    c.fillStyle = "#22506b"; c.fillRect(x0 - 8, y0, 8, h);    // PTL wall
+    const col = this.side ? "#ffc266" : "#6fd3ff";
+    c.save(); c.beginPath(); c.rect(x0, y0, w, h); c.clip();
+    c.fillStyle = col;
+    for (const s of this.att) { const r = RPX(s.r); c.beginPath(); c.arc(X(s.x), Y(s.y), r, 0, 6.2832); c.fill(); }
+    for (const b of this.bub) {
+      const r = RPX(b.r);
+      c.fillStyle = col; c.beginPath(); c.arc(X(b.x), Y(b.y), r, 0, 6.2832); c.fill();
+      c.globalAlpha = 0.6; c.fillStyle = "#eaf6ff";
+      c.beginPath(); c.arc(X(b.x) - r * 0.3, Y(b.y) - r * 0.32, r * 0.34, 0, 6.2832); c.fill(); c.globalAlpha = 1;
+    }
+    c.restore();
+    c.fillStyle = "#9aa6b5"; c.font = "12px system-ui"; c.textAlign = "center"; c.fillText(label, x0 + w / 2, y0 - 7);
+    c.textAlign = "left"; c.font = "10px system-ui"; c.fillText("PTL", x0 - 7, y0 + h + 12);
+  }
+}
+const chC = new BubbleCh(0), chA = new BubbleCh(1);
+function drawHero() {
+  const cv = document.getElementById("cHero"); const { c, W, H } = prep(cv); if (W < 10) return;
+  const padT = 22, padB = 20, h = H - padT - padB, gap = 44, cw = (W - gap - 56) / 2;
+  chC.draw(c, 36, padT, cw, h, "음극 (H₂)");
+  chA.draw(c, 36 + cw + gap, padT, cw, h, "양극 (O₂)");
+  c.fillStyle = "#8a93a3"; c.font = "10px system-ui"; c.textAlign = "right";
+  c.fillText("↑ outlet", W - 6, padT + 9); c.fillText("inlet", W - 6, H - padB - 2); c.textAlign = "left";
+  document.getElementById("lblHero").textContent =
+    `위치 ${(posFrac * 100) | 0}% (inlet→outlet) · j ${P.j} A/cm² · θ ${P.theta}° · 유속 ${P.u_flow} · 기울기 ${P.tilt}°`;
+}
+let _ht = performance.now();
+function heroLoop(now) {
+  const dt = Math.min(0.05, (now - _ht) / 1000); _ht = now;
+  const dens = 0.4 + 1.8 * posFrac;                          // downstream (outlet) accumulates gas
+  chC.step(dt, dens); chA.step(dt, dens * 0.6);              // O2 ~ half the gas
+  drawHero();
+  requestAnimationFrame(heroLoop);
+}
+requestAnimationFrame(heroLoop);
+// pick the zoom position by clicking the face view
+document.getElementById("cFace").addEventListener("click", e => {
+  if (!faceRect) return; const cv = e.currentTarget, r = cv.getBoundingClientRect();
+  const y = (e.clientY - r.top) / r.height * cv.clientHeight;
+  const f = 1 - (y - faceRect.y0) / faceRect.rh; if (f >= 0 && f <= 1) { posFrac = f; redraw(); }
+});
+window.__drawHero = drawHero;
+window.__stepHero = (n) => { for (let i = 0; i < (n || 1); i++) { chC.step(0.03, 1.2); chA.step(0.03, 0.7); } return { c: chC.bub.length, a: chA.bub.length, rd_mm: +RD_mm().toFixed(3) }; };
+
+// verification handles (headless: layout collapses, so allow forcing a size)
+window.__P = P;
+window.__redraw = redraw;
+window.__forceSize = (id, w, h) => { const cv = document.getElementById(id); cv.style.width = w + "px"; cv.style.height = h + "px"; redraw(); };
+window.__probe = (id) => { const cv = document.getElementById(id), c = cv.getContext("2d");
+  const d = c.getImageData(0, 0, cv.width, cv.height).data; let nz = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 24) nz++;
+  return { id, w: cv.width, h: cv.height, nonBlank: nz }; };
+window.__ready = true;
+</script>
+</body>
+</html>

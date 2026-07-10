@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>3D 셀 시뮬레이터 — 2 패널 뷰 (live Python kernel)</title>
+<style>
+  /* light "lab notebook" palette: paper cards on a cool grey desk */
+  :root{--bg:#eef1f6;--card:#ffffff;--line:#d6dce6;--tx:#1a2331;--dim:#68738a;
+        --accent:#1f6feb;--warn:#c9333f;--gold:#a8730a;--vio:#6b4fd8;--grn:#0f8a63;
+        --surf:#f3f6fb;--surf2:#e3edfd;--shadow:0 1px 2px rgba(20,32,52,.06),0 6px 20px rgba(20,32,52,.06);
+        /* canvas ink (kept in sync with the CSS above) */
+        --cv-bg:#f7f9fc;--cv-liq:#e9f1fa;--cv-grid:#c3ccda;--cv-land:#aab4c4;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);
+    font:14px/1.45 "Segoe UI",system-ui,sans-serif;padding:14px 16px;}
+  h1{font-size:19px;margin:0 0 2px} .sub{color:var(--dim);font-size:12px;margin-bottom:12px}
+  .pill{display:inline-block;border:1px solid #b6e3d0;background:#e8f7f1;border-radius:99px;
+        padding:1px 9px;font-size:11px;color:var(--grn)}
+  .app{display:grid;grid-template-columns:320px minmax(420px,1fr) minmax(420px,1fr);gap:12px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
+  .ctl{margin-bottom:9px} .lab{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:2px;align-items:baseline}
+  .val{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);height:20px}
+  input[type=number]{width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);
+    border-radius:7px;padding:4px 6px;font-size:12.5px;font-variant-numeric:tabular-nums}
+  .ri{display:flex;gap:7px;align-items:center}
+  .ri input[type=range]{flex:1;min-width:0}
+  .ri input[type=number]{width:82px;flex:none}
+  .hint{color:var(--dim);font-size:11px}
+  .seg{display:flex;gap:6px;margin:4px 0 2px} .seg button{flex:1;background:var(--surf);color:var(--dim);
+    border:1px solid var(--line);border-radius:8px;padding:5px 4px;font-size:12px;cursor:pointer}
+  .seg button.on{color:var(--accent);border-color:var(--accent);background:var(--surf2);font-weight:600}
+  .box{border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:10px}
+  .box h3{margin:0 0 7px;font-size:12.5px;color:var(--dim);font-weight:600;letter-spacing:.4px}
+  canvas{display:block;background:var(--cv-bg);border:1px solid var(--line);border-radius:10px;width:100%}
+  .ptitle{font-size:14px;font-weight:650;margin-bottom:2px}
+  .psub{color:var(--dim);font-size:11.5px;margin-bottom:8px;min-height:30px}
+  .met{background:var(--surf);border:1px solid var(--line);border-radius:9px;padding:7px 9px}
+  .met .k{color:var(--dim);font-size:11px} .met .v{font-size:15px;font-weight:650;margin-top:1px;
+    font-variant-numeric:tabular-nums} .met .u{font-size:11px;color:var(--dim)}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:9px}
+  #choke{display:none;margin-top:9px;padding:7px 10px;border-radius:9px;
+    border:1px solid #f0b6bb;background:#fdeced;color:#8f1f29;font-size:11.5px}
+  #conn{color:var(--warn);font-size:12px;display:none}
+  #face{cursor:crosshair}
+</style>
+</head>
+<body>
+<h1>3D 셀 시뮬레이터 <span class="pill">계산 = 3D bubblesim3d 커널 (live)</span></h1>
+<div class="sub">모든 수치는 3-D 격자에서 계산 — NS 유동 + 기포 생애주기 + 전기화학. 브라우저는 그리기만.
+  <a href="/" style="color:var(--accent);margin-left:8px">3D 렌더 뷰로 →</a>
+  <span id="conn">⚠ 서버 연결 끊김 — bat 창이 닫혔는지 확인</span></div>
+
+<div class="app">
+
+  <!-- ===================== controls ===================== -->
+  <div class="card" id="controls"></div>
+  <div class="card" id="plateEd" style="grid-column:1"></div>
+
+  <!-- ===================== PANEL 1: local zoom ===================== -->
+  <div class="card">
+    <div class="ptitle">① 촉매면 국소 확대 — <span style="color:var(--gold)">실제 버블 크기</span></div>
+    <div class="seg" id="sideSeg" style="margin-bottom:6px">
+      <button data-s="0" class="on">음극 (H₂)</button><button data-s="1">양극 (O₂)</button>
+    </div>
+    <div class="psub">전극 표면의 µm 스케일. 여기서만 진짜 크기가 보입니다 — 핵생성 → 벽에서 성장 → 이탈 → 상승.
+      시간 배속을 <b>0.02×</b>로 낮추면 초고속 카메라처럼 한 사이클을 관찰할 수 있습니다.</div>
+    <canvas id="hero" width="440" height="520"></canvas>
+    <div class="ctl" style="margin-top:8px">
+      <div class="lab"><span>확대 (벽 근처로 파고들기) — 1× = 채널 깊이 전체</span><span class="hint">×</span></div>
+      <div class="ri">
+        <input id="sZoom" type="range" min="1" max="12" step="0.5" value="1">
+        <input id="nZoom" type="number" min="1" max="60" step="0.5" value="1">
+      </div>
+    </div>
+    <div class="ctl">
+      <div class="lab"><span>투영 깊이 (현미경 초점 두께) — 두꺼울수록 겹쳐 보임</span><span class="hint">mm</span></div>
+      <div class="ri">
+        <input id="sWinZ" type="range" min="0.05" max="3" step="0.05" value="0.6">
+        <input id="nWinZ" type="number" min="0.05" max="3" step="0.05" value="0.6">
+      </div>
+    </div>
+    <div class="grid3">
+      <div class="met"><div class="k">이탈 반경 r<sub>dep</sub></div><div class="v"><span id="mRd">–</span><span class="u"> µm</span></div></div>
+      <div class="met"><div class="k">창 안 버블</div><div class="v"><span id="mHeroN">–</span></div></div>
+      <div class="met"><div class="k">최대 반경</div><div class="v"><span id="mHeroR">–</span><span class="u"> µm</span></div></div>
+    </div>
+    <div class="hint" id="heroLoc" style="margin-top:7px">–</div>
+  </div>
+
+  <!-- ===================== PANEL 2: whole-cell blocking ===================== -->
+  <div class="card">
+    <div class="ptitle">② 전체 셀 — <span style="color:var(--warn)">기포로 막히는 형상</span></div>
+    <div class="psub">전극면 전체의 가스 체적분율 ε. 빨강 = 기포가 채널을 막은 곳, 파랑 = 전해질이 흐르는 곳.
+      흰 화살표는 유동이 <b>기포 덩어리를 우회</b>하는 방향. 아무 데나 클릭하면 ①이 그 지점을 확대합니다.</div>
+    <canvas id="face" width="440" height="520"></canvas>
+    <div class="grid3">
+      <div class="met"><div class="k">가스 holdup ε</div><div class="v"><span id="mEps">–</span><span class="u"> %</span></div></div>
+      <div class="met"><div class="k">셀 전압 V</div><div class="v"><span id="mV">–</span><span class="u"> V</span></div></div>
+      <div class="met"><div class="k">가스 / 액체 유량</div><div class="v"><span id="mGL">–</span><span class="u"> ×</span></div></div>
+    </div>
+    <div id="choke">⚠ <b>가스 초킹</b> — 발생 가스가 펌프 유량을 넘어섰습니다 (<span id="chokeNum"></span>).
+      채널이 가스로 막혀 ε가 치솟고 옴 손실이 커집니다. <b>유량</b>을 올리거나 <b>전류밀도</b>를 낮추세요.</div>
+    <div class="hint" id="mBub" style="margin-top:7px">–</div>
+  </div>
+</div>
+
+<script src="/web3d/controls.js"></script>
+<script src="/web3d/plate_editor.js"></script>
+<script>
+"use strict";
+// ============================================================================
+// TWO PANELS, one story:
+//   (1) the catalyst surface at TRUE micron scale — where real bubble size and
+//       the nucleate/grow/detach cycle are the only things you can actually see
+//   (2) the whole cell as a gas-holdup map — where those bubbles pile up and
+//       BLOCK the channel, with the liquid deflecting around them
+// The physics is the 3-D engine (bubblesim3d) behind /api3d/state; this page
+// only draws, in the flat Canvas-2D idiom of app.html.
+// ============================================================================
+
+const P = {};
+// physics + geometry controls: SHARED with the 3-D view (web3d/controls.js).
+// Both pages drive the same server, so the widget list must be identical.
+const CTRL = SIM_CTRL;
+
+const pend = {}; let ptimer = null;
+function send(k, v) { pend[k] = v; if (!ptimer) ptimer = setTimeout(flush, 70); }
+function flush() {
+  const body = JSON.stringify(pend);
+  for (const k in pend) delete pend[k];
+  ptimer = null;
+  fetch("/api3d/op", { method:"POST", headers:{"Content-Type":"application/json"}, body }).catch(()=>{});
+}
+
+const ctls = buildControls(document.getElementById("controls"), CTRL, P, send);
+const plateEd = mountPlateEditor(document.getElementById("plateEd"),
+                                 { P, send, reg: ctls.reg });
+
+// -------------------------------------------------- helpers
+function prep(cv) {                                   // HiDPI-crisp canvas
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const W = cv.clientWidth || +cv.getAttribute("width");
+  const H = Math.round(W * (+cv.getAttribute("height") / +cv.getAttribute("width")));
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  cv.style.height = H + "px";
+  const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, W, H);
+  return { c, W, H };
+}
+function turbo(t) {                                   // blue -> green -> red
+  t = Math.max(0, Math.min(1, t));
+  const r = Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4*t - 3))));
+  const g = Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4*t - 2))));
+  const b = Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4*t - 1))));
+  return `rgb(${r},${g},${b})`;
+}
+// canvas ink read straight from the stylesheet, so the light theme and the
+// drawings can never drift apart
+const CSS = getComputedStyle(document.documentElement);
+const ink = (n, fb) => (CSS.getPropertyValue(n) || fb).trim() || fb;
+const INK = {
+  tx: ink("--tx", "#1a2331"), dim: ink("--dim", "#68738a"),
+  line: ink("--line", "#d6dce6"), warn: ink("--warn", "#c9333f"),
+  gold: ink("--gold", "#a8730a"), grn: ink("--grn", "#0f8a63"),
+  bg: ink("--cv-bg", "#f7f9fc"), liq: ink("--cv-liq", "#e9f1fa"),
+  land: ink("--cv-land", "#aab4c4"),
+};
+const C_H2 = "#2f9fd4", C_O2 = "#d98420";     // H2 / O2, readable on light paper
+
+// -------------------------------------------------- live state
+let st = null, gas3d = null, vel3d = null, land2d = null, faces = null;
+let stT = 0, stWall = 0, stRate = 0;                  // sim clock, for smooth growth
+let heroY = 0.35, heroZ = 0.5, side = 0;              // zoom centre (fractions), cathode
+let ports = null;
+let heroZoom = 1;                                     // 1 = whole channel depth
+
+// The server polls at ~110 ms, but the local zoom must grow bubbles at 60 fps.
+// Extrapolate the SIM clock between polls using the engine's own reported
+// sim-seconds-per-wall-second (speed_actual), so the growth rate stays exact.
+function simTimeMs() {
+  if (!st) return 0;
+  return (stT + (performance.now() - stWall) / 1000 * stRate) * 1000;
+}
+
+// =================== PANEL 1: catalyst surface at TRUE micron scale ==========
+// A tracked bubble in the 3-D engine REPRESENTS ~`mult` real ones, so a
+// micron-sized window would statistically contain none of them. This panel
+// unfolds the representation: it reconstructs the real nucleation sites in the
+// window from the engine's own numbers — site density, per-site gas rate
+// (Faraday / N_sites), departure radius + its spread, terminal velocity.
+// Nothing is invented: each site's volume grows V = rate * t, it lets go at its
+// own r_dep, and rises at the physical slip speed.
+// mm of channel depth (z) projected onto the panel. This is a MICROSCOPE FOCAL
+// THICKNESS, not a fudge: the real holdup (~8%) means a 3 mm slab superimposes
+// dozens of bubbles into an opaque foam. Thin it to see individual bubbles.
+let WIN_Z = 0.6;
+function hash(i) { let x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+// local current density at the clicked spot -> local gas rate (hot spots grow
+// faster). Falls back to the cell mean when the face map hasn't arrived.
+function localJFactor() {
+  if (!faces || !st) return 1;
+  const f = side === 0 ? faces.cathode : faces.anode;
+  const jy = Math.min(f.ny - 1, Math.max(0, Math.round(heroY * (f.ny - 1))));
+  const kz = Math.min(f.nz - 1, Math.max(0, Math.round(heroZ * (f.nz - 1))));
+  const jl = f.j[jy * f.nz + kz];
+  if (jl < 0) return 0;                                // clicked a rib (no electrolyte)
+  const jm = st.diag ? st.diag.j_Acm2 : 0;
+  return jm > 0 ? jl / jm : 1;
+}
+
+function drawHero() {
+  const cv = document.getElementById("hero"); const { c, W, H } = prep(cv);
+  if (!st) return;
+  const d = st.diag || {};
+  // PHYSICAL channel depth from the designer (the flow grid quantises it to
+  // whole voxels, but this panel is a sub-voxel micron view — so the opposite
+  // plate sits at the real depth and closes in as you narrow the channel)
+  const chDepth = Math.max(0.05, (st.designer && st.designer.d_ch_mm) || 1);
+  const pad = 8, aw = W - 2*pad, ah = H - 2*pad;
+
+  // WALL AT THE BOTTOM, channel opening upward to the opposite plate.
+  // vertical  = wall-normal distance (0 .. chDepth/zoom)   -> TO SCALE
+  // horizontal= along the cell (buoyancy + pumped flow)    -> bubbles slide right
+  const winN = chDepth / heroZoom;                     // mm shown normal to the wall
+  const sx = ah / winN;                                // px per mm (isotropic)
+  const winT = aw / sx;                                // mm along the wall
+  const NY = pyn => H - pad - pyn * sx;                // wall-normal mm -> px
+  const TX = t => pad + t * sx;                        // tangential mm -> px
+
+  c.fillStyle = INK.liq; c.fillRect(pad, pad, aw, ah);      // electrolyte
+  // opposite plate wall (only visible when the whole channel depth is in view)
+  const plateY = NY(chDepth);
+  if (plateY > pad - 2) {
+    c.fillStyle = "#7d8798"; c.fillRect(pad, Math.max(pad, plateY), aw, Math.min(9, ah));
+    c.fillStyle = INK.dim; c.font = "10px system-ui"; c.textAlign = "left";
+    c.fillText(`반대편 플레이트 (채널 깊이 ${chDepth.toFixed(2)} mm)`, pad + 8, Math.max(pad, plateY) + 21);
+  }
+  // catalyst wall along the bottom
+  const grad = c.createLinearGradient(0, H - pad, 0, H - pad - ah*0.18);
+  grad.addColorStop(0, side === 0 ? "rgba(63,110,160,0.22)" : "rgba(176,104,42,0.22)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  c.fillStyle = grad; c.fillRect(pad, H - pad - ah*0.18, aw, ah*0.18);
+  c.fillStyle = side === 0 ? "#41607f" : "#9c5f34"; c.fillRect(pad, H - pad - 7, aw, 7);
+
+  const jFac = localJFactor();
+  const dens = (d.sites_per_mm2 || 0);                 // real sites per mm^2
+  const rate = (d.rate_um3_ms || 0) * jFac;            // um^3/ms fed to ONE site here
+  const rDep = d.r_dep_um || 0, spread = d.spread || 0.35;
+  const rNuc = d.r_nuc_um || 2, vT = d.v_term_mm_s || 0;
+  const tms = simTimeMs();
+  const gasF = side === 0 ? 1.0 : 0.5;                 // O2 evolves half the volume
+  const V = r => 4/3 * Math.PI * r*r*r;
+  const R = v => Math.cbrt(3*v / (4*Math.PI));
+  const col = side === 0 ? C_H2 : C_O2;
+
+  // Sites that feed this window. The channel FLOWS, so bubbles born UPSTREAM
+  // sweep through it — a micron window is not a closed box. Seed sites over
+  // [-upT, winT] and carry each one downstream; only what lands inside is drawn.
+  const seed = Math.round(heroY*997) * 131 + Math.round(heroZ*997);
+  const upT = 3 * winT;                                // upstream fetch [mm]
+  const N = Math.min(400, Math.max(0, Math.round(dens * (winT + upT) * WIN_Z)));
+  const uBulk = ((st.designer && st.designer.u_flow) || 0) * 1000;   // mm/s
+  const halfD = Math.max(0.5 * chDepth, 1e-6);
+  // liquid speed at wall-normal distance y: linear shear layer, bulk past mid-channel
+  const uAt = y => uBulk * Math.min(1, y / halfD);
+  let n = 0, nUp = 0, rmax = 0, per0 = 0;
+
+  // collect first, draw back-to-front: bubbles sit at different depths in the
+  // projected slab, so the far ones must not paint over the near ones
+  const bubs = [];
+  const drawBub = (px, py, r, alpha, depth) => bubs.push({px, py, r, alpha, depth});
+
+  function paint() {
+    bubs.sort((a, b) => b.depth - a.depth);
+    for (const b of bubs) {
+      const r = Math.max(1.0, b.r);
+      const dim = 0.35 + 0.65 * (1 - b.depth);        // depth cue (far = faint)
+      c.globalAlpha = b.alpha * dim; c.fillStyle = col;
+      c.beginPath(); c.arc(b.px, b.py, r, 0, 6.2832); c.fill();
+      if (r > 2.5) {                                  // rim + specular: reads as a sphere
+        c.globalAlpha = b.alpha * dim * 0.5; c.strokeStyle = "#1d3a52"; c.lineWidth = 1;
+        c.beginPath(); c.arc(b.px, b.py, r, 0, 6.2832); c.stroke();
+        c.globalAlpha = b.alpha * dim * 0.7; c.fillStyle = "#ffffff";
+        c.beginPath(); c.arc(b.px - r*0.32, b.py - r*0.32, r*0.3, 0, 6.2832); c.fill();
+      }
+    }
+    c.globalAlpha = 1;
+  }
+
+  if (rate > 0 && rDep > rNuc) {
+    per0 = (V(rDep) - V(rNuc)) / (rate * gasF);
+    for (let i = 0; i < N; i++) {
+      const s = seed + i;
+      const rd = rDep * (1 - spread + 2*spread*hash(s));   // this site's departure size
+      const per = (V(rd) - V(rNuc)) / (rate * gasF);        // ms to fill this bubble
+      if (!(per > 0)) continue;
+      const t0 = hash(s + 17) * (winT + upT) - upT;         // where the site sits
+      const ph = (tms + hash(s + 91) * per) % per;          // its phase right now
+      const dep = hash(s + 53);                             // depth in the slab [0,1]
+
+      // 1) attached, growing on the wall (tangent to it) — only if it is in view
+      if (t0 >= 0 && t0 <= winT) {
+        const r = R(V(rNuc) + rate * gasF * ph);
+        drawBub(TX(t0), NY(r * 1e-3), r * 1e-3 * sx, 1, dep);
+        n++; rmax = Math.max(rmax, r);
+      }
+
+      // 2) the ones that already let go. Streamwise they ride slip + the LOCAL
+      // liquid speed. WALL-NORMAL they do not move: buoyancy points ALONG the
+      // electrode and the engine models no shear-induced lift or turbulent
+      // dispersion, so a released bubble skims the wall at y = its own radius.
+      // (Measured in the engine: risers travel 23 mm up-cell while staying
+      // within +-20 um of their birth distance from the catalyst.) The real
+      // near-wall accumulation is in the same direction — for ~40 um bubbles in
+      // laminar co-current flow the lift force points AT the wall — but the
+      // slow thickening of the bubble curtain is outside this model.
+      const vSlip = vT * Math.pow(rd / Math.max(rDep, 1e-9), 2);   // mm/s
+      const y = rd * 1e-3;                                         // mm off the wall
+      const vT_here = vSlip + uAt(y);                              // mm/s downstream
+      if (y > winN) continue;
+      for (let k = 1; k <= 24; k++) {
+        const age = ph + (k - 1) * per;                            // ms since detach
+        const t = t0 + vT_here * age / 1000;
+        if (t > winT + 0.05) break;              // downstream, and every older one too
+        if (t < 0) continue;                                       // still upstream
+        // each released bubble wanders its own way through the slab depth (the
+        // lateral wobble the engine gives free risers) — successive ones do not
+        // ride a single line
+        drawBub(TX(t), NY(y), rd * 1e-3 * sx, 0.85, hash(s * 31 + k * 7 + 53));
+        n++; rmax = Math.max(rmax, rd); if (t0 < 0) nUp++;
+      }
+    }
+  }
+  paint();
+
+  // flow / buoyancy direction arrow
+  c.strokeStyle = INK.dim; c.fillStyle = INK.dim; c.lineWidth = 1.2;
+  const ay = pad + 26, ax0 = W - pad - 96, ax1 = W - pad - 30;
+  c.beginPath(); c.moveTo(ax0, ay); c.lineTo(ax1, ay); c.stroke();
+  c.beginPath(); c.moveTo(ax1, ay); c.lineTo(ax1-6, ay-3.5); c.lineTo(ax1-6, ay+3.5);
+  c.closePath(); c.fill();
+  c.font = "10px system-ui"; c.textAlign = "right";
+  c.fillText("부력 + 유동", ax1, ay - 7);
+
+  // 100 um scale bar (horizontal, on the wall)
+  const sb = 0.1 * sx;
+  c.strokeStyle = INK.tx; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(W - pad - sb - 12, H - pad - 16); c.lineTo(W - pad - 12, H - pad - 16); c.stroke();
+  c.fillStyle = INK.tx; c.font = "11px system-ui"; c.textAlign = "center";
+  c.fillText("100 µm", W - pad - sb/2 - 12, H - pad - 21);
+  c.textAlign = "left"; c.fillStyle = INK.dim; c.font = "11px system-ui";
+  c.fillText(side === 0 ? "촉매면 (음극 · H₂)" : "촉매면 (양극 · O₂)", pad + 12, H - pad - 14);
+
+  if (jFac === 0) {
+    c.fillStyle = INK.warn; c.font = "12px system-ui"; c.textAlign = "center";
+    c.fillText("리브(유로 벽) 아래 — 전해질이 없어 반응하지 않는 지점", W/2, pad + ah/2);
+  }
+
+  const pm = d.p_merge || 0, conf = d.r_conf_um || 0;
+  const capped = rDep > 0 && conf > 0 && rDep >= conf - 0.05;
+  document.getElementById("mHeroN").textContent = n;
+  document.getElementById("mHeroR").textContent = rmax.toFixed(0);
+  document.getElementById("heroLoc").innerHTML =
+    `창 ${(winT*1000)|0}×${(winN*1000)|0} µm (z-투영 ${WIN_Z.toFixed(2)} mm) · ` +
+    `국소 전류 <b style="color:var(--tx)">${jFac.toFixed(2)}×</b> 평균 · ` +
+    `사이트 ${dens.toFixed(1)}/mm² · 한 사이클 <b style="color:var(--gold)">${per0 ? per0.toFixed(1) : "–"} ms</b> · ` +
+    `상류 유입 <b style="color:var(--tx)">${nUp}</b>개<br>` +
+    `합체 확률 <b style="color:var(--tx)">${pm.toFixed(2)}</b> ` +
+    `(${pm < 0.5 ? "진한 전해질 — 억제" : "묽은 전해질 — 활발"}) · ` +
+    `출구 기포 <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> · ` +
+    `벽 구속 한계 <b style="color:${capped ? "var(--gold)" : "var(--dim)"}">${conf.toFixed(0)} µm</b>` +
+    `${capped ? " — 반대편 플레이트가 이탈 크기를 결정" : ""} · ` +
+    `기포층 두께 ≈ <b style="color:var(--tx)">${(2*rDep).toFixed(0)} µm</b><br>` +
+    `<span style="color:var(--dim)">대표 버블을 실제 사이트 밀도로 되펼친 재구성 — 성장률·이탈크기·상승속도는 모두 시뮬레이션 값. ` +
+    `부력은 전극면과 <b>나란한</b> 방향이라 이탈한 기포는 벽을 따라 미끄러집니다 (양력·난류 분산은 이 모델에 없음).</span>`;
+}
+
+// =================== PANEL 2: whole cell, gas blocking =======================
+function drawFace() {
+  const cv = document.getElementById("face"); const { c, W, H } = prep(cv);
+  if (!st || !gas3d) return;
+  const { nx, ny, nz, f } = gas3d;
+  const g = st.grid, nLay = g.n_lay || 1;
+  // gas fraction seen looking THROUGH the electrode: average over this side's
+  // channel layers -> "where does the gas block the channel?"
+  const xs = side === 0 ? [...Array(nLay).keys()]
+                        : [...Array(nLay).keys()].map(i => nx - 1 - i);
+  const at = (i,j,k) => f[i*ny*nz + j*nz + k];
+  const eps = new Float32Array(ny * nz);
+  let vmax = 0.02;
+  for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    let s = 0; for (const i of xs) s += at(i,j,k);
+    const v = s / xs.length; eps[j*nz + k] = v; if (v > vmax) vmax = v;
+  }
+
+  const barW = 26, pad = 8;
+  const aw = W - barW - 3*pad, ah = H - 2*pad - 16;
+  const cw = aw / nz, chh = ah / ny;
+  for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    const isLand = land2d && land2d.m[j*land2d.nz + Math.min(land2d.nz-1, k)];
+    c.fillStyle = isLand ? INK.land : turbo(eps[j*nz + k] / vmax);
+    c.fillRect(pad + k*cw, pad + (ny-1-j)*chh, Math.ceil(cw), Math.ceil(chh));
+  }
+
+  // liquid velocity arrows: flow deflecting AROUND the gas pockets
+  if (vel3d) {
+    const ix = xs[0];
+    const step = Math.max(1, Math.round(Math.max(ny, nz) / 14));
+    let smax = 1e-6;
+    for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+      const fi = ix*ny*nz + j*nz + k;
+      smax = Math.max(smax, Math.hypot(vel3d.w[fi], vel3d.v[fi]));
+    }
+    const alen = Math.min(cw, chh) * step * 0.85;
+    c.strokeStyle = "rgba(255,255,255,0.95)"; c.fillStyle = "rgba(255,255,255,0.95)"; c.lineWidth = 1.4;
+    for (let j = 0; j < ny; j += step) for (let k = 0; k < nz; k += step) {
+      if (land2d && land2d.m[j*land2d.nz + Math.min(land2d.nz-1,k)]) continue;
+      const fi = ix*ny*nz + j*nz + k;
+      const du = vel3d.w[fi]/smax, dv = vel3d.v[fi]/smax;
+      if (Math.hypot(du, dv) < 0.06) continue;
+      const cx = pad + (k+0.5)*cw, cy = pad + ah - (j+0.5)*chh;
+      const ex = cx + du*alen, ey = cy - dv*alen;
+      c.beginPath(); c.moveTo(cx, cy); c.lineTo(ex, ey); c.stroke();
+      const ang = Math.atan2(ey-cy, ex-cx), aH = Math.min(4, alen*0.36);
+      c.beginPath(); c.moveTo(ex, ey);
+      c.lineTo(ex - aH*Math.cos(ang-0.45), ey - aH*Math.sin(ang-0.45));
+      c.lineTo(ex - aH*Math.cos(ang+0.45), ey - aH*Math.sin(ang+0.45));
+      c.closePath(); c.fill();
+    }
+  }
+
+  // zoom marker (panel 1 window)
+  c.strokeStyle = INK.gold; c.lineWidth = 2;
+  c.strokeRect(pad + heroZ*aw - 11, pad + ah - heroY*ah - 11, 22, 22);
+
+  // inlet / outlet + colourbar
+  // inlet / outlet: draw the cells the ENGINE actually opens, not a full strip.
+  // A narrow outlet turns the rest of the top into plate — gas piles up under it.
+  const edge = (arr, face, col) => {
+    c.fillStyle = col;
+    if (!arr) { c.fillRect(pad, pad + ah, aw, 3); return; }
+    if (face === "bottom" || face === "top") {
+      const cw2 = aw / ports.nz, y = face === "bottom" ? pad + ah : pad - 4;
+      for (let k = 0; k < ports.nz; k++) if (arr[k]) c.fillRect(pad + k*cw2, y, cw2 + 0.6, 4);
+    } else {
+      const chh2 = ah / ports.ny, x = face === "left" ? pad - 4 : pad + aw;
+      for (let j = 0; j < ports.ny; j++)
+        if (arr[j]) c.fillRect(x, pad + (ports.ny - 1 - j)*chh2, 4, chh2 + 0.6);
+    }
+  };
+  edge(ports && ports.in, ports && ports.in_face, INK.grn);
+  edge(ports && ports.out, ports && ports.out_face, INK.warn);
+  c.font = "10px system-ui"; c.textAlign = "left";
+  c.fillStyle = INK.grn; c.fillText("inlet", pad + 2, pad + ah + 13);
+  c.fillStyle = INK.warn; c.textAlign = "right"; c.fillText("outlet", pad + aw - 2, pad + ah + 13);
+  const bx = W - barW - pad;
+  for (let i = 0; i < ah; i++) { c.fillStyle = turbo(1 - i/ah); c.fillRect(bx, pad+i, barW-10, 1); }
+  c.fillStyle = INK.tx; c.font = "10px system-ui"; c.textAlign = "left";
+  c.fillText((vmax*100).toFixed(0) + "%", bx - 2, pad + 9);
+  c.fillText("0", bx + 2, pad + ah - 2);
+  c.fillStyle = INK.dim; c.fillText("ε 가스", bx - 4, pad + ah + 13);
+}
+
+// ============================================================ polling + loop
+let pollN = 0;
+async function poll() {
+  let dt = 110;
+  try {
+    const heavy = (pollN++ % 3) === 0;
+    const s = await (await fetch("/api3d/state" + (heavy ? "?faces=1" : ""))).json();
+    st = s;
+    stT = s.t || 0; stWall = performance.now();
+    stRate = s.paused ? 0 : Math.max(0, s.speed_actual || 0);
+    if (s.gas3d) gas3d = s.gas3d;
+    if (s.vel3d) vel3d = s.vel3d;
+    if (s.land2d) land2d = s.land2d;
+    if (s.ports) ports = s.ports;
+    if (s.faces) faces = s.faces;
+    // the server is the single source of truth: pull its state into the widgets
+    // so a change made in the 3-D view shows up here (and vice versa)
+    ctls.sync(s.designer, s.speed);
+    if (heavy) plateEd.sync(s);
+    document.getElementById("conn").style.display = "none";
+    const d = s.diag || {};
+    document.getElementById("mV").textContent = (d.V_cell ?? 0).toFixed(3);
+    document.getElementById("mRd").textContent = (d.r_dep_um ?? 0).toFixed(0);
+    document.getElementById("mEps").textContent = ((d.holdup ?? 0) * 100).toFixed(1);
+    const gl = d.gas_liq ?? 0;
+    const glEl = document.getElementById("mGL");
+    glEl.textContent = gl >= 100 ? "∞" : gl.toFixed(2);
+    glEl.style.color = gl > 1 ? "var(--warn)" : "var(--tx)";
+    const ck = document.getElementById("choke");
+    ck.style.display = gl > 1 ? "block" : "none";
+    document.getElementById("chokeNum").textContent =
+      `가스 ${(d.q_gas_mLs ?? 0).toFixed(2)} mL/s vs 액체 ${(d.q_liq_mLs ?? 0).toFixed(2)} mL/s`;
+    document.getElementById("mBub").innerHTML =
+      `추적 <b style="color:var(--tx)">${s.n_bub}</b>개 (부착 ${d.n_attached}, 상승 ${d.n_free}) · ` +
+      `1개 ≈ <b style="color:var(--gold)">${(d.mult ?? 1).toFixed(0)}</b>개 실제 → 실제 약 ` +
+      `<b style="color:var(--tx)">${(d.n_real_est ?? 0).toLocaleString()}</b>개 · ` +
+      `θ ${(d.theta_c ?? 0).toFixed(3)}/${(d.theta_a ?? 0).toFixed(3)} · ${(s.speed_actual ?? 0).toFixed(2)}× 실시간`;
+  } catch {
+    document.getElementById("conn").style.display = "inline";
+    dt = 1200;
+  }
+  setTimeout(poll, dt);
+}
+poll();
+
+function frame() { drawHero(); drawFace(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+
+// ------------------------------------------------------------ interactions
+document.getElementById("face").addEventListener("click", e => {
+  const cv = e.currentTarget, r = cv.getBoundingClientRect();
+  const W = cv.clientWidth, H = cv.clientHeight;
+  const barW = 26, pad = 8;
+  const aw = W - barW - 3*pad, ah = H - 2*pad - 16;
+  const x = (e.clientX - r.left) - pad, y = (e.clientY - r.top) - pad;
+  if (x < 0 || x > aw) return;
+  heroZ = Math.max(0.02, Math.min(0.98, x / aw));
+  heroY = Math.max(0.02, Math.min(0.98, 1 - y / ah));
+  drawHero(); drawFace();
+});
+{ // zoom: slider + typed box, both drive heroZoom
+  const sl = document.getElementById("sZoom"), nu = document.getElementById("nZoom");
+  const apply = x => { heroZoom = x; drawHero(); };
+  sl.oninput = () => { nu.value = sl.value; apply(+sl.value); };
+  nu.onchange = () => { let x = Math.max(1, Math.min(60, +nu.value)); if (!isFinite(x)) x = 1;
+    nu.value = x; sl.value = Math.min(12, x); apply(x); };
+}
+{ // projected slab thickness: slider + typed box
+  const sl = document.getElementById("sWinZ"), nu = document.getElementById("nWinZ");
+  const apply = x => { WIN_Z = x; drawHero(); };
+  sl.oninput = () => { nu.value = sl.value; apply(+sl.value); };
+  nu.onchange = () => { let x = Math.max(0.05, Math.min(3, +nu.value)); if (!isFinite(x)) x = 0.6;
+    nu.value = x; sl.value = x; apply(x); };
+}
+document.getElementById("sideSeg").querySelectorAll("button").forEach(b => b.onclick = () => {
+  document.getElementById("sideSeg").querySelectorAll("button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); side = +b.dataset.s; drawHero(); drawFace();
+});
+addEventListener("resize", () => { drawHero(); drawFace(); });
+
+// verification handles (headless: rAF is throttled in some hosts)
+window.__st = () => st;
+window.__frame = () => { drawHero(); drawFace(); };
+window.__probe = id => { const cv = document.getElementById(id), c = cv.getContext("2d");
+  const d = c.getImageData(0,0,cv.width,cv.height).data; let nz = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i]+d[i+1]+d[i+2] > 24) nz++;
+  return { id, w: cv.width, h: cv.height, nonBlank: nz }; };
+window.__ready = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D 버블 엔진 → 2D 표시</title>
+<style>
+  :root{--bg:#0b0f14;--card:#121821;--line:#1f2937;--tx:#dbe4f0;--dim:#8a93a3;--accent:#4da3ff;--grn:#37d39a;--gold:#ffd166;--warn:#ff6b6b;}
+  *{box-sizing:border-box} html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--tx);font:13px/1.45 "Segoe UI",system-ui,sans-serif;padding:14px 16px}
+  h1{font-size:18px;margin:0 0 2px} .sub{color:var(--dim);font-size:12px;margin-bottom:12px}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:1px 9px;font-size:11px;color:var(--grn)}
+  .app{display:grid;grid-template-columns:258px 1fr;gap:13px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .ctl{margin-bottom:9px} .lab{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:2px}
+  .val{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--accent);height:20px}
+  .row{display:flex;gap:6px;margin-top:9px}
+  .btn{flex:1;background:#0e1420;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:7px 4px;font-size:12.5px;cursor:pointer}
+  .btn:hover{border-color:var(--accent);background:#16243a}
+  .hint{color:var(--dim);font-size:11px;margin-top:3px}
+  .met{background:#0e1420;border:1px solid var(--line);border-radius:9px;padding:7px 9px;text-align:center}
+  .met .k{color:var(--dim);font-size:10.5px} .met .v{font-size:15px;font-weight:650;font-variant-numeric:tabular-nums;margin-top:1px}
+  .grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:11px}
+  .panels{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+  .span3{grid-column:1 / -1} .span2{grid-column:span 2}
+  .plotlab{display:flex;justify-content:space-between;color:var(--dim);font-size:11.5px;margin-bottom:5px}
+  canvas{display:block;width:100%;background:#0d121b;border:1px solid var(--line);border-radius:9px}
+  .leg{display:flex;gap:12px;margin-top:6px;font-size:11px;color:var(--dim)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+</style>
+</head>
+<body>
+<h1>3D 버블 엔진 → 2D 표시 <span class="pill">물리=3D · 표시=2D 투영</span></h1>
+<div class="sub">진짜 3D 결합 물리(유동+버블)를 뒤에서 풀고, 결과를 2D 단면·투영·프로파일로 봅니다. WebGL 없음 — 가볍고 선명.</div>
+
+<div class="app">
+  <div class="card">
+    <div class="ctl"><div class="lab">전류밀도 j<span class="val"><span id="vJ">0.40</span> A/cm²</span></div>
+      <input id="sJ" type="range" min="0.02" max="2" step="0.01" value="0.4"></div>
+    <div class="ctl"><div class="lab"><b>셀 기울기 (중력)</b><span class="val"><span id="vT">0</span>°</span></div>
+      <input id="sT" type="range" min="0" max="90" step="1" value="0">
+      <div class="hint">0=수직(정상 배출) · 90=수평(한 전극에 가스 갇힘)</div></div>
+    <div class="ctl"><div class="lab">유속 (전해액)<span class="val"><span id="vU">0.00</span> m/s</span></div>
+      <input id="sU" type="range" min="0" max="0.3" step="0.005" value="0"></div>
+    <div class="ctl"><div class="lab">접촉각 (이탈크기)<span class="val"><span id="vA">60</span>°</span></div>
+      <input id="sA" type="range" min="20" max="150" step="1" value="60"></div>
+    <div class="ctl"><div class="lab">재생 속도<span class="val"><span id="vSp">1.0</span>×</span></div>
+      <input id="sSp" type="range" min="0.1" max="3" step="0.1" value="1"></div>
+    <div class="row">
+      <button class="btn" id="bPause">⏸ 정지</button>
+      <button class="btn" id="bReset">↺ 리셋</button>
+    </div>
+    <div class="leg">
+      <span><span class="dot" style="background:#5ec8ff"></span>H₂ 음극</span>
+      <span><span class="dot" style="background:#ffb454"></span>O₂ 양극</span>
+    </div>
+    <div class="hint" style="margin-top:9px;border-top:1px solid var(--line);padding-top:8px">
+      물리 격자 16×32×16, Euler–Lagrange. 전기화학 V–j는 Python 커널과 결합 예정(지금 j는 입력).</div>
+  </div>
+
+  <div>
+    <div class="grid4">
+      <div class="met"><div class="k">버블 수</div><div class="v" id="mN">–</div></div>
+      <div class="met"><div class="k">가스 holdup</div><div class="v" id="mH">–</div></div>
+      <div class="met"><div class="k">θ 음극 / 양극</div><div class="v" id="mTh">–</div></div>
+      <div class="met"><div class="k">유속 max</div><div class="v" id="mV">–</div></div>
+    </div>
+    <div class="panels">
+      <div class="card span2">
+        <div class="plotlab"><span><b>측면도</b> — 전극 사이(가로) × 높이(세로), 3D 버블 투영(밝을수록 앞쪽)</span><span id="lblTilt"></span></div>
+        <canvas id="cSide" height="380"></canvas>
+      </div>
+      <div class="card">
+        <div class="plotlab"><span><b>void 단면</b> — 가스 농도(깊이 평균)</span></div>
+        <canvas id="cVoid" height="380"></canvas>
+      </div>
+      <div class="card">
+        <div class="plotlab"><span><b>높이별 holdup</b> — 어디에 가스가 쌓이나</span></div>
+        <canvas id="cProf" height="210"></canvas>
+      </div>
+      <div class="card">
+        <div class="plotlab"><span><b>위에서 본 단면</b> — 전극 사이 × 폭</span></div>
+        <canvas id="cTop" height="210"></canvas>
+      </div>
+      <div class="card">
+        <div class="plotlab"><span><b>holdup vs 기울기</b> — 방향 효과</span></div>
+        <canvas id="cSweep" height="210"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { Sim3D } from './sim3d.js';
+const sim = new Sim3D();
+window.__sim3d = sim;
+
+const C_H2 = '#5ec8ff', C_O2 = '#ffb454';
+const heat = (t) => { // 0..1 -> blue->cyan->yellow->red
+  t = Math.max(0, Math.min(1, t));
+  const r = Math.round(255 * Math.min(1, Math.max(0, t * 2 - 0.4)));
+  const g = Math.round(255 * Math.min(1, Math.max(0, t < 0.5 ? t * 2 : 2 - t * 2)));
+  const b = Math.round(255 * Math.min(1, Math.max(0, 1 - t * 2)));
+  return `rgb(${r},${g},${b})`;
+};
+function prep(cv) {                                  // HiDPI-crisp 2D canvas
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { c, W, H };
+}
+
+// ---- side view: project bubbles on x (gap) - y (height), depth-shade by z ----
+function drawSide() {
+  const cv = document.getElementById('cSide'); const { c, W, H } = prep(cv); if (W < 10) return;
+  c.clearRect(0, 0, W, H);
+  const pad = 14, w = W - pad * 2, h = H - pad * 2;
+  const X = x => pad + w * (x / sim.Lx), Y = y => pad + h * (1 - y / sim.Ly);
+  // electrodes
+  c.fillStyle = '#1c3350'; c.fillRect(X(0) - 4, pad, 5, h);
+  c.fillStyle = '#3a2118'; c.fillRect(X(sim.Lx) - 1, pad, 5, h);
+  c.fillStyle = '#5a6f8a'; c.font = '10px system-ui';
+  c.fillText('음극(HER)', X(0) + 2, pad + 11); c.textAlign = 'right'; c.fillText('양극(OER)', X(sim.Lx) - 2, pad + 11); c.textAlign = 'left';
+  // bubbles, far (small z) drawn first / dimmer
+  const bs = sim.bubbles.slice().sort((a, b) => a.z - b.z);
+  for (const b of bs) {
+    const r = Math.max(1.4, (b.r / sim.Lx) * w * 1.7);
+    const shade = 0.35 + 0.65 * (b.z / sim.Lz);
+    c.globalAlpha = shade; c.fillStyle = b.side ? C_O2 : C_H2;
+    c.beginPath(); c.arc(X(b.x), Y(b.y), r, 0, 6.2832); c.fill();
+  }
+  c.globalAlpha = 1;
+  // gravity arrow (rotated by tilt): points DOWN = -up
+  const up = sim.diag.up, ax = W - 30, ay = 34, L = 16;
+  c.strokeStyle = '#b39bff'; c.fillStyle = '#b39bff'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(ax, ay); c.lineTo(ax - up[0] * L, ay + up[1] * L); c.stroke();
+  c.beginPath(); c.arc(ax - up[0] * L, ay + up[1] * L, 2.6, 0, 6.2832); c.fill();
+  c.fillStyle = '#5a6f8a'; c.fillText('g', ax + 4, ay + 4);
+}
+
+// ---- void cross-section: gas field averaged over depth (z), x-y ----
+function drawVoid() {
+  const cv = document.getElementById('cVoid'); const { c, W, H } = prep(cv); if (W < 10) return;
+  c.clearRect(0, 0, W, H);
+  const { nx, ny, nz, gas } = sim, pad = 12, w = W - pad * 2, h = H - pad * 2;
+  const col = new Float32Array(nx * ny); let mx = 1e-9;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    let s = 0; for (let k = 0; k < nz; k++) s += gas[sim.IX(i, j, k)];
+    const v = s / nz; col[i + nx * j] = v; if (v > mx) mx = v;
+  }
+  const cw = w / nx, ch = h / ny;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    c.fillStyle = heat(col[i + nx * j] / mx);
+    c.fillRect(pad + i * cw, pad + (ny - 1 - j) * ch, cw + 0.6, ch + 0.6);
+  }
+  c.fillStyle = '#8a93a3'; c.font = '10px system-ui';
+  c.fillText('아래', pad, H - 2); c.fillText('위', pad, pad + 9);
+}
+
+// ---- holdup vs height ----
+function drawProfile() {
+  const cv = document.getElementById('cProf'); const { c, W, H } = prep(cv); if (W < 10) return;
+  c.clearRect(0, 0, W, H);
+  const { nx, ny, nz, gas } = sim, pad = 14, w = W - pad * 2, h = H - pad * 2;
+  const prof = new Float32Array(ny); let mx = 1e-9;
+  for (let j = 0; j < ny; j++) { let s = 0; for (let k = 0; k < nz; k++) for (let i = 0; i < nx; i++) s += gas[sim.IX(i, j, k)]; prof[j] = s; if (s > mx) mx = s; }
+  c.fillStyle = '#37d39a';
+  const bh = h / ny;
+  for (let j = 0; j < ny; j++) {
+    const bw = w * (prof[j] / mx);
+    c.fillRect(pad, pad + (ny - 1 - j) * bh, bw, bh - 0.6);
+  }
+  c.fillStyle = '#8a93a3'; c.font = '10px system-ui';
+  c.fillText('위', pad, pad + 9); c.fillText('아래(전극 하단)', pad, H - 3);
+}
+
+// ---- top view: x (gap) - z (width) ----
+function drawTop() {
+  const cv = document.getElementById('cTop'); const { c, W, H } = prep(cv); if (W < 10) return;
+  c.clearRect(0, 0, W, H);
+  const pad = 12, w = W - pad * 2, h = H - pad * 2;
+  const X = x => pad + w * (x / sim.Lx), Z = z => pad + h * (z / sim.Lz);
+  c.strokeStyle = '#1c3350'; c.lineWidth = 3; c.beginPath(); c.moveTo(X(0), pad); c.lineTo(X(0), H - pad); c.stroke();
+  c.strokeStyle = '#3a2118'; c.beginPath(); c.moveTo(X(sim.Lx), pad); c.lineTo(X(sim.Lx), H - pad); c.stroke();
+  for (const b of sim.bubbles) {
+    c.globalAlpha = 0.7; c.fillStyle = b.side ? C_O2 : C_H2;
+    c.beginPath(); c.arc(X(b.x), Z(b.z), Math.max(1.2, (b.r / sim.Lx) * w * 1.4), 0, 6.2832); c.fill();
+  }
+  c.globalAlpha = 1;
+}
+
+// ---- holdup vs tilt sweep (snapshots accumulated as user moves the tilt slider) ----
+const sweep = new Map();   // tilt(deg) -> holdup%
+function drawSweep() {
+  const cv = document.getElementById('cSweep'); const { c, W, H } = prep(cv); if (W < 10) return;
+  c.clearRect(0, 0, W, H);
+  sweep.set(Math.round(sim.params.tilt), sim.diag.holdup * 100);
+  const pad = 22; let mx = 0.5; for (const v of sweep.values()) if (v > mx) mx = v;
+  const X = t => pad + (W - pad * 1.4) * (t / 90), Y = v => H - 16 - (H - 30) * (v / mx);
+  c.strokeStyle = '#233247'; c.lineWidth = 1; c.beginPath(); c.moveTo(pad, H - 16); c.lineTo(W - 6, H - 16); c.stroke();
+  c.beginPath(); c.moveTo(pad, 8); c.lineTo(pad, H - 16); c.stroke();
+  const pts = [...sweep.entries()].sort((a, b) => a[0] - b[0]);
+  c.fillStyle = '#ffd166';
+  for (const [t, v] of pts) { c.beginPath(); c.arc(X(t), Y(v), 2.6, 0, 6.2832); c.fill(); }
+  // marker for current tilt
+  c.strokeStyle = '#4da3ff'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X(sim.params.tilt), 8); c.lineTo(X(sim.params.tilt), H - 16); c.stroke();
+  c.fillStyle = '#8a93a3'; c.font = '10px system-ui';
+  c.fillText('holdup %', 2, 12); c.fillText('0°', pad - 4, H - 4); c.fillText('90°', W - 22, H - 4);
+  c.fillText('기울기를 움직이면 점이 쌓여요', pad + 6, 12);
+}
+
+// ---- controls ----
+const bind = (sid, vid, fmt, fn) => { const el = document.getElementById(sid);
+  el.addEventListener('input', () => { document.getElementById(vid).textContent = fmt(el.value); fn(+el.value); }); };
+bind('sJ', 'vJ', v => (+v).toFixed(2), v => sim.setParams({ j: v }));
+bind('sT', 'vT', v => v, v => sim.setParams({ tilt: v }));
+bind('sU', 'vU', v => (+v).toFixed(2), v => sim.setParams({ u_in: v }));
+bind('sA', 'vA', v => v, v => sim.setParams({ theta: v }));
+let speed = 1; bind('sSp', 'vSp', v => (+v).toFixed(1), v => speed = v);
+let paused = false;
+document.getElementById('bPause').onclick = e => { paused = !paused; e.target.textContent = paused ? '▶ 재생' : '⏸ 정지'; };
+document.getElementById('bReset').onclick = () => { sim.reset(); sweep.clear(); };
+
+// ---- loop ----
+let last = performance.now(), slowT = 0;
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (!paused) { let acc = dt * speed, k = 0; while (acc > 1e-4 && k++ < 2) { const s = Math.min(0.005, acc); sim.step(s); acc -= s; } }
+  drawSide(); drawTop();
+  if (now - slowT > 120) {                            // heavier panels at ~8 Hz
+    slowT = now; drawVoid(); drawProfile(); drawSweep();
+    const d = sim.diag;
+    document.getElementById('mN').textContent = d.nBub;
+    document.getElementById('mH').textContent = (d.holdup * 100).toFixed(2) + ' %';
+    document.getElementById('mTh').textContent = d.thetaC.toFixed(2) + ' / ' + d.thetaA.toFixed(2);
+    document.getElementById('mV').textContent = (d.vmax * 100).toFixed(1) + ' cm/s';
+    document.getElementById('lblTilt').textContent = '기울기 ' + Math.round(sim.params.tilt) + '°';
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+// verification handles (headless)
+window.__step = (n) => { for (let i = 0; i < (n || 1); i++) sim.step(0.005); return sim.diag; };
+window.__draw = () => { drawSide(); drawVoid(); drawProfile(); drawTop(); drawSweep(); };
+window.__probe = (id) => {                            // non-blank check for a 2D canvas
+  const cv = document.getElementById(id); const c = cv.getContext('2d');
+  const d = c.getImageData(0, 0, cv.width, cv.height).data; let nz = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 24) nz++;
+  return { id, nonBlankPx: nz, totalPx: d.length / 4 };
+};
+window.__ready = true;
+</script>
+</body>
+</html>

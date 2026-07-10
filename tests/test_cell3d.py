@@ -1,0 +1,818 @@
+"""Track A (cell-scale 3-D) engine tests.
+
+Meaningful checks for a Stam-style projection solver + Lagrangian parcels:
+  * the projection produces a genuinely divergence-free interior
+  * uniform inflow with no gas -> plug flow at the inlet speed (mass balance)
+  * the vectorized parcel slip matches the frozen kernel terminal velocity
+  * spawned parcel gas volume closes the Faraday balance (j/nF)
+  * a detached parcel in quiescent liquid rises at its terminal velocity
+  * tilt rotates the buoyancy/slip direction (the 3-D payoff)
+
+These import bubblesim.kernel read-only; no golden values are touched.
+"""
+import os
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from bubblesim import Params
+from bubblesim.kernel.bubbles.population import Surface
+from bubblesim.kernel.context import build_context
+from bubblesim3d.grid import Grid3D
+from bubblesim3d.ns3d import NS3D
+from bubblesim3d.parcels import Parcels, terminal_velocity
+from bubblesim3d.cell3d import CellSim3D
+from bubblesim3d.params3d import (DESIGNER_DEFAULTS, cell_config_from_designer,
+                                  operating_from_designer)
+
+
+def _op(**kw):
+    d = dict(DESIGNER_DEFAULTS); d.update(kw)
+    return operating_from_designer(d)
+
+
+# --------------------------------------------------------------- projection
+def test_projection_divergence_free():
+    """A random divergent field in a closed box projects to ~0 divergence."""
+    g = Grid3D(16, 16, 16, 1.5e-3)
+    ns = NS3D(g, outlet=False); ns.u_in = 0.0
+    r = np.random.default_rng(0)
+    ns.U = r.standard_normal(ns.U.shape) * 0.01
+    ns.V = r.standard_normal(ns.V.shape) * 0.01
+    ns.W = r.standard_normal(ns.W.shape) * 0.01
+    ns._apply_bc()
+    d0 = ns.max_divergence()
+    ns.project(200, warm=False)
+    d1 = ns.max_divergence()
+    assert d0 > 1.0                       # started strongly divergent
+    assert d1 < 1e-3                      # projected essentially divergence-free
+    assert d1 < d0 * 1e-3
+
+
+def test_projection_open_outlet():
+    """With an inflow + open outlet the interior still projects div-free."""
+    g = Grid3D(16, 16, 16, 1.5e-3)
+    ns = NS3D(g, outlet=True); ns.u_in = 0.05
+    r = np.random.default_rng(1)
+    ns.U = r.standard_normal(ns.U.shape) * 0.01
+    ns.V = r.standard_normal(ns.V.shape) * 0.01
+    ns.W = r.standard_normal(ns.W.shape) * 0.01
+    ns._apply_bc()
+    ns.project(1000, warm=False)
+    assert ns.max_divergence() < 1e-3
+
+
+# ------------------------------------------------- projection convergence
+def test_step_ends_with_the_projection():
+    """The field the parcels sample must be the divergence-free one.
+
+    `forces -> project -> advect` left the ADVECTION's divergence in the field
+    that then moved the bubbles. Ending on the projection halves the residual
+    for the same sweep count."""
+    g = Grid3D(8, 24, 8, 2.0e-3)
+    ns = NS3D(g); ns.u_in = 0.05; ns.nu = 1.0e-6; ns.damp = 0.0
+    for _ in range(40):
+        ns.step(2.0e-3, proj_iters=200, tol=0.0)
+    vmax = max(float(ns.speed().max()), 1e-9)
+    assert ns.max_divergence() * g.h / vmax < 1e-3        # post-step, as sampled
+
+
+def test_projection_early_exit_is_exact_and_adaptive():
+    """`tol` stops the SOR when the residual says the corrected field is already
+    divergence-free enough. The residual estimate R/h^2 is EXACTLY the post-
+    projection divergence, so the exit cannot be optimistic."""
+    g = Grid3D(8, 24, 8, 2.0e-3)
+    ns = NS3D(g); ns.u_in = 0.05; ns.nu = 1.0e-6; ns.damp = 0.0
+    first = []
+    for i in range(80):
+        ns.step(2.0e-3, proj_iters=200, tol=2.0e-3)
+        first.append(ns.sweeps)
+    assert first[0] == 200                       # developing: needs the budget
+    assert first[-1] < 40                        # settled: stops early
+    vmax = max(float(ns.speed().max()), 1e-9)
+    assert ns.max_divergence() * g.h / vmax < 2.0e-3      # the tol is honoured
+
+    # the residual estimate matches the divergence it predicts, to round-off
+    h = g.h
+    ns.add_forces(2e-3); ns.diffuse(2e-3); ns.advect(2e-3)
+    rhs = ns._divergence() * h * h
+    ns.project(40, tol=0.0)
+    res = np.abs(ns._ndiv * ns.p - ns._neighbour_sum(ns.p) + rhs)
+    res[ns.solid] = 0.0
+    assert abs(res.max() / (h * h) - ns.max_divergence()) < 1e-9 * max(1.0, ns.max_divergence())
+
+
+# --------------------------------------------------------------- viscosity
+def _poiseuille(nu, nx=20, ny=16, nz=4, h=1.0e-3, u_in=1.0e-3, dt=2.0e-4, steps=400):
+    """Plane channel: no-slip electrode x-walls, FREE-slip z-walls, plug inflow.
+    Returns the fully developed velocity profile across x and the exact parabola."""
+    g = Grid3D(nx, ny, nz, h)
+    ns = NS3D(g, outlet=True)
+    ns.noslip_z = False          # -> exact 2-D Poiseuille in x
+    ns.damp = 0.0; ns.buoy = 0.0
+    ns.nu = nu; ns.u_in = u_in
+    for _ in range(steps):
+        ns.step(dt, proj_iters=30)
+    _, v, _ = ns.centres()
+    prof = v[:, ny - 4, nz // 2]
+    xc = (np.arange(nx) + 0.5) * h
+    Lx = nx * h
+    exact = 1.5 * u_in * (1.0 - ((xc - Lx / 2) / (Lx / 2)) ** 2)
+    return prof, exact
+
+
+def test_viscous_channel_recovers_poiseuille():
+    """With the explicit viscous term a straight duct relaxes to the analytic
+    parabola: u(x) = 1.5 u_mean [1 - ((x-L/2)/(L/2))^2].
+
+    Re = u L / nu = 4e-3, so this is Stokes flow — no advection, no numerical
+    diffusion excuse. This is what makes the wall shear a real number instead of
+    an artefact of semi-Lagrangian smearing.
+    """
+    prof, exact = _poiseuille(nu=5.0e-3)
+    err = np.abs(prof - exact).max() / exact.max()
+    assert err < 0.03                                   # 1.5% on a 20-cell channel
+    assert abs(prof.mean() / 1.0e-3 - 1.0) < 0.02       # mass balance
+    assert abs(prof[len(prof)//2] - exact[len(exact)//2]) < 0.02 * exact.max()
+
+
+def test_without_viscosity_the_channel_stays_plug():
+    """Guard: the parabola comes from the VISCOUS operator, not from numerical
+    diffusion. nu=0 leaves the prescribed plug profile untouched."""
+    prof, exact = _poiseuille(nu=0.0)
+    wall_to_centre = prof[0] / prof[len(prof) // 2]
+    assert wall_to_centre > 0.97                        # still plug
+    assert np.abs(prof - exact).max() / exact.max() > 0.3
+
+
+def test_viscous_substepping_is_stable_past_the_explicit_bound():
+    """nu*dt/h^2 = 3 would blow up a single explicit Euler step; `diffuse`
+    substeps to stay inside 1/6 and stays bounded."""
+    g = Grid3D(8, 8, 8, 1.0e-3)
+    ns = NS3D(g, outlet=False)
+    ns.nu = 1.0e-2; ns.damp = 0.0
+    ns.V[:] = np.random.default_rng(0).standard_normal(ns.V.shape) * 0.01
+    v0 = np.abs(ns.V).max()
+    ns.diffuse(3.0e-4)                                  # nu*dt/h^2 = 3.0
+    assert np.isfinite(ns.V).all()
+    assert np.abs(ns.V).max() <= v0 + 1e-12             # diffusion never amplifies
+
+
+# ---------------------------------------------------------------- plug flow
+def test_plug_flow_inlet_speed():
+    """Uniform inflow, no gas: steady interior flow ~ the inlet speed (mass
+    conservation through the straight open channel), divergence stays small."""
+    g = Grid3D(10, 40, 10, 1.5e-3)
+    ns = NS3D(g, outlet=True); ns.u_in = 0.05
+    ns.damp = 0.0                          # don't dissipate the through-flow
+    for _ in range(200):
+        ns.project(60)
+        ns.advect(2.0e-3)
+    _, v, _ = ns.centres()
+    core = v[2:-2, 5:-5, 2:-2]             # away from walls / inlet / outlet
+    assert abs(core.mean() - 0.05) < 0.05 * 0.15     # within 15 % of u_in
+    assert ns.max_divergence() < 1e-2
+
+
+# ------------------------------------------------------- terminal velocity
+def test_terminal_velocity_matches_kernel():
+    """Vectorized parcel slip == frozen kernel Schiller-Naumann terminal velocity."""
+    d_rho, mu, rho_l = 1000.0, 1.0e-3, 1000.0
+    radii = np.array([1e-5, 3e-5, 1e-4, 3e-4, 1e-3])
+    vec = terminal_velocity(radii, d_rho, mu, rho_l)
+    for r, u in zip(radii, vec):
+        u_ref = Surface._terminal_velocity(float(r), d_rho, mu, rho_l)
+        # same drag balance; the kernel stops at a 1e-4 relative change while the
+        # vectorized form runs a fixed iteration count, so they land <0.1% apart
+        assert abs(u - u_ref) <= 1e-3 * max(u_ref, 1e-9) + 1e-12
+
+
+# ------------------------------------------------------ Faraday gas closure
+def test_lifecycle_conserves_faradaic_gas():
+    """The bubble lifecycle (nucleate small -> grow attached -> detach -> rise ->
+    vent) conserves gas exactly: produced (integral of j/nF) = resident + vented."""
+    g = Grid3D(8, 24, 12, 2.0e-3)
+    op = _op(j=0.8)
+    rng = np.random.default_rng(3)
+    parc = Parcels(g, op, rng, cap=100000)
+    ctx = build_context(op, Params())
+    ns = NS3D(g); ns.u_in = max(0.0, op.u_flow)
+    j = op.j_set                            # A/m^2
+    for _ in range(120):
+        parc.step(ns, j, 2.0e-3, ctx)
+    assert parc.produced_cum > 0
+    resident = parc.resident_gas()
+    residual = abs(parc.produced_cum - (resident + parc.vented_cum))
+    assert residual < 1e-9 * parc.produced_cum + 1e-18     # closed to machine precision
+
+
+def test_lifecycle_grows_detaches_and_distributes_size():
+    """Bubbles nucleate small, grow, detach and rise -> both attached and free
+    populations exist, the radius spreads, and — with the electrolysis-
+    calibrated fritz_scale — departure sizes sit in the LITERATURE range
+    (~25-250 um radius), not the mm-scale Fritz boiling prediction."""
+    g = Grid3D(8, 40, 16, 2.0e-3)
+    op = _op(j=1.0)
+    parc = Parcels(g, op, np.random.default_rng(5), cap=8000)
+    ctx = build_context(op, Params(fritz_scale=0.08))
+    ns = NS3D(g); ns.u_in = max(0.0, op.u_flow)
+    for _ in range(150):
+        parc.step(ns, op.j_set, 2.0e-3, ctx)
+    attached = int(parc.attached.sum())
+    free = int((~parc.attached).sum())
+    assert attached > 0 and free > 0                       # full lifecycle running
+    r_mean, r_std = parc.size_stats()
+    assert r_std > 8e-6                                    # a genuine size spread
+    # freshly nucleated bubbles (a seed grows within its birth step, so the
+    # smallest tracked radius sits just above R_NUC) coexist with grown ones
+    assert parc.R_NUC <= parc.r.min() < 0.2 * parc.r.max()
+    assert 25e-6 < parc.r.max() < 400e-6                   # literature departure range
+    # multiplicity bookkeeping: every tracked bubble represents >=1 real one,
+    # and W == mult * V(r) exactly (the conservation identity)
+    assert (parc.mult >= 1.0).all()
+    assert np.allclose(parc.W, parc.mult * (4 / 3) * np.pi * parc.r ** 3, rtol=1e-9)
+
+
+# -------------------------------------------------------- buoyant rise
+def test_free_bubble_rises_at_terminal_velocity():
+    """A lone FREE (detached) bubble in quiescent liquid rises at its terminal
+    velocity (j=0 so nothing new nucleates)."""
+    g = Grid3D(12, 60, 12, 1.0e-3)
+    op = _op(u_flow=0.0)
+    parc = Parcels(g, op, np.random.default_rng(4), cap=10)
+    r = 2.0e-4
+    parc.pos = np.array([[g.Lx * 0.5, g.Ly * 0.2, g.Lz * 0.5]])
+    parc.r = np.array([r]); parc.W = np.array([4 / 3 * np.pi * r ** 3])
+    parc.mult = np.array([1.0])
+    parc.side = np.array([0], dtype=np.int8)
+    parc.attached = np.array([False]); parc.r_dep = np.array([1.0])
+    parc.phase = np.array([0.0]); parc.ids = np.array([1])
+    ns = NS3D(g); ns.u_in = 0.0            # quiescent
+    ctx = {"d_rho": 1000.0, "mu": 1.0e-3, "rho_l": 1000.0}
+    u_term = Surface._terminal_velocity(r, 1000.0, 1.0e-3, 1000.0)
+    y0 = parc.pos[0, 1]; dt, n = 1.0e-3, 100
+    for _ in range(n):
+        parc._advect(ns, dt, ctx)         # no wobble in y -> vertical rise clean
+    rose = parc.pos[0, 1] - y0
+    assert abs(rose - u_term * dt * n) < 0.05 * u_term * dt * n
+
+
+# ----------------------------------------------------- bubble blocking
+def test_gas_blocks_crossflow():
+    """A gas cloud obstructs the electrolyte: with the Brinkman drag on, the
+    through-flow inside a gas blob is slower than in the open channel beside
+    it (flow reroutes around the curtain via the pressure projection).
+    Buoyancy is off to isolate the blocking term from the plume effect."""
+    def run(drag_K):
+        g = Grid3D(8, 30, 16, 2.0e-3)
+        ns = NS3D(g, outlet=True)
+        ns.u_in = 0.05
+        ns.buoy = 0.0                      # isolate blocking from the plume
+        ns.damp = 0.0
+        ns.drag_K = drag_K
+        ns.gas[:, 10:20, 1:8] = 0.4        # static gas blob in half the width
+        for _ in range(150):
+            ns.step(2.0e-3, proj_iters=40)
+        _, v, _ = ns.centres()
+        v_blob = float(v[2:-2, 12:18, 2:7].mean())
+        v_open = float(v[2:-2, 12:18, 10:15].mean())
+        return v_blob, v_open
+    vb, vo = run(60.0)
+    assert vo > vb * 1.5                   # open side carries clearly more flow
+    vb0, vo0 = run(0.0)
+    assert abs(vo0 - vb0) < 0.3 * abs(vo - vb) + 1e-9   # effect vanishes at K=0
+
+
+def test_bubble_coverage_raises_voltage():
+    """The 3-D bubbles feed the scalar electrochemistry: blanketing the cathode
+    raises the CP cell voltage (blocking feedback closed)."""
+    cfg = cell_config_from_designer(DESIGNER_DEFAULTS)
+    op = operating_from_designer(DESIGNER_DEFAULTS)     # CP, j=0.5 A/cm^2
+    sim = CellSim3D(op, Params(fritz_scale=0.6), (8, 20, 12), h=cfg.h,
+                    cap=4000, tilt=0.0, seed=0, cfg=cfg)
+    V0 = sim.cell_voltage()                             # fresh cell, no bubbles
+    p = sim.parcels
+    n = 250
+    rng = np.random.default_rng(7)
+    r = np.full(n, 1.0e-3)                              # 1 mm attached bubbles
+    p.pos = np.stack([np.full(n, p._wall_x(0, 1.0e-3)),
+                      rng.uniform(0.1, 0.9, n) * sim.grid.Ly,
+                      rng.uniform(0.1, 0.9, n) * sim.grid.Lz], axis=1)
+    p.r = r; p.W = (4 / 3) * np.pi * r ** 3
+    p.mult = np.ones(n)
+    p.side = np.zeros(n, dtype=np.int8)
+    p.attached = np.ones(n, dtype=bool)
+    p.r_dep = np.full(n, 1.0); p.phase = np.zeros(n)
+    p.ids = np.arange(1, n + 1)
+    sim._resolve()
+    V1 = sim.cell_voltage()
+    assert p.coverage(0) > 0.1                          # cathode really blanketed
+    assert V1 > V0 + 1e-3                               # voltage penalty appears
+
+
+# ------------------------------------------------ departure-radius physics
+def _parcels_for(**kw):
+    """Exactly how CellSim3D builds its Parcels — including `channel_depth`.
+
+    Leaving channel_depth out made `_gap()` fall back to the GRID channel layer
+    (2 mm) instead of the designer's 1 mm, so the near-wall velocity was half
+    what the engine uses and these tests pinned numbers no running configuration
+    ever produced.
+    """
+    d = dict(DESIGNER_DEFAULTS); d.update(kw)
+    cfg = cell_config_from_designer(d)
+    op = operating_from_designer(d)
+    g = Grid3D(*cfg.grid_dims(), cfg.h)
+    nl = cfg.layer_counts()[0]
+    params = Params(fritz_scale=0.08)
+    p = Parcels(g, op, np.random.default_rng(0), params=params,
+                elec_planes=(nl * cfg.h, g.Lx - nl * cfg.h),
+                channel_depth=cfg.d_ch_mm * 1e-3)
+    return p, build_context(op, params), op
+
+
+def test_departure_radius_is_literature_scale_and_flow_graded():
+    """Departure radius must (a) sit in the electrolysis range (~20-200 um),
+    (b) fall SMOOTHLY with pump flow — never pin to the r_min_detach floor.
+
+    Regression guard: feeding the kernel force balance the BULK channel
+    velocity (instead of the near-wall velocity the bubble actually sees)
+    pinned r_dep at the 8 um floor for every u >= 0.2 m/s, so flow stopped
+    mattering and attached bubbles vanished within one step.
+    """
+    rs = []
+    for u in (0.0, 0.2, 0.35, 0.6):
+        p, ctx, op = _parcels_for(u_flow=u)
+        rs.append(p.departure_radius(ctx, op.j_set))
+    r_min_detach = Params().r_min_detach
+    assert all(10e-6 < r < 200e-6 for r in rs)          # literature scale
+    assert all(rs[i] > rs[i+1] for i in range(len(rs)-1))   # strictly decreasing
+    assert all(r > 1.5 * r_min_detach for r in rs)      # not pinned to the floor
+
+
+def test_departure_radius_reaches_the_model_floor_at_extreme_shear():
+    """Honest limit: in a 1 mm channel at 1 m/s the force balance asks for a
+    bubble smaller than the kernel is willing to model, so r_dep lands exactly
+    on `r_min_detach`. That is a MODEL floor, not a physical departure size —
+    the bug this guards against is it binding at every u >= 0.2 m/s."""
+    p, ctx, op = _parcels_for(u_flow=1.0)
+    r = p.departure_radius(ctx, op.j_set)
+    assert abs(r - 2 * Params().r_min_detach) < 1e-9 or r <= 2 * Params().r_min_detach
+    p2, ctx2, op2 = _parcels_for(u_flow=0.35)
+    assert p2.departure_radius(ctx2, op2.j_set) > 2 * r      # still graded below it
+
+
+def test_departure_radius_grows_with_contact_angle():
+    """A more gas-philic (higher contact angle) surface holds bubbles longer, so
+    they depart bigger — the classic wettability lever.
+
+    In STAGNANT liquid the lever is strong (theta 30->120 deg quadruples r_dep).
+    Under pumped flow it is SELF-LIMITING: a bigger bubble sticks further into
+    the wall shear layer and feels more drag, so the same 4x wettability change
+    buys only ~1.3x in size. Both are the engine's own numbers.
+    """
+    def r(theta, u):
+        p, ctx, op = _parcels_for(theta=theta, u_flow=u)
+        return p.departure_radius(ctx, op.j_set)
+
+    r30, r60, r120 = (r(t, 0.0) for t in (30, 60, 120))       # stagnant
+    assert r30 < r60 < r120
+    assert r120 > 3.0 * r30
+
+    f30, f60, f120 = (r(t, 0.35) for t in (30, 60, 120))      # pumped
+    assert f30 < f60 < f120                                   # still monotone
+    assert f120 < 1.6 * f30                                   # but shear compresses it
+    assert all(f < s for f, s in ((f30, r30), (f60, r60), (f120, r120)))
+
+
+# --------------------------------------------- electrochemical placement
+def test_bubbles_nucleate_on_catalyst_plane():
+    """Zero-gap cell: gas emerges at the CATALYST plane (the membrane-side
+    wall of each channel), not at the outer flow plate — attached bubbles must
+    hug the core boundary from the channel side."""
+    cfg = cell_config_from_designer(DESIGNER_DEFAULTS)
+    op = operating_from_designer(DESIGNER_DEFAULTS)
+    sim = CellSim3D(op, Params(fritz_scale=0.6), cfg.grid_dims(), h=cfg.h,
+                    cap=4000, tilt=0.0, seed=0, cfg=cfg)
+    for _ in range(40):
+        sim.step(3.0e-3, proj_iters=12)
+    p = sim.parcels
+    xc, xa = p.elec_planes
+    att_c = p.attached & (p.side == 0)
+    att_a = p.attached & (p.side == 1)
+    assert att_c.any() and att_a.any()
+    # cathode bubbles sit on the channel side of x_c, tangent to it
+    assert np.all(p.pos[att_c, 0] < xc)
+    assert np.all(xc - p.pos[att_c, 0] < 2.5 * sim.grid.h)
+    # anode mirrored
+    assert np.all(p.pos[att_a, 0] > xa)
+    assert np.all(p.pos[att_a, 0] - xa < 2.5 * sim.grid.h)
+    # and the coverage the electrochemistry sees is measured there too
+    assert p.coverage(0) > 0.0
+
+
+# ------------------------------------------------- bubbles follow the lines
+def test_bubbles_respect_ribs_and_snake():
+    """With the serpentine voxelized (turn gaps + solid core), bubbles never
+    sit inside a rib/core cell and the risers acquire real LATERAL (z) motion
+    as they slide along the passes toward the turn gaps."""
+    d = dict(DESIGNER_DEFAULTS); d.update(j=1.0, u_flow=0.3)
+    cfg = cell_config_from_designer(d)
+    op = operating_from_designer(d)
+    sim = CellSim3D(op, Params(fritz_scale=0.6), cfg.grid_dims(), h=cfg.h,
+                    cap=4000, tilt=0.0, seed=0, cfg=cfg)
+    z_disp = 0.0
+    prev = {}
+    for i in range(200):
+        sim.step(3.0e-3, proj_iters=15)
+        if i > 100:                                  # steady phase: track z motion
+            p = sim.parcels
+            for bid, z, att in zip(p.ids, p.pos[:, 2], p.attached):
+                if not att and bid in prev:
+                    z_disp += abs(z - prev[bid])
+                prev[bid] = z
+    p = sim.parcels
+    # no bubble may sit inside an obstacle cell
+    ci = np.clip((p.pos / sim.grid.h).astype(int),
+                 0, [sim.grid.nx - 1, sim.grid.ny - 1, sim.grid.nz - 1])
+    assert not sim.ns.solid[ci[:, 0], ci[:, 1], ci[:, 2]].any()
+    assert z_disp > 0.01                             # cumulative sideways travel [m]
+
+
+# --------------------------------------------------------------- tilt
+def test_tilt_rotates_buoyancy():
+    g = Grid3D(8, 8, 8, 1.5e-3)
+    ns = NS3D(g)
+    ns.set_tilt(0.0)
+    assert np.allclose(ns.up, [0, 1, 0], atol=1e-9)      # vertical: rise +y
+    ns.set_tilt(90.0)
+    assert np.allclose(ns.up, [1, 0, 0], atol=1e-6)      # horizontal: rise +x
+
+
+# -------------------------------------------------- confinement (far wall)
+def _run(steps=180, dt=3.0e-3, seed=5, iters=60, **kw):
+    # `iters` is a CAP; CellSim3D.PROJ_TOL stops the SOR as soon as the field is
+    # divergence-free enough, so most steps cost far less than the cap. At the
+    # old flat 6 sweeps the flow never converged and the mass balance was ~20%.
+    d = dict(DESIGNER_DEFAULTS); d.update(kw)
+    cfg = cell_config_from_designer(d)
+    op = operating_from_designer(d)
+    sim = CellSim3D(op, Params(fritz_scale=0.08), cfg.grid_dims(), h=cfg.h,
+                    cap=cfg.cap_parcels, tilt=0.0, seed=seed, cfg=cfg)
+    for _ in range(steps):
+        sim.step(dt, proj_iters=iters)
+    return sim
+
+
+def test_bubble_never_grows_through_the_opposite_wall():
+    """A bubble cannot exceed ~half the channel depth — the opposite plate is
+    there. A 0.2 mm channel used to show 450 um bubbles poking through it."""
+    for d_ch in (1.0, 0.2):
+        sim = _run(d_ch_mm=d_ch, steps=140)
+        p = sim.parcels
+        assert abs(p.r_conf() - 0.45 * d_ch * 1e-3) < 1e-12
+        assert p.r.max() <= p.r_conf() * (1.0 + 1e-9)
+        assert p.gas_closure_error() < 1e-9      # conservation survives the cap
+
+
+def test_confinement_caps_the_departure_radius_without_flow():
+    """With no pump the force balance wants a ~120 um bubble; a 0.2 mm channel
+    physically cannot host one, so departure happens at the bridging size."""
+    wide = _run(u_flow=0.0, d_ch_mm=2.0, steps=60)
+    tight = _run(u_flow=0.0, d_ch_mm=0.2, steps=60)
+    j = max(1e-6, wide.cell_current_A_m2())
+    r_wide = wide.parcels.departure_radius(wide.ctx, j)
+    r_tight = tight.parcels.departure_radius(tight.ctx, j)
+    assert r_wide > r_tight                                    # the gap binds
+    assert abs(r_tight - tight.parcels.r_conf()) < 1e-12
+    assert tight.parcels.r.max() <= tight.parcels.r_conf() * (1 + 1e-9)
+
+
+def test_growth_never_overshoots_the_departure_radius():
+    """The flow step (3 ms) is coarser than the ~1 ms growth-to-departure
+    cycle. Growing a whole step's gas in one pass used to inflate every bubble
+    to ~3x its departure size; the surplus must become MORE bubbles instead."""
+    p = _run(steps=120).parcels
+    att = p.attached
+    assert att.any()
+    assert np.all(p.r[att] <= p.r_dep[att] * (1.0 + 1e-9))
+    V = (4.0 / 3.0) * np.pi * p.r ** 3
+    assert np.allclose(p.W, p.mult * V, rtol=1e-9)      # W = mult*V(r) exactly
+    assert p.gas_closure_error() < 1e-9
+
+
+def test_attached_bubbles_touch_the_catalyst():
+    """A wall bubble's centre sits at ~its own radius from the electrode.
+
+    The old standoff was 0.1*h = 200 um on a 2 mm grid — five times a 40 um
+    bubble's radius — so every bubble floated a fifth of a millimetre off the
+    catalyst and the near-wall layer was pure grid artefact."""
+    sim = _run(steps=100)
+    p = sim.parcels
+    xc, xa = p.elec_planes
+    for side, plane, sgn in ((0, xc, -1), (1, xa, +1)):
+        m = p.attached & (p.side == side)
+        assert m.any()
+        d = sgn * (p.pos[m, 0] - plane)          # distance into the channel
+        assert np.all(d > 0)                     # on the channel side of the plane
+        assert np.all(d < p.r[m] + 0.01 * sim.grid.h)   # tangent, not floating
+
+
+def test_released_bubbles_skim_the_electrode():
+    """Buoyancy points ALONG the electrode, and the engine has no lift model, so
+    a released bubble travels far up-cell without leaving the wall. This pins
+    the behaviour the 2-D panel draws (and documents the missing physics)."""
+    sim = _run(steps=140)
+    p = sim.parcels
+    xc = p.elec_planes[0]
+    fr = (~p.attached) & (p.side == 0)
+    assert fr.sum() > 50
+    d = xc - p.pos[fr, 0]                        # wall-normal distance [m]
+    assert np.median(p.pos[fr, 1]) > 5e-3        # they really did rise up-cell
+    assert d.max() < 6.0 * p.r[fr].max() + 0.02 * sim.grid.h
+
+
+# ------------------------------------------- wall-normal force balance
+def test_lift_coefficient_follows_tomiyama_both_branches():
+    """Tomiyama (2002): C_L = min(0.288 tanh(0.121 Re), f(Eo_d)) below Eo_d = 4,
+    and f(Eo_d) above — the sign flip that sends mm bubbles to the core while
+    keeping micron bubbles at the wall."""
+    p, ctx, _ = _parcels_for()
+    f = lambda E: 0.00105*E**3 - 0.0159*E**2 - 0.0204*E + 0.474
+
+    r = np.array([40e-6])                    # electrolysis bubble: Eo_d ~ 1e-3
+    Eo = 9.80665 * ctx["d_rho"] * (2*r)**2 / ctx["sigma"]
+    assert Eo[0] < 1e-2
+    Re = np.array([0.24])
+    got = p.lift_coefficient(r, Re, ctx)[0]
+    assert abs(got - min(0.288*np.tanh(0.121*0.24), f(Eo[0]))) < 1e-12
+    assert got > 0                           # positive -> migrates to the WALL
+
+    r_big = np.array([4e-3])                 # 8 mm bubble: Eo_d > 10
+    got_big = p.lift_coefficient(r_big, np.array([1e3]), ctx)[0]
+    assert got_big < 0                       # negative -> migrates to the CORE
+
+
+def test_wall_force_stops_the_bubble_at_one_radius():
+    """Antal wall lubrication only bites within ~1.4 r, and at these sizes the
+    lift beats it at every standoff >= r. So the balance presses the bubble onto
+    the electrode and the surface stops it exactly one radius out."""
+    p, ctx, _ = _parcels_for()
+    r = np.array([40e-6])
+    vs = terminal_velocity(r, ctx["d_rho"], ctx["mu"], ctx["rho_l"])
+    vns = [p.wall_normal_velocity(r, vs, np.array([f * r[0]]), ctx)[0]
+           for f in (1.0, 1.5, 3.0)]
+    assert all(v < 0 for v in vns)                 # always drawn back to the wall
+    assert abs(vns[0]) < abs(vns[-1])              # the wall force does resist
+    assert abs(vns[-1]) < 1e-4                     # but the drift is only um/s
+
+
+def test_free_bubbles_settle_at_their_own_radius_from_the_electrode():
+    """The engine's own outcome: risers sit ~1.05 r off the catalyst, never
+    inside it, and still travel far up-cell. The near-wall layer is a RESULT of
+    the lift/wall balance now, not of a missing force."""
+    sim = _run(steps=160, seed=2)
+    p = sim.parcels
+    xc = p.elec_planes[0]
+    fr = (~p.attached) & (p.side == 0)
+    assert fr.sum() > 100
+    y_w = xc - p.pos[fr, 0]
+    ratio = y_w / p.r[fr]
+    assert (ratio >= 0.999).all()                  # surface never enters the wall
+    assert np.median(ratio) < 1.6                  # and it stays pinned there
+    assert np.median(p.pos[fr, 1]) > 5e-3          # while rising up the cell
+
+
+# --------------------------------------------------------- coalescence
+def test_coalescence_is_inhibited_by_concentrated_electrolyte():
+    """Bubbles do not burst in the liquid — they MERGE on contact. Above the
+    salting-out threshold (KOH 0.3 M) merging is suppressed, so a dilute cell
+    shows far more merges. Gas is conserved either way: `mult` halves as the
+    single-bubble volume doubles."""
+    conc = _run(c_mol=6.0, u_flow=0.05, steps=120)       # inhibited
+    dil = _run(c_mol=0.1, u_flow=0.05, steps=120)        # free
+    assert conc.parcels.p_merge() < dil.parcels.p_merge()
+    assert dil.parcels.n_merge > 5 * max(1, conc.parcels.n_merge)
+    for sim in (conc, dil):
+        p = sim.parcels
+        V = (4.0 / 3.0) * np.pi * p.r ** 3
+        assert np.allclose(p.W, p.mult * V, rtol=1e-9)
+        assert p.gas_closure_error() < 1e-9
+
+
+def test_coalescence_rate_is_independent_of_the_time_step():
+    """The merge draw is against the INCREMENT in contact probability produced
+    by growth, not a per-step coin flip — so chopping the step 4x finer must
+    not quadruple the merges."""
+    coarse = _run(c_mol=0.1, u_flow=0.05, steps=60, dt=4.0e-3)
+    fine = _run(c_mol=0.1, u_flow=0.05, steps=240, dt=1.0e-3)   # same 0.24 s
+    assert coarse.parcels.n_merge > 0
+    assert 0.4 < fine.parcels.n_merge / coarse.parcels.n_merge < 2.5
+
+
+# --------------------------------------------------------- inlet / outlet ports
+def test_outlet_port_is_a_real_boundary_for_liquid_and_gas():
+    """A narrow exit port must (a) be the only Dirichlet p=0 face, (b) still
+    balance mass, and (c) block GAS as well — bubbles that reach the closed part
+    of the top are under plate, not free to leave."""
+    full = _run(steps=120)
+    port = _run(steps=120, out_w=0.10, out_z=0.06)
+
+    assert full.ns.outlet.all()                              # whole top vents
+    open_cells = int(port.ns.outlet[0].sum())
+    assert 1 <= open_cells <= 0.25 * port.grid.nz            # a port, not a face
+
+    # liquid: what goes in comes out (through the port only)
+    h = port.grid.h
+    qi = float(port.ns.V[:, 0, :].sum()) * h * h
+    qo = float((port.ns.V[:, -1, :] * port.ns.outlet).sum()) * h * h
+    assert qi > 0 and abs(qi - qo) < 0.10 * qi
+
+    # gas: with the top mostly plated, free bubbles collect under it
+    def stuck(sim):
+        p = sim.parcels
+        m = (~p.attached) & (p.pos[:, 1] > sim.grid.Ly - 3 * sim.grid.h)
+        if not m.any():
+            return 0
+        k = np.clip((p.pos[m, 2] / sim.grid.h).astype(int), 0, sim.grid.nz - 1)
+        return int((~sim.port_out[k]).sum())              # under the closed plate
+
+    assert stuck(full) == 0                                  # nothing to block
+    assert stuck(port) > 0                                   # a real gas trap
+    assert port.parcels.gas_closure_error() < 1e-9           # still conserved
+
+
+def test_inlet_port_position_steers_the_flow():
+    """Moving the inlet port across the cell width moves where the liquid
+    enters — the feed is a boundary condition, not decoration."""
+    left = _run(steps=40, in_w=0.12, in_z=0.06)
+    right = _run(steps=40, in_w=0.12, in_z=0.94)
+    zc = lambda sim: float(np.nonzero(sim.port_in)[0].mean()) / (sim.grid.nz - 1)
+    assert zc(left) < 0.25 and zc(right) > 0.75
+    for sim in (left, right):
+        v_in = sim.ns.V[:, 0, :]
+        fed = v_in[:, sim.port_in] > 0
+        assert fed.any()
+        assert np.allclose(v_in[:, ~sim.port_in], 0.0)       # the rest is plate
+
+
+def _net_flux(sim):
+    ns, a = sim.ns, sim.grid.h ** 2
+    qi = (float(ns.V[:, 0, :].sum()) + float((ns.W[:, :, 0] * ns.inlet_z[0]).sum())
+          - float((ns.W[:, :, -1] * ns.inlet_z[1]).sum())) * a
+    qo = (float((ns.V[:, -1, :] * ns.outlet).sum())
+          - float((ns.W[:, :, 0] * ns.outlet_z[0]).sum())
+          + float((ns.W[:, :, -1] * ns.outlet_z[1]).sum())) * a
+    return qi, qo
+
+
+def test_side_ports_are_real_boundaries():
+    """Inlet and outlet can sit on ANY edge (bottom / left / right). A side port
+    is the same boundary condition on a different face: prescribed normal
+    velocity for the inflow, Dirichlet p=0 for the outflow, plate elsewhere."""
+    cross = _run(steps=120, in_face="left", in_w=0.25, in_z=0.2,
+                 out_face="right", out_w=0.25, out_z=0.8, u_flow=0.6)
+    assert cross.in_face == "left" and cross.out_face == "right"
+    ns = cross.ns
+    assert np.allclose(ns.V[:, 0, :], 0.0)          # the bottom is plate now
+    assert ns.outlet.sum() == 0                     # so is the top
+    assert ns.inlet_z[0].any() and ns.outlet_z[1].any()
+    qi, qo = _net_flux(cross)
+    assert qi > 0 and abs(qi - qo) < 0.05 * qi      # mass in == mass out
+    # a genuine cross-flow: net +z motion through the cell
+    _, _, w = ns.centres()
+    assert w.mean() > 0.05 * abs(ns.u_in)
+
+
+def test_gas_leaves_through_whatever_port_the_liquid_uses():
+    """Gas vents where the liquid vents. With the top plated, bubbles rise, get
+    trapped under it, and must reach the SIDE port — holdup levels off instead of
+    growing forever. (z is clamped to the wall, so the vent test needs >=, not >;
+    with `>` the side vent never fired and the cell filled with gas.)"""
+    sim = _run(steps=700, out_face="right", out_w=0.25, out_z=0.8, u_flow=0.6)
+    p = sim.parcels
+    assert sim.out_face == "right"
+    assert p.vented_cum > 0.0                       # gas found the side port
+    assert p.holdup() < 0.35                        # and it does not accumulate
+    assert p.gas_closure_error() < 1e-9
+
+
+def test_custom_plate_runs_and_confines_the_bubbles():
+    """A user-drawn plate is a first-class flow field: the engine voxelizes it,
+    the flow stays inside it, and no bubble ever sits in a drawn rib."""
+    from bubblesim3d.params3d import encode_mask
+    M = 20
+    m = np.zeros((M, M), dtype=bool)
+    m[5:7, :15] = True
+    m[13:15, 5:] = True
+    # fed through a port, like a real plate: a full-width inlet forced through
+    # a one-cell turn gap is a 3 m/s jet, and the SOR then needs many more
+    # sweeps to converge (raised here; the live loop warm-starts every step)
+    sim = _run(steps=120, iters=200, ff="custom", mask=encode_mask(m),
+               in_w=0.12, in_z=0.94)
+    g, p = sim.grid, sim.parcels
+    land = ~sim.face_c
+    assert land.any() and not land.all()
+    ci = np.clip((p.pos / g.h).astype(int), 0, [g.nx - 1, g.ny - 1, g.nz - 1])
+    assert not land[ci[:, 1], ci[:, 2]].any()                # never inside a rib
+    assert not sim.ns.solid[ci[:, 0], ci[:, 1], ci[:, 2]].any()
+    assert p.gas_closure_error() < 1e-9
+    assert sim.ns.max_divergence() * g.h / max(float(sim.ns.speed().max()), 1e-9) < 0.05
+
+
+# ------------------------------------------------ free-swarm coalescence
+def test_swarm_coalescence_rate_is_independent_of_the_time_step():
+    """The merge draw is 1 - exp(-rate*dt), so resolving the same 0.6 s with a
+    4x finer step must not multiply the merges."""
+    coarse = _run(steps=150, dt=4.0e-3, seed=3)
+    fine = _run(steps=600, dt=1.0e-3, seed=3)
+    a, b = coarse.parcels.n_merge_free, fine.parcels.n_merge_free
+    assert a > 100 and 0.6 < b / a < 1.7
+    # and the size the swarm settles at is a physical steady state, not a count
+    ra = coarse.parcels.r[~coarse.parcels.attached].mean()
+    rb = fine.parcels.r[~fine.parcels.attached].mean()
+    assert abs(ra - rb) < 0.10 * ra
+
+
+def test_swarm_coalescence_grows_the_exit_bubbles_when_the_electrolyte_allows():
+    """The observable of coalescence inhibition: concentrated KOH keeps the
+    bubbles small all the way to the outlet; dilute KOH lets them merge and they
+    leave several times bigger. Gas is conserved either way."""
+    conc = _run(steps=400, c_mol=6.0, seed=3)
+    dil = _run(steps=400, c_mol=0.1, seed=3)
+
+    def exit_r(sim):
+        p = sim.parcels
+        m = (~p.attached) & (p.pos[:, 1] > 0.8 * sim.grid.Ly)
+        assert m.sum() > 50
+        return p.r[m]
+
+    rc, rd = exit_r(conc), exit_r(dil)
+    assert rd.mean() > 1.5 * rc.mean()                 # merging really grows them
+    assert np.percentile(rd, 95) > 2.0 * np.percentile(rc, 95)
+    assert dil.parcels.n_merge_free > 3 * conc.parcels.n_merge_free
+    for sim in (conc, dil):
+        p = sim.parcels
+        assert np.allclose(p.W, p.mult * (4/3) * np.pi * p.r ** 3, rtol=1e-9)
+        assert p.gas_closure_error() < 1e-9
+        assert p.r.max() <= p.r_conf() * (1 + 1e-9)    # never bridges the channel
+
+
+def test_coalescence_lowers_holdup():
+    """Bigger bubbles rise faster, so a coalescing swarm clears the cell and the
+    gas holdup DROPS. This is why concentrated KOH — which suppresses merging —
+    carries more gas (and more ohmic loss) at the same current."""
+    conc = _run(steps=400, c_mol=6.0, seed=3)
+    dil = _run(steps=400, c_mol=0.1, seed=3)
+    assert dil.parcels.holdup() < 0.8 * conc.parcels.holdup()
+
+
+def test_swarm_coalescence_closure_does_not_drive_the_answer():
+    """The layer-concentration factor is a stated CLOSURE. Above ~10 it is inert
+    because the packing limit EPS_MAX binds, and even removing it entirely moves
+    the mean bubble size by <10% (it changes the merge COUNT, not the physics)."""
+    def mean_r(cap):
+        d = dict(DESIGNER_DEFAULTS)
+        cfg = cell_config_from_designer(d); op = operating_from_designer(d)
+        sim = CellSim3D(op, Params(fritz_scale=0.08), cfg.grid_dims(), h=cfg.h,
+                        cap=cfg.cap_parcels, tilt=0.0, seed=3, cfg=cfg)
+        sim.parcels.LAYER_CAP = cap
+        for _ in range(300):
+            sim.step(3.0e-3, proj_iters=60)
+        return sim.parcels.r[~sim.parcels.attached].mean()
+
+    r1, r40 = mean_r(1.0), mean_r(40.0)
+    assert abs(r40 - r1) < 0.12 * r1
+    assert abs(mean_r(200.0) - r40) < 1e-12          # saturated by EPS_MAX
+
+
+# --------------------------------------------------------- integration
+def test_cellsim_runs_and_snapshots():
+    cfg = cell_config_from_designer(DESIGNER_DEFAULTS)
+    op = operating_from_designer(DESIGNER_DEFAULTS)
+    sim = CellSim3D(op, Params(fritz_scale=0.6), (8, 20, 12), h=cfg.h,
+                    cap=4000, tilt=0.0, seed=0, cfg=cfg)
+    for _ in range(60):
+        sim.step(2.0e-3, proj_iters=25)
+    snap = sim.snapshot()
+    assert snap["n_bub"] > 0                             # bubbles nucleated
+    assert len(snap["bubbles"]) == 7 * snap["n_bub"]     # [x,y,z,r,side,attached,id]
+    ids = snap["bubbles"][6::7]
+    assert len(set(ids)) == snap["n_bub"]                # ids stable + unique
+    assert abs(sim.cell_current_A_m2() / 1e4 - 0.5) < 1e-6   # j tracks the input
+    # velocity-relative divergence: with the projection LAST and the adaptive
+    # sweep budget this sits near CellSim3D.PROJ_TOL, not the old 1.3%
+    div = sim.ns.max_divergence()
+    vmax = float(sim.ns.speed().max())
+    assert div * sim.grid.h / max(vmax, 1e-9) < 0.01
+    d = sim.diagnostics()
+    assert d["n_attached"] > 0                           # bubbles growing on the wall
+    assert 0.0 <= d["holdup"] < 0.6 and d["r_std_mm"] > 0.0
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn(); print("ok", name)
