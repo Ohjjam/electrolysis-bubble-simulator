@@ -10,3 +10,5 @@ tunnel.log
 tunnel_url.txt
 tunnel_config.json
 server_error.log
+# game runtime save data (created on the server; keep out of git)
+games/maplestory/maplestory-saves.json

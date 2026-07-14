@@ -15,3 +15,8 @@ if [ "$LOCAL" != "$REMOTE" ]; then
   systemctl restart "$SERVICE"
   echo "$(date -u '+%Y-%m-%d %H:%M:%S')  updated ${LOCAL:0:7} -> ${REMOTE:0:7}"
 fi
+
+# also make sure any extra apps (games) are installed (idempotent, fast no-op once done)
+if [ -f "$APP_DIR/deploy/setup-maple.sh" ]; then
+  /bin/bash "$APP_DIR/deploy/setup-maple.sh" || true
+fi
