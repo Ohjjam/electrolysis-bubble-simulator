@@ -56,6 +56,12 @@ Hetzner 신규계정 표준 절차예요(사기 아님). **Credit card**(빠름,
 
 > ⚠️ `클라우드 배포.bat`은 **현재 폴더의 모든 변경**을 커밋해서 올립니다.
 > 세밀하게 나눠 커밋하고 싶으면 그냥 평소 git 명령을 쓰세요.
+>
+> 🔑 이 PC에 저장된 git 자격증명이 읽기전용이라 평범한 `git push`는 403이 날 수 있어요.
+> 그래서 위 .bat과 배포는 로그인돼 있는 **gh CLI 자격을 빌려서** push합니다
+> (`git -c credential.helper='!gh auth git-credential' push ...`). 활성 gh 계정이
+> **Ohjjam**이어야 함(`gh auth status`로 확인). 모든 push를 평범하게 쓰고 싶으면
+> 한 번 `gh auth setup-git` 실행하면 됩니다.
 
 ---
 
