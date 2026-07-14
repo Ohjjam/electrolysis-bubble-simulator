@@ -21,7 +21,17 @@ if [ "$LOCAL" != "$REMOTE" ]; then
   echo "$(date -u '+%Y-%m-%d %H:%M:%S')  updated ${LOCAL:0:7} -> ${REMOTE:0:7}"
 fi
 
-# also make sure any extra apps (games) are installed (idempotent, fast no-op once done)
-if [ -f "$APP_DIR/deploy/setup-maple.sh" ]; then
+# reconcile the maple game: set up if present in the repo, tear down if removed
+if [ -f "$APP_DIR/deploy/setup-maple.sh" ] && [ -d "$APP_DIR/games/maplestory" ]; then
   /bin/bash "$APP_DIR/deploy/setup-maple.sh" || true
+elif [ -f /etc/systemd/system/maplestory.service ]; then
+  echo "$(date -u '+%F %T')  maple removed from repo -> tearing down"
+  systemctl disable --now maplestory 2>/dev/null || true
+  rm -f /etc/systemd/system/maplestory.service /opt/.maplestory-setup-done2 /opt/.maplestory-setup-done
+  systemctl daemon-reload
+  IP_HOST="$(cat "$APP_DIR/deploy/PUBLIC_HOST.txt" 2>/dev/null || true)"
+  if [ -n "$IP_HOST" ]; then
+    printf '%s {\n    reverse_proxy 127.0.0.1:8766\n}\n' "$IP_HOST" > /etc/caddy/Caddyfile
+    systemctl reload caddy 2>/dev/null || true
+  fi
 fi
