@@ -418,6 +418,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type",
                          MIME.get(path.suffix.lower(), "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
+        # no-cache: a deploy replaces these files in place (no versioned names),
+        # so a plain refresh must always fetch the current HTML/JS — without
+        # this, browsers heuristically reuse the old page and a fresh deploy
+        # "doesn't show up". (Vendored three.js is big but changes ~never, and
+        # no-cache still allows conditional reuse; correctness wins here.)
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
 
