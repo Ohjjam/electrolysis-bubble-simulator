@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>Vibe Survivors</title>
+<style>
+  :root { --ink: #1a1226; }
+  body { margin: 0; overflow: hidden; background: #000; color: #edf; font: 14px system-ui, sans-serif; user-select: none;
+    /* 게임용 조준 커서 — 금색 십자선(핫스팟 중앙 16,16) */
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><g stroke="%23000" stroke-width="4" stroke-linecap="round"><line x1="16" y1="3" x2="16" y2="11"/><line x1="16" y1="21" x2="16" y2="29"/><line x1="3" y1="16" x2="11" y2="16"/><line x1="21" y1="16" x2="29" y2="16"/></g><g stroke="%23ffd23e" stroke-width="2" stroke-linecap="round"><line x1="16" y1="3" x2="16" y2="11"/><line x1="16" y1="21" x2="16" y2="29"/><line x1="3" y1="16" x2="11" y2="16"/><line x1="21" y1="16" x2="29" y2="16"/></g><circle cx="16" cy="16" r="2.4" fill="%23ffd23e" stroke="%23000" stroke-width="1.5"/></svg>') 16 16, crosshair; }
+  /* UI 위에서는 일반 포인터로 */
+  button, .pick, #levelup, #pause, #cmp, #end { cursor: pointer; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+
+  /* 타이틀 / 선택 화면 */
+  #title { position: fixed; inset: 0; display: none; place-items: center; background: radial-gradient(ellipse at 50% 30%, #2a2440, #14111f); z-index: 30; }
+  .selLabel { font-size: 13px; font-weight: 800; color: #ffd23e; letter-spacing: 2px; margin: 14px 0 8px; }
+  .pickrow { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .pick { width: 150px; background: #221f33; border: 3px solid #445; border-radius: 14px; padding: 14px 10px; cursor: pointer; transition: transform .1s, border-color .1s; }
+  .pick:hover { transform: translateY(-3px); }
+  .pick.on { border-color: #ffd23e; background: #2c2845; }
+  .pick.lock { opacity: .45; cursor: not-allowed; }
+  .pick .pic { font-size: 38px; height: 118px; display: grid; place-items: center; }
+  .pick .pic img { width: 100%; height: 118px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
+  .pick b { display: block; margin: 6px 0 4px; font-size: 16px; }
+  .pick span { font-size: 11px; opacity: .75; line-height: 1.4; display: block; }
+  #btnStart { margin-top: 22px; font-size: 20px; padding: 12px 54px; border-radius: 12px; border: 2px solid #ffd23e; background: #3a2f14; color: #ffd23e; font-weight: 900; cursor: pointer; letter-spacing: 2px; }
+  #btnStart:hover { background: #4a3d1a; }
+
+  /* 상단: 타이머 + XP바 */
+  #top { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: min(680px, 92vw); text-align: center; }
+  #timer { font-size: 30px; font-weight: 800; text-shadow: 0 2px 8px #000; letter-spacing: 1px; }
+  #xpbar { height: 10px; background: #221a2e; border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; margin-top: 4px; }
+  #xpfill { height: 100%; width: 0%; background: linear-gradient(90deg, #63c8ff, #c86bff); transition: width .12s; }
+  #lvtag { position: absolute; left: -54px; top: 26px; font-weight: 800; font-size: 16px; text-shadow: 0 2px 6px #000; }
+  #kills { position: absolute; right: -60px; top: 26px; font-weight: 700; opacity: .85; text-shadow: 0 2px 6px #000; }
+
+  /* 11시(좌상단): HP + 스태미나 */
+  #hpwrap { position: absolute; left: 18px; top: 16px; width: 260px; }
+  #hpbar { height: 20px; background: #2a1520; border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; }
+  #hpfill { height: 100%; width: 100%; background: linear-gradient(#7dff9a, #37c96a); transition: width .12s; }
+  #hptext { position: absolute; inset: 0; text-align: center; font-size: 12px; font-weight: 700; line-height: 20px; text-shadow: 0 1px 3px #000; }
+  #stbar { height: 10px; background: #1c2030; border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; margin-top: 5px; width: 78%; }
+  #stfill { height: 100%; width: 100%; background: linear-gradient(90deg, #ffd23e, #ffab3d); transition: width .08s; }
+
+  /* 하단 중앙: 스킬 슬롯 */
+  #slots { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+  .slot { width: 62px; height: 62px; border: 2px solid #556; border-radius: 12px; background: rgba(22,20,32,.8); position: relative; display: grid; place-items: center; }
+  .slot .ic { font-size: 26px; filter: drop-shadow(0 2px 3px #000); }
+  .slot .key { position: absolute; bottom: 2px; right: 5px; font-size: 10px; opacity: .8; font-weight: 700; }
+  .slot .lv { position: absolute; top: 2px; left: 5px; font-size: 10px; font-weight: 800; color: #ffd23e; }
+  .slot .cd { position: absolute; inset: 0; background: rgba(6,4,12,.72); border-radius: 10px; transform-origin: bottom; }
+  .slot.empty { opacity: .35; }
+
+  /* 보스바 */
+  #bosswrap { position: absolute; top: 78px; left: 50%; transform: translateX(-50%); width: min(560px, 76vw); display: none; }
+  #bossbar { height: 14px; background: #201225; border: 2px solid var(--ink); border-radius: 7px; overflow: hidden; }
+  #bossfill { height: 100%; width: 100%; background: linear-gradient(#c86bff, #8a2be2); transition: width .1s; }
+  #bossname { text-align: center; font-weight: 800; margin-bottom: 3px; text-shadow: 0 2px 6px #000; }
+
+  #banner { position: absolute; top: 30%; left: 50%; transform: translate(-50%,-50%); font-size: 44px; font-weight: 900; text-shadow: 0 3px 14px #000; opacity: 0; transition: opacity .35s; text-align: center; }
+
+  /* 미니맵 (1시 방향) */
+  #minimap { position: absolute; top: 16px; right: 18px; width: 160px; height: 160px; filter: drop-shadow(0 3px 8px rgba(0,0,0,.5)); }
+
+  /* 구역 상호작용 프롬프트 */
+  #interact { position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); display: none;
+              background: rgba(16,14,26,.85); border: 2px solid #556; border-radius: 10px; padding: 8px 16px;
+              font-size: 13px; text-align: center; max-width: 460px; }
+  #interact b { color: #ffd23e; margin-right: 8px; font-size: 15px; }
+  #interact b.dim { color: #8a94a8; }
+  #interact span { opacity: .9; }
+
+  /* 콤보 카운터 (도파민) */
+  #combo { position: absolute; top: 186px; right: 34px; display: none; font-size: 30px; font-weight: 900; font-style: italic;
+           letter-spacing: 1px; text-shadow: 0 3px 10px #000, 0 0 18px rgba(255,210,62,.35); transform-origin: center; }
+  #combo.pop { animation: comboPop .18s ease-out; }
+  @keyframes comboPop { 0% { transform: scale(1.55) rotate(-3deg); } 100% { transform: scale(1) rotate(0); } }
+
+  /* 레벨업 카드 */
+  #levelup { position: absolute; inset: 0; display: none; place-items: center; background: rgba(8,6,14,.78); pointer-events: auto; }
+  #lvinner { text-align: center; }
+  #lvTitle { font-size: 34px; font-weight: 900; margin-bottom: 18px; color: #ffd23e; text-shadow: 0 3px 12px #000; }
+  #cards { display: flex; gap: 18px; }
+  .card { width: 210px; padding: 18px 14px; background: linear-gradient(#22203a, #171528); border: 3px solid #667; border-radius: 16px; cursor: pointer; transition: transform .12s, box-shadow .12s; }
+  .card:hover { transform: translateY(-6px) scale(1.03); box-shadow: 0 12px 30px rgba(0,0,0,.6); }
+  .card .icon { font-size: 44px; }
+  .card .name { font-size: 18px; font-weight: 800; margin: 8px 0 6px; }
+  .card .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+  .card .chip { font-size: 10px; font-weight: 700; padding: 1px 7px; border: 1px solid; border-radius: 9px; background: rgba(10,8,18,.55); letter-spacing: .5px; }
+  .card .desc { font-size: 13px; opacity: .85; min-height: 42px; line-height: 1.45; }
+  .card .tag { font-size: 11px; font-weight: 700; margin-top: 8px; letter-spacing: .5px; }
+  .card .new { font-size: 11px; background: #37c96a; color: #06210f; padding: 1px 6px; border-radius: 8px; vertical-align: middle; }
+  .card .lv { font-size: 12px; color: #ffd23e; }
+
+  #help { position: absolute; bottom: 46px; right: 18px; opacity: .6; font-size: 12px; text-align: right; text-shadow: 0 1px 4px #000; }
+
+  /* 장비 4슬롯 표시 (좌하단 HP 위) */
+  #equips { position: absolute; left: 18px; bottom: 48px; display: flex; gap: 6px; }
+  .eq { width: 34px; height: 34px; border: 2px solid #444; border-radius: 8px; background: rgba(22,20,32,.75); display: grid; place-items: center; font-size: 16px; opacity: .45; }
+  .eq.has { opacity: 1; }
+
+  /* 장비 비교 팝업 */
+  #compare { position: absolute; inset: 0; display: none; place-items: center; background: rgba(8,6,14,.72); pointer-events: auto; }
+  #cmpbox { background: linear-gradient(#232138, #15131f); border: 3px solid #556; border-radius: 16px; padding: 20px 24px; min-width: 480px; }
+  #cmpTitle { font-size: 22px; font-weight: 900; text-align: center; margin-bottom: 14px; color: #ffd23e; }
+  #cmpCols { display: flex; gap: 16px; }
+  .cmpcol { flex: 1; background: rgba(255,255,255,.04); border-radius: 10px; padding: 12px; min-width: 200px; }
+  .cmpcol.dim { opacity: .75; }
+  .cmplabel { font-size: 11px; opacity: .6; font-weight: 700; letter-spacing: 1px; margin-bottom: 6px; }
+  .cmp-head { font-size: 15px; font-weight: 800; }
+  .cmp-rarity { font-size: 11px; font-weight: 700; margin: 2px 0 8px; }
+  .aff { font-size: 13px; padding: 2px 0; }
+  .aff-up { color: #7dff9a; } .aff-down { color: #ff7a7a; } .aff-new { color: #8ad9ff; }
+  #cmpBtns { display: flex; gap: 12px; margin-top: 16px; justify-content: center; }
+  #cmpBtns button { font-size: 15px; padding: 8px 22px; border-radius: 9px; border: 2px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; font-weight: 700; }
+  #btnEquip { background: #2c5c3a; border-color: #4fc36a; }
+
+  #pause { position: absolute; inset: 0; display: none; place-items: center; background: rgba(8,6,14,.78); pointer-events: auto; }
+  #pause button { font-size: 17px; padding: 9px 24px; border-radius: 10px; border: 2px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; font-weight: 700; }
+  #statPanel { display: flex; gap: 14px; text-align: left; justify-content: center; flex-wrap: wrap; }
+  .statcol { background: rgba(255,255,255,.05); border-radius: 12px; padding: 12px 16px; min-width: 180px; }
+  .statcol h3 { margin: 0 0 8px; font-size: 13px; color: #ffd23e; letter-spacing: 1px; }
+  .statrow { display: flex; justify-content: space-between; font-size: 13px; padding: 1.5px 0; gap: 14px; }
+  .statrow b { font-weight: 700; }
+  .keybind { cursor: pointer; border-radius: 6px; padding: 3px 6px; margin: 0 -6px; }
+  .keybind:hover { background: rgba(255,210,62,.12); }
+  .keybind b { color: #8ad9ff; min-width: 46px; text-align: right; }
+  .card.guard { opacity: .55; pointer-events: none; } /* 레벨업 직후 오클릭 가드 */
+  #end { position: absolute; inset: 0; display: none; place-items: center; background: rgba(8,6,14,.82); pointer-events: auto; }
+  #end h1 { font-size: 56px; margin: 0 0 8px; }
+  #endstat { opacity: .8; margin-bottom: 18px; }
+  #end button { font-size: 18px; padding: 10px 28px; border-radius: 10px; border: 2px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; }
+
+  /* ── 로비 ── */
+  .tcol { text-align: center; max-width: 860px; width: 92vw; }
+  .step { display: none; }               /* lobby.js가 순서대로 켠다 */
+  .modes { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .mode { display: flex; flex-direction: column; gap: 5px; min-width: 210px; padding: 20px 18px; border-radius: 14px;
+          border: 2px solid #3a3f52; background: #20222e; color: #edf; cursor: pointer; transition: .12s; }
+  .mode:hover { border-color: #8ad9ff; background: #262a3a; transform: translateY(-2px); }
+  .mode b { font-size: 19px; }
+  .mode span { font-size: 12px; opacity: .6; }
+  #nameInput, #codeInput { font-size: 20px; padding: 10px 16px; border-radius: 10px; border: 2px solid #4a5068;
+                           background: #1b1d28; color: #edf; text-align: center; width: 240px; margin-bottom: 14px; }
+  #codeInput.code { letter-spacing: 8px; font-weight: 700; font-size: 26px; }
+  #btnName, #btnCode { display: block; margin: 0 auto; font-size: 17px; padding: 9px 30px; border-radius: 10px;
+                       border: 2px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; }
+
+  .roomhead { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 14px; }
+  #roomCode { font-size: 40px; font-weight: 800; letter-spacing: 8px; color: #ffd23e; }
+  .linkbox { display: flex; align-items: center; gap: 8px; }
+  #roomLink { font-size: 11px; opacity: .55; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #btnCopy { font-size: 12px; padding: 7px 14px; border-radius: 8px; border: 1px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; white-space: nowrap; }
+
+  #roomList { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .mate { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px;
+          background: rgba(30,32,44,.8); border: 1px solid #333849; }
+  .mate.ready { border-color: #6dff8a; }
+  .mate.down { opacity: .45; }
+  .mate-ic { font-size: 22px; width: 28px; text-align: center; }
+  .mate-body { flex: 1; text-align: left; min-width: 0; }
+  .mate-name { font-size: 13px; font-weight: 600; }
+  .mate-sub { font-size: 11px; opacity: .55; }
+  .mate-rd { font-size: 12px; opacity: .8; }
+  .mate-hp { height: 5px; border-radius: 3px; background: #2a2d3a; overflow: hidden; margin-top: 3px; }
+  .mate-hp > i { display: block; height: 100%; width: 100%; background: #6dff8a; transition: width .15s; }
+  .roombtns { display: flex; gap: 12px; justify-content: center; margin-top: 6px; }
+  .roombtns button { font-size: 17px; padding: 10px 28px; border-radius: 10px; border: 2px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; }
+  #btnReady.on { border-color: #6dff8a; background: #22402c; }
+  #btnGo:disabled { opacity: .4; cursor: not-allowed; }
+  #roomHint, #roomErr { margin-top: 10px; font-size: 13px; opacity: .7; }
+  #roomErr { display: none; color: #ff6a7a; }
+  .hostonly { font-size: 11px; opacity: .5; font-weight: 400; }
+  .pick .taken { font-size: 11px; color: #8ad9ff; }
+
+  /* ── 인게임 파티 UI ── */
+  #party { position: absolute; left: 18px; top: 118px; display: none; flex-direction: column; gap: 6px; width: 190px; }
+  #spectate { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); display: none; text-align: center;
+              padding: 12px 22px; border-radius: 12px; background: rgba(12,10,18,.8); border: 1px solid #4a3a52; font-size: 16px; }
+  #spectate span { display: block; font-size: 12px; opacity: .65; margin-top: 4px; }
+  /* 화면 밖 동료 방향 화살표 — 46m 아레나에서 서로를 못 찾는 문제 */
+  #mates { position: absolute; inset: 0; display: none; pointer-events: none; }
+  .marr { position: absolute; display: none; align-items: center; justify-content: center; width: 30px; height: 30px;
+          border-radius: 50%; background: rgba(99,200,255,.22); border: 1px solid #63c8ff; font-size: 15px; }
+  .marr.down { background: rgba(120,120,130,.2); border-color: #8a93a6; opacity: .6; }
+  .lvtimer { display: inline-block; margin-left: 12px; font-size: 20px; color: #ffd23e; opacity: .9; }
+  #lvWaiting { margin-top: 14px; font-size: 13px; opacity: .7; text-align: center; }
+  #pause.nopause h1::after { content: ' (멀티 — 게임은 계속 진행 중)'; font-size: 15px; opacity: .6; font-weight: 400; }
+</style>
+  <script type="module" crossorigin src="/survivors/assets/survivors-BYvxDmrb.js"></script>
+</head>
+<body>
+<div id="title">
+  <div class="tcol">
+    <h1 style="font-size:46px;margin:0 0 2px;letter-spacing:2px">VIBE SURVIVORS</h1>
+    <div style="opacity:.6;margin-bottom:24px">15분을 버텨라</div>
+
+    <!-- 모드 선택 -->
+    <div id="modeSel" class="step">
+      <div class="modes">
+        <button id="btnSolo" class="mode"><b>🗡 혼자 하기</b><span>싱글 플레이</span></button>
+        <button id="btnHost" class="mode"><b>🏰 방 만들기</b><span>최대 4인 · 코드로 친구 초대</span></button>
+        <button id="btnJoin" class="mode"><b>🔑 코드로 참가</b><span>친구가 만든 방에 들어가기</span></button>
+      </div>
+    </div>
+
+    <!-- 이름 -->
+    <div id="nameSel" class="step">
+      <div class="selLabel">이름</div>
+      <input id="nameInput" maxlength="12" placeholder="모험가" autocomplete="off">
+      <button id="btnName">확인</button>
+    </div>
+
+    <!-- 방 코드 입력 -->
+    <div id="codeSel" class="step">
+      <div class="selLabel">방 코드 (5글자)</div>
+      <input id="codeInput" class="code" maxlength="5" placeholder="ABC23" autocomplete="off">
+      <button id="btnCode">참가</button>
+    </div>
+
+    <!-- 싱글: 캐릭터 + 스테이지 -->
+    <div id="soloSel" class="step">
+      <div class="selLabel">캐릭터</div>
+      <div id="charCards" class="pickrow"></div>
+      <div class="selLabel">스테이지</div>
+      <div id="stageCards" class="pickrow"></div>
+      <button id="btnStart">시작</button>
+    </div>
+
+    <!-- 멀티: 대기실 -->
+    <div id="roomSel" class="step">
+      <div class="roomhead">
+        <div>
+          <div class="selLabel" style="margin:0">방 코드</div>
+          <div id="roomCode"></div>
+        </div>
+        <div class="linkbox">
+          <div id="roomLink"></div>
+          <button id="btnCopy">링크 복사</button>
+        </div>
+      </div>
+      <div id="roomList"></div>
+      <div class="selLabel">캐릭터 (중복 불가)</div>
+      <div id="roomChars" class="pickrow"></div>
+      <div class="selLabel">스테이지 <span class="hostonly">— 방장만 선택</span></div>
+      <div id="roomStages" class="pickrow"></div>
+      <div class="roombtns">
+        <button id="btnReady">준비 완료</button>
+        <button id="btnGo">출발!</button>
+      </div>
+      <div id="roomHint"></div>
+    </div>
+
+    <div id="roomErr"></div>
+  </div>
+</div>
+<div id="hud">
+  <div id="top">
+    <div id="timer">00:00</div>
+    <div id="lvtag">Lv.1</div>
+    <div id="kills">☠ 0</div>
+    <div id="xpbar"><div id="xpfill"></div></div>
+  </div>
+  <div id="bosswrap"><div id="bossname"></div><div id="bossbar"><div id="bossfill"></div></div></div>
+  <div id="banner"></div>
+  <div id="combo"></div>
+  <canvas id="minimap" width="160" height="160"></canvas>
+  <div id="interact"></div>
+  <div id="hpwrap"><div id="hpbar"><div id="hpfill"></div><div id="hptext"></div></div><div id="stbar"><div id="stfill"></div></div></div>
+  <div id="party"></div>
+  <div id="mates"></div>
+  <div id="spectate"></div>
+  <div id="slots"></div>
+  <div id="help">WASD 이동 · Shift 스프린트 · 마우스 드래그 카메라<br>좌클릭 공격 · Space 구르기 · ESC 일시정지<br>우클릭/Q/E/R 스킬<br><span style="opacity:.5;font-size:10px">3D: Hunyuan 3D-2.1 · Monsters: Quaternius (CC0)</span></div>
+  <div id="equips"></div>
+  <div id="levelup"><div id="lvinner"><div id="lvTitle">LEVEL UP</div><div id="cards"></div><div id="lvWaiting"></div></div></div>
+  <div id="compare">
+    <div id="cmpbox">
+      <div id="cmpTitle">⚔ 장비 획득</div>
+      <div id="cmpCols">
+        <div class="cmpcol"><div class="cmplabel">신규</div><div id="cmpNew"></div></div>
+        <div class="cmpcol dim"><div class="cmplabel">장착 중</div><div id="cmpCur"></div></div>
+      </div>
+      <div id="cmpBtns">
+        <button id="btnEquip">장착 (Enter)</button>
+        <button id="btnDiscard">버리기 (Esc)</button>
+      </div>
+    </div>
+  </div>
+  <div id="pause"><div style="text-align:center;max-width:640px">
+    <h1 style="font-size:38px;margin:0 0 4px">⏸ 일시정지</h1>
+    <div style="opacity:.7;margin-bottom:14px">ESC로 재개</div>
+    <div id="statPanel"></div>
+    <div style="display:flex;gap:12px;justify-content:center;margin-top:16px"><button id="btnResume">계속하기</button><button id="btnRestart">처음부터</button></div>
+  </div></div>
+  <div id="end"><div style="text-align:center"><h1 id="endtitle"></h1><div id="endstat"></div><button id="retry">다시 도전</button></div></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "moonlit",
+  "description": "쿨 다크 판타지 — 달밤, 청람빛",
+  "timeOfDay": "night",
+  "toonRamp": { "steps": [0.16, 0.5, 0.95], "stops": [0.42, 0.78] },
+  "outline": { "color": "#0b0d1a", "width": 0.024 },
+  "rim": { "color": "#9ab8ff", "power": 2.0, "strength": 0.7 },
+  "post": { "bloom": { "intensity": 1.1, "threshold": 0.6 }, "ao": { "intensity": 3.0 } },
+  "prompt": {
+    "prefix": "cool moonlit palette, dark fantasy",
+    "negative": ""
+  }
+}

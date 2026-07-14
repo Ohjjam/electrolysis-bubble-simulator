@@ -35,3 +35,18 @@ elif [ -f /etc/systemd/system/maplestory.service ]; then
     systemctl reload caddy 2>/dev/null || true
   fi
 fi
+
+# reconcile survivors (4인 협동 서바이벌, 포트 3011): repo에 있으면 셋업, 사라지면 철거
+if [ -f "$APP_DIR/deploy/setup-survivors.sh" ] && [ -d "$APP_DIR/games/survivors" ]; then
+  /bin/bash "$APP_DIR/deploy/setup-survivors.sh" || true
+elif [ -f /etc/systemd/system/survivors.service ]; then
+  echo "$(date -u '+%F %T')  survivors removed from repo -> tearing down"
+  systemctl disable --now survivors 2>/dev/null || true
+  rm -f /etc/systemd/system/survivors.service /opt/.survivors-setup-done1
+  systemctl daemon-reload
+  IP_HOST="$(cat "$APP_DIR/deploy/PUBLIC_HOST.txt" 2>/dev/null || true)"
+  if [ -n "$IP_HOST" ]; then
+    printf '%s {\n    reverse_proxy 127.0.0.1:8766\n}\n' "$IP_HOST" > /etc/caddy/Caddyfile
+    systemctl reload caddy 2>/dev/null || true
+  fi
+fi

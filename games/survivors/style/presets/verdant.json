@@ -1,0 +1,13 @@
+{
+  "name": "verdant",
+  "description": "초원 판타지 — 밝은 낮, 생생한 그린",
+  "timeOfDay": "day",
+  "toonRamp": { "steps": [0.22, 0.6, 1.0], "stops": [0.35, 0.72] },
+  "outline": { "color": "#1a1226", "width": 0.02 },
+  "rim": { "color": "#ffe9c4", "power": 2.5, "strength": 0.45 },
+  "post": { "bloom": { "intensity": 0.75, "threshold": 0.72 }, "ao": { "intensity": 2.6 } },
+  "prompt": {
+    "prefix": "vibrant colors, lush fantasy",
+    "negative": ""
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "ember",
+  "description": "웜 판타지 — 석양, 호박빛 림",
+  "timeOfDay": "dusk",
+  "toonRamp": { "steps": [0.18, 0.55, 1.0], "stops": [0.4, 0.75] },
+  "outline": { "color": "#241018", "width": 0.022 },
+  "rim": { "color": "#ffb066", "power": 2.2, "strength": 0.6 },
+  "post": { "bloom": { "intensity": 0.9, "threshold": 0.68 }, "ao": { "intensity": 2.8 } },
+  "prompt": {
+    "prefix": "warm color palette, golden hour fantasy",
+    "negative": ""
+  }
+}
