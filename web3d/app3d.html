@@ -158,6 +158,7 @@
     <label class="sliceChk"><input type="checkbox" data-layer="cathode" checked> 음극(전극)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="anode" checked> 양극(전극)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="membrane" checked> 막(membrane)</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="walls" checked> 유로 벽(리브)</label>
   </div>
 
   <div style="font-size:11.5px;color:var(--dim);margin:4px 0 3px">시점 (정면=직교, 판/막 반투명)</div>
@@ -365,13 +366,18 @@ function setSolidsTransparency(flat) {
 }
 
 let gravArrow = null, camHome = new THREE.Vector3();
-let cathodeGeom = null, anodeGeom = null, membraneMesh = null;
+let cathodeGeom = null, anodeGeom = null, membraneMesh = null, wallsGroup = null;
 // component layers (on/off): electrode geometry + membrane + per-side bubbles
-const layers = { cathode: true, anode: true, membrane: true, her: true, oer: true };
+// + the channel WALLS as their own layer — they used to live inside the
+// electrode groups, so hiding an electrode silently deleted the 3-D walls and
+// only the flat dark stripes of the face TEXTURE remained ("벽 입체가 없어져").
+const layers = { cathode: true, anode: true, membrane: true, her: true, oer: true,
+                 walls: true };
 function applyLayers() {
   if (cathodeGeom) cathodeGeom.visible = layers.cathode;
   if (anodeGeom) anodeGeom.visible = layers.anode;
   if (membraneMesh) membraneMesh.visible = layers.membrane;
+  if (wallsGroup) wallsGroup.visible = layers.walls;
   // bubble layers (her/oer) are applied in updateBubbles via the side filter
 }
 
@@ -555,7 +561,8 @@ function rebuildCell() {
   cathodeGeom = new THREE.Group(); anodeGeom = new THREE.Group();
   membraneMesh = new THREE.Group();
   portGroup = new THREE.Group();
-  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, portGroup);
+  wallsGroup = new THREE.Group();      // channel walls: independent of the electrodes
+  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, portGroup, wallsGroup);
 
   // core: thin bright membrane plane at the centre + PTL halves to the edges
   const tMemV = Math.min(0.5, coreT * 0.18);
@@ -564,11 +571,13 @@ function rebuildCell() {
   box(ptlT, H, W, MAT.ptl, -(tMemV / 2 + ptlT / 2), H / 2, 0, cathodeGeom);
   box(ptlT, H, W, MAT.ptl, +(tMemV / 2 + ptlT / 2), H / 2, 0, anodeGeom);
 
-  // channel layers: back plate slab + rib subgroup (filled from the land mask)
+  // channel layers: back plate slab (electrode group) + rib subgroup (filled
+  // from the land mask). The ribs go into wallsGroup — NOT the electrode
+  // group — so hiding an electrode to see the bubbles keeps the 3-D walls up.
   for (const [geom, side] of [[cathodeGeom, -1], [anodeGeom, +1]]) {
     box(baseT, H, W, MAT.plate, side * (coreT / 2 + chT + baseT / 2), H / 2, 0, geom);
     const ribSub = new THREE.Group();
-    geom.add(ribSub);
+    wallsGroup.add(ribSub);
     if (side < 0) ribSubC = ribSub; else ribSubA = ribSub;
   }
 

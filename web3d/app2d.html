@@ -53,8 +53,15 @@
 <body>
 <h1>3D 셀 시뮬레이터 <span class="pill">계산 = 3D bubblesim3d 커널 (live)</span></h1>
 <div class="sub">모든 수치는 3-D 격자에서 계산 — NS 유동 + 기포 생애주기 + 전기화학. 브라우저는 그리기만.
-  <a href="/" style="color:var(--accent);margin-left:8px">3D 렌더 뷰로 →</a>
   <span id="conn">⚠ 서버 연결 끊김 — bat 창이 닫혔는지 확인</span></div>
+
+<!-- 2D/3D는 같은 시뮬레이션의 두 화면: 여기서 실험 탭을 고르면 그 저장 조건이
+     적용되고(3D 화면도 같이 바뀜), "현재 조건"은 지금 돌고 있는 상태 그대로. -->
+<div class="seg" id="expTabs2" style="flex-wrap:wrap;max-width:920px;margin:0 0 12px">
+  <button data-m="3d" style="flex:none;padding:5px 12px">🧊 3D 뷰로</button>
+  <button data-m="cur" class="on" style="flex:none;padding:5px 12px"
+    title="지금 돌고 있는 조건 그대로 (실험 저장/삭제는 3D 뷰에서)">▶ 현재 조건</button>
+</div>
 
 <div class="app">
 
@@ -621,6 +628,44 @@ async function poll() {
   setTimeout(poll, dt);
 }
 poll();
+
+// ------------------------- experiment tabs (same list as the 3-D view) -----
+// 2D/3D are two windows onto ONE running simulation: picking an experiment
+// here pushes its saved designer to /api3d/op (the 3-D view follows on its
+// next poll). "현재 조건" just means "watch whatever is running" — it is not
+// a separate snapshot to go back to. Save/overwrite/delete live in the 3-D
+// view; this bar only APPLIES.
+const expTabs2 = document.getElementById("expTabs2");
+async function loadExpTabs2() {
+  let list = [];
+  try { list = (await (await fetch("/api3d/experiments")).json()).list || []; }
+  catch { /* server offline: the poll banner already says so */ }
+  expTabs2.querySelectorAll("button[data-m='user']").forEach(b => b.remove());
+  for (const ex of list) {
+    const b = document.createElement("button");
+    b.dataset.m = "user"; b.dataset.exp = ex.id;
+    b.style.flex = "none"; b.style.padding = "5px 12px";
+    b.textContent = "🔬 " + ex.name;
+    b.title = (ex.note ? ex.note + " · " : "") + "저장 " + (ex.created || "") +
+              " — 클릭하면 이 조건으로 전환 (3D 뷰도 같이 바뀜)";
+    b._designer = ex.designer;
+    expTabs2.appendChild(b);
+  }
+}
+expTabs2.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.m === "3d") { location.href = "/"; return; }
+  expTabs2.querySelectorAll("button").forEach(x =>
+    x.classList.toggle("on", x === b));
+  if (b.dataset.m === "user" && b._designer) {
+    fetch("/api3d/op", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(b._designer) }).catch(() => {});
+  }
+});
+loadExpTabs2();
+setInterval(loadExpTabs2, 15000);   // pick up saves/deletes made in the 3-D view
 
 function frame() { drawHero(); drawFace(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
