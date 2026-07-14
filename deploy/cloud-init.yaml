@@ -11,4 +11,4 @@
 # ===========================================================================
 package_update: true
 runcmd:
-  - [ bash, -c, "apt-get update -y && apt-get install -y git && git clone --depth 1 --branch main https://github.com/ate0339-rgb/electrolysis-bubble-simulator.git /opt/bubblesim && bash /opt/bubblesim/deploy/setup.sh 2>&1 | tee /var/log/bubblesim-setup.log" ]
+  - [ bash, -c, "apt-get update -y && apt-get install -y git && git clone --depth 1 --branch main https://github.com/Ohjjam/electrolysis-bubble-simulator.git /opt/bubblesim && bash /opt/bubblesim/deploy/setup.sh 2>&1 | tee /var/log/bubblesim-setup.log" ]

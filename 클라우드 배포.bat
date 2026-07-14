@@ -1,15 +1,15 @@
 @echo off
 REM ==========================================================================
-REM  Push local changes to GitHub -> the cloud server auto-updates in ~2 min.
+REM  Push local changes to the Ohjjam repo -> cloud server auto-updates ~2 min.
 REM  (ASCII-only on purpose so the console never garbles.)
 REM  NOTE: this commits ALL current changes in this folder, then pushes.
 REM ==========================================================================
 cd /d "%~dp0"
 echo.
-echo === Deploying: commit all changes + push to origin/main ===
+echo === Deploying: commit all changes + push to ohjam/main ===
 git add -A
 git commit -m "deploy update"
-git push origin main
+git push ohjam main
 echo.
 echo Done. The live server pulls the latest within about 2 minutes.
 echo.

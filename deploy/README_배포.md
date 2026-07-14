@@ -45,9 +45,11 @@ Hetzner 신규계정 표준 절차예요(사기 아님). **Credit card**(빠름,
 
 ## 4. 앞으로 업데이트하는 법 (이게 핵심 편의)
 
+> 배포 저장소는 **`Ohjjam/electrolysis-bubble-simulator`** (원격 이름 `ohjam`). 서버는 여기서 clone/pull 합니다.
+
 코드 고친 뒤 **둘 중 하나**:
-- 평소 쓰던 대로 `git push origin main`, 또는
-- 루트의 **`클라우드 배포.bat` 더블클릭** (전체 변경 커밋 + 푸시)
+- `git push ohjam main` (⚠️ `origin`(ate0339-rgb) 아니라 **`ohjam`**), 또는
+- 루트의 **`클라우드 배포.bat` 더블클릭** (전체 변경 커밋 + `ohjam`으로 푸시)
 
 → 서버가 **2분 안에 자동으로** 최신 코드로 갱신 + 재시작. 서버 로그인 불필요.
 (구조: 서버에 2분마다 `git pull` 하는 cron이 `deploy/update.sh` 실행)
