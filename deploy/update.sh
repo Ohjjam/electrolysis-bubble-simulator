@@ -7,7 +7,12 @@ set -euo pipefail
 APP_DIR=/opt/bubblesim
 SERVICE=bubblesim3d
 cd "$APP_DIR"
-git fetch --quiet origin main || exit 0
+# Robust fetch: a depth-1 shallow clone can silently fail to fetch after a large
+# history change (that once wedged auto-update). Deepen it, and LOG real failures
+# instead of vanishing quietly.
+git fetch --depth=100 origin main 2>/dev/null \
+  || git fetch origin main 2>/dev/null \
+  || { echo "$(date -u '+%F %T')  fetch FAILED (network/repo?)"; exit 0; }
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse origin/main)"
 if [ "$LOCAL" != "$REMOTE" ]; then
