@@ -42,7 +42,7 @@ if [ -f "$APP_DIR/deploy/setup-survivors.sh" ] && [ -d "$APP_DIR/games/survivors
 elif [ -f /etc/systemd/system/survivors.service ]; then
   echo "$(date -u '+%F %T')  survivors removed from repo -> tearing down"
   systemctl disable --now survivors 2>/dev/null || true
-  rm -f /etc/systemd/system/survivors.service /opt/.survivors-setup-done1
+  rm -f /etc/systemd/system/survivors.service /opt/.survivors-setup-done1 /opt/.survivors-setup-done2
   systemctl daemon-reload
   IP_HOST="$(cat "$APP_DIR/deploy/PUBLIC_HOST.txt" 2>/dev/null || true)"
   if [ -n "$IP_HOST" ]; then

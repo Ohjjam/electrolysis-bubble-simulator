@@ -2,6 +2,5 @@
   "name": "vibe-survivors",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node survivors/server/index.js" },
-  "dependencies": { "ws": "^8.18.3" }
+  "scripts": { "start": "node survivors/server/index.js" }
 }
