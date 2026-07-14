@@ -617,7 +617,7 @@ def test_outlet_port_is_a_real_boundary_for_liquid_and_gas():
     """A narrow exit port must (a) be the only Dirichlet p=0 face, (b) still
     balance mass, and (c) block GAS as well — bubbles that reach the closed part
     of the top are under plate, not free to leave."""
-    full = _run(steps=120)
+    full = _run(steps=120, out_w=1.0)                        # explicit whole-top vent
     port = _run(steps=120, out_w=0.10, out_z=0.06)
 
     assert full.ns.outlet.all()                              # whole top vents
@@ -740,8 +740,10 @@ def test_swarm_coalescence_grows_the_exit_bubbles_when_the_electrolyte_allows():
     """The observable of coalescence inhibition: concentrated KOH keeps the
     bubbles small all the way to the outlet; dilute KOH lets them merge and they
     leave several times bigger. Gas is conserved either way."""
-    conc = _run(steps=400, c_mol=6.0, seed=3)
-    dil = _run(steps=400, c_mol=0.1, seed=3)
+    # whole-top vent (out_w=1) so the swarm leaves freely and the coalescence
+    # signal isn't confounded by gas piling under a narrow default exit port
+    conc = _run(steps=400, c_mol=6.0, seed=3, out_w=1.0)
+    dil = _run(steps=400, c_mol=0.1, seed=3, out_w=1.0)
 
     def exit_r(sim):
         p = sim.parcels
@@ -783,8 +785,8 @@ def test_coalescence_speeds_the_swarm_up_and_lowers_holdup():
     The rise-speed ratio is the clean signal; holdup is the consequence and is
     noisy, so it gets the looser bound.
     """
-    conc, h_conc = _mean_holdup(c_mol=6.0)
-    dil, h_dil = _mean_holdup(c_mol=0.1)
+    conc, h_conc = _mean_holdup(c_mol=6.0, out_w=1.0)
+    dil, h_dil = _mean_holdup(c_mol=0.1, out_w=1.0)
 
     def mean_rise(sim):
         p = sim.parcels
@@ -801,7 +803,7 @@ def test_swarm_coalescence_closure_does_not_drive_the_answer():
     because the packing limit EPS_MAX binds, and even removing it entirely moves
     the mean bubble size by <10% (it changes the merge COUNT, not the physics)."""
     def mean_r(cap):
-        d = dict(DESIGNER_DEFAULTS)
+        d = dict(DESIGNER_DEFAULTS); d.update(out_w=1.0)   # free vent: isolate the closure
         cfg = cell_config_from_designer(d); op = operating_from_designer(d)
         sim = CellSim3D(op, Params(fritz_scale=0.08), cfg.grid_dims(), h=cfg.h,
                         cap=cfg.cap_parcels, tilt=0.0, seed=3, cfg=cfg)

@@ -293,10 +293,15 @@ def port_edges(cfg: Cell3DConfig, grid: Grid3D, land2d):
     if not in_line.any():
         in_line = np.ones(n_in, dtype=bool)
 
-    if outf == "top" and cfg.out_w >= 1.0:
-        out_line = np.ones(n_out, dtype=bool)
+    if cfg.out_w and cfg.out_w > 0:
+        if outf == "top" and cfg.out_w >= 1.0:
+            out_line = np.ones(n_out, dtype=bool)        # whole top vents (legacy)
+        else:
+            out_line = _port(n_out, cfg.out_z, cfg.out_w, open_edge[outf])
+    elif outf == "top":
+        out_line = outlet_mask(cfg, grid, land2d)        # auto: the preset's own exit
     else:
-        out_line = _port(n_out, cfg.out_z, cfg.out_w, open_edge[outf])
+        out_line = open_edge[outf].copy()                # auto side manifold
     if inf == outf:                                      # never feed and vent a cell
         out_line = out_line & ~in_line
         if not out_line.any():
@@ -307,13 +312,34 @@ def port_edges(cfg: Cell3DConfig, grid: Grid3D, land2d):
 def outlet_mask(cfg: Cell3DConfig, grid: Grid3D, land2d):
     """(nz,) bool — top-row columns that VENT (Dirichlet p=0 in the projection).
 
-    `out_w == 1` opens the whole top face (the original behaviour). Anything
-    smaller is a real exit port at `out_z`, and the rest of the top becomes a
-    wall — which is what a bipolar plate actually looks like, and what makes the
-    exit position a design lever (it steers the flow across the last pass).
+    `out_w == 1` opens the whole top face. A value in (0,1) is an explicit exit
+    port at `out_z`, and the rest of the top becomes a wall — the exit position
+    a design lever. `out_w == 0` is AUTO, mirroring `inlet_mask`:
+      serpentine / straight: a channel-width port at the LAST pass's far end, so
+        the snake really leaves through one exit instead of venting its whole
+        top (which let the last pass short-circuit straight up everywhere);
+      parallel / interdigitated / custom: every open top column (uniform
+        manifold — those channels run to the top across the whole width).
     """
     nz = grid.nz
     open_row = ~land2d[-1]
-    if cfg.out_w >= 1.0:
+    if cfg.out_w and cfg.out_w >= 1.0:
         return np.ones(nz, dtype=bool)
-    return _port(nz, cfg.out_z, cfg.out_w, open_row)
+    if cfg.out_w and cfg.out_w > 0:
+        return _port(nz, cfg.out_z, cfg.out_w, open_row)
+    if cfg.ff in ("par", "inter", "custom"):
+        return open_row if open_row.any() else np.ones(nz, dtype=bool)
+    # serpentine / straight exit port. The inlet enters the first pass at its
+    # z-high end; each interior rib flips the turn-gap side, so the final pass
+    # (above rib n-1) exits at the end opposite its own entry gap: z-high when
+    # (n-1) is odd (n even), z-low otherwise.
+    n = max(1, int(round(cfg.n_ch)))
+    gap_frac = float(np.clip(cfg.w_ch_mm / max(1e-6, cfg.W_cm * 10.0), 0.06, 0.30))
+    n_gap = max(1, int(round(gap_frac * nz)))
+    mask = np.zeros(nz, dtype=bool)
+    if (n - 1) % 2 == 1:                                 # exit at z-high (right)
+        mask[nz - n_gap:] = True
+    else:                                                # exit at z-low (left)
+        mask[:n_gap] = True
+    out = mask & open_row
+    return out if out.any() else mask

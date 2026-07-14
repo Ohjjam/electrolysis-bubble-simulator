@@ -670,6 +670,13 @@ class Parcels:
         gas of the dropped ones (W and mult scaled by the same factor, so each
         survivor's single-bubble radius is untouched and it simply stands for
         more real bubbles). produced = resident + vented stays machine-exact.
+
+        The subset MUST stay a fresh UNIFORM random draw each step: it is a
+        Monte-Carlo sample of the real swarm, so `r[~attached].mean()` reads the
+        true number-mean bubble radius. Keeping a "stable" subset instead (to
+        stop the render churn) biased the sample toward the older, coalesced
+        risers and inflated the mean radius 3-8x -- a physics error. The id
+        churn is handled in the RENDERER (nearest-match continuity), not here.
         """
         free = np.nonzero(~self.attached)[0]
         if len(free) <= self.FREE_TARGET:

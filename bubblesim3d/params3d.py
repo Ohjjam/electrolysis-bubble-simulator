@@ -25,12 +25,14 @@ DESIGNER_DEFAULTS = {
     # in_w / out_w are port WIDTHS as a fraction of the cell width z.
     #   in_w  = 0  -> "auto": the preset's own inlet (serpentine start / every
     #                 parallel channel). Any value > 0 places an explicit port.
-    #   out_w = 1  -> the whole top face vents (the original behaviour).
+    #   out_w = 0  -> "auto": the preset's own outlet (serpentine EXIT port at
+    #                 the snake's end / parallel manifold). out_w = 1 vents the
+    #                 whole top face; any value in (0,1) is an explicit port.
     # in_face / out_face pick WHICH edge the port sits on:
     #   bottom = y=0 (with the flow), top = y=Ly, left = z=0, right = z=Lz.
     # in_z / out_z are the fractional position ALONG that edge.
     "in_face": "bottom", "out_face": "top",
-    "in_z": 0.94, "in_w": 0.0, "out_z": 0.06, "out_w": 1.0,
+    "in_z": 0.94, "in_w": 0.0, "out_z": 0.06, "out_w": 0.0,
     # --- user-drawn flow field: "" = use `ff`; otherwise an N*N string of
     # '0' (channel) / '1' (land) read row-major from y=0 (inlet) upward.
     "mask": "",
@@ -186,7 +188,8 @@ class Cell3DConfig:
     in_z: float = 0.94
     in_w: float = 0.0            # 0 -> the preset's own inlet
     out_z: float = 0.06
-    out_w: float = 1.0           # 1 -> the whole top face vents
+    out_w: float = 0.0           # 0 -> the preset's own outlet (serp exit port);
+                                 # 1 -> the whole top face vents
     # user-drawn land mask, (M, M) bool, y-major from the inlet row up.
     # Resampled to the grid; only used when ff == "custom".
     land_mask: object = None

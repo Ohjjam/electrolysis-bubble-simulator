@@ -44,9 +44,6 @@
   .leg{display:flex;gap:12px;margin-top:6px;font-size:11px;color:var(--dim)}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
   .note{color:var(--dim);font-size:10.5px;margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
-  #runbox .run{border:1px solid var(--line);border-radius:9px;padding:7px 9px;margin-bottom:7px;
-    cursor:pointer;font-size:12px} #runbox .run:hover{border-color:var(--accent)}
-  #runbox .run .meta{color:var(--dim);font-size:11px}
   .empty{color:var(--dim);font-size:11.5px;padding:6px 2px}
   #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);z-index:50}
   #slicePanel{position:fixed;bottom:12px;right:12px;width:250px;background:var(--glass);
@@ -66,73 +63,45 @@
 
 <div id="panel">
   <h1>3D 셀 시뮬레이터 <span style="font-size:10px;color:var(--gold)">P0 셸</span></h1>
-  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 휠=줌<br>
-    <a href="/2d" style="color:var(--accent)">📊 2D 패널 뷰로 (app.html 스타일) →</a></div>
+  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 휠=줌</div>
 
-  <div class="seg" id="modeSeg">
-    <button data-m="live" class="on">셀 3D (라이브)</button>
-    <button data-m="play">포어 3D (재생)</button>
-    <button data-m="exp">🧪 실험</button>
+  <!-- tabs: 2D / 3D / built-in mesh experiment / user-saved experiments / save -->
+  <div class="seg" id="modeSeg" style="display:flex;flex-wrap:wrap;gap:4px">
+    <button data-m="2d" title="2D 패널 뷰(app.html 스타일)로 이동">📊 2D</button>
+    <button data-m="live" class="on">🧊 3D</button>
+    <button data-m="exp">🧪 mesh 실험</button>
+    <button id="expAdd" title="지금 조건(유로·운전 전부)을 실험 탭으로 저장">＋ 실험 저장</button>
+  </div>
+
+  <!-- save-current-condition-as-experiment form -->
+  <div class="box" id="expSaveBox" style="display:none;border-color:var(--gold)">
+    <h3>현재 조건을 실험으로 저장</h3>
+    <div class="note" style="border:none;margin:0 0 6px;padding:0">유로(직접 그린 것 포함)·치수·운전·촉매
+      설정 전부가 저장됩니다. 탭을 눌러 언제든 다시 불러오고, 수정·삭제할 수 있어요.</div>
+    <input id="expName" placeholder="실험 이름 (예: 13ch 고유량 테스트)" style="width:100%;margin-bottom:5px;
+      background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:6px">
+    <input id="expNote" placeholder="메모 (선택)" style="width:100%;margin-bottom:7px;
+      background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:6px">
+    <div class="row"><button class="btn" id="expSaveGo" style="border-color:var(--grn);color:var(--grn)">💾 저장</button>
+      <button class="btn" id="expSaveCancel">취소</button></div>
+  </div>
+
+  <!-- active user-experiment info (shown with the live controls, so the saved
+       condition can be adjusted right there) -->
+  <div class="box" id="userExpBox" style="display:none;border-color:#4a5f2c">
+    <h3 id="ueTitle">실험</h3>
+    <div id="ueNote" class="note" style="border:none;margin:0 0 6px;padding:0"></div>
+    <div class="row">
+      <button class="btn" id="ueOverwrite" title="지금 화면의 조건으로 이 실험을 덮어씁니다">💾 현재 조건으로 덮어쓰기</button>
+      <button class="btn" id="ueDelete" style="border-color:#c9333f;color:#ff8890">🗑 삭제</button>
+    </div>
+    <div id="ueStat" class="note" style="display:none"></div>
   </div>
 
   <div id="liveCtls"><!-- controls injected --></div>
 <div id="plateEd"></div>
 
-  <div id="playCtls" style="display:none">
-    <div class="box" style="border-color:#2c4a6e"><h3>포어 3D가 뭘 보여주나?</h3>
-      <div class="note" style="border:none;margin:0;padding:0;font-size:11px;line-height:1.55">
-        셀 3D가 <b>mm 단위 유로</b>라면, 포어 3D는 <b>다공 전극 내부를 µm 단위로 확대</b>한 것.
-        Ni 폼·카본페이퍼 같은 전극은 스펀지 구조라 기공 안에서도 반응·기포가 생김.<br>
-        <span class="dot" style="background:#8a95a5"></span> 회색 = 금속 스캐폴드(촉매 표면)&nbsp;
-        <span class="dot" style="background:#0e1620;border:1px solid #444"></span> 빈곳 = 전해질 기공&nbsp;
-        <span class="dot" style="background:#7fdcff"></span> 하늘색 = 기공 속 가스<br>
-        <b>재생하면:</b> 전류가 침투하는 표면에서 가스 발생 → 연결된 기공을 채우며 성장 →
-        분리막 쪽으로 뚫리면 배출. <b>보는 포인트:</b> 가스가 어디 갇히는지(폼은 잘 가둠),
-        전극을 얼마나 깊이 쓰는지(침투깊이 λ), 발생=잔류+배출 수지.</div>
-    </div>
-    <div class="box"><h3>새 배치 계산 (포어 3D)</h3>
-      <div class="ctl"><div class="lab"><span class="nm">기재</span></div>
-        <select id="bxSub" style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
-          <option value="ni_foam">Ni 폼 (foam)</option>
-          <option value="ss_foam">STS 폼</option>
-          <option value="carbon_paper">카본 페이퍼 (GDL)</option>
-          <option value="ni_mesh">Ni 메쉬</option>
-        </select></div>
-      <div class="ri" style="margin-bottom:7px">
-        <span class="un" style="width:52px">격자</span>
-        <select id="bxGrid" style="flex:1;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:4px">
-          <option value="48">48³ (빠름)</option>
-          <option value="64" selected>64³</option>
-          <option value="96">96³ (정밀)</option>
-        </select></div>
-      <div class="ri" style="margin-bottom:7px">
-        <span class="un" style="width:52px">j A/cm²</span>
-        <input id="bxJ" type="number" value="0.8" step="0.1" min="0.05" max="5"
-          style="flex:1;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:4px">
-        <span class="un" style="width:44px">프레임</span>
-        <input id="bxFr" type="number" value="60" step="10" min="5" max="400"
-          style="width:60px;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:4px"></div>
-      <div class="row"><button class="btn" id="bRun" style="border-color:var(--grn);color:var(--grn)">▶ 배치 계산 시작</button></div>
-      <div id="runStatus" class="note">오프라인 계산 → 완료 후 아래 목록에서 재생.</div>
-    </div>
-    <div class="box"><h3>배치 실행 결과 (results/)</h3>
-      <div id="runbox"><div class="empty">불러오는 중…</div></div>
-      <div class="row"><button class="btn" id="bRefresh">↺ 새로고침</button></div>
-      <div id="runInfo" class="note">실행을 선택하면 3D 스캐폴드를 렌더링합니다.</div>
-    </div>
-    <div class="box" id="scrubBox" style="display:none"><h3>타임라인 (기포 성장 재생)</h3>
-      <div class="ctl">
-        <div class="lab"><span class="nm">프레임</span><span class="un" id="frLbl">0 / 0</span></div>
-        <input id="scrub" type="range" min="0" max="0" step="1" value="0" style="width:100%;accent-color:var(--accent)">
-      </div>
-      <div class="ctl">
-        <div class="lab"><span class="nm">재생 간격 (느리게←→빠르게)</span><span class="un" id="pbLbl">150 ms</span></div>
-        <input id="pbMs" type="range" min="50" max="600" step="10" value="150" style="width:100%;accent-color:var(--accent)">
-      </div>
-      <div class="row"><button class="btn" id="bPlay">▶ 재생</button></div>
-      <div id="frScal" class="note">–</div>
-    </div>
-  </div>
+  <!-- (포어 3D 재생 탭은 제거됨 — Track B 배치/재생은 CLI runner + 코드로만 유지) -->
 
   <div id="expCtls" style="display:none">
     <div class="box" style="border-color:#4a5f2c"><h3>실험: NF + PP mesh (AEM 수전해)</h3>
@@ -348,16 +317,21 @@ const cellGroup = new THREE.Group();
 scene.add(cellGroup);
 
 const MAT = {
-  // transparent-capable so a flat view can fade the plates/PTL and reveal the
-  // bubbles behind them (opacity restored to _op in 3-D orbit)
-  plate: new THREE.MeshStandardMaterial({ color:0x60707f, metalness:0.75, roughness:0.45,
-                                          transparent:true, opacity:1 }),
-  ribC:  new THREE.MeshStandardMaterial({ color:0x54718f, metalness:0.8, roughness:0.38,
-                                          emissive:0x0d1a28, emissiveIntensity:0.10,
-                                          transparent:true, opacity:1 }),
-  ribA:  new THREE.MeshStandardMaterial({ color:0x96705c, metalness:0.8, roughness:0.38,
-                                          emissive:0x2a140e, emissiveIntensity:0.10,
-                                          transparent:true, opacity:1 }),
+  // OPAQUE by default. Materials that were permanently `transparent:true` (even
+  // at opacity 1) render in the sorted transparent pass, where per-object sort
+  // errors let bubbles show THROUGH rib walls — the "bubbles popping out of the
+  // walls" read. `transparent` is now toggled dynamically by
+  // setSolidsTransparency, so in 3-D orbit the walls are true depth-tested
+  // solids and occlusion is exact.
+  plate: new THREE.MeshStandardMaterial({ color:0x60707f, metalness:0.75, roughness:0.45 }),
+  // ribs: TWO-TONE box faces (bright crest facing the membrane/camera, dark
+  // flanks) + edge outlines, added in buildMaskRibs — a flat single material at
+  // metalness 0.8 shaded every face the same and the walls read as painted
+  // stripes, not 3-D structure.
+  ribC:  new THREE.MeshStandardMaterial({ color:0x7d9cbe, metalness:0.25, roughness:0.5 }),
+  ribCside: new THREE.MeshStandardMaterial({ color:0x33475e, metalness:0.3, roughness:0.62 }),
+  ribA:  new THREE.MeshStandardMaterial({ color:0xc39a7e, metalness:0.25, roughness:0.5 }),
+  ribAside: new THREE.MeshStandardMaterial({ color:0x64483a, metalness:0.3, roughness:0.62 }),
   ptl:   new THREE.MeshPhysicalMaterial({ color:0x38678a, transparent:true, opacity:0.42,
                                           roughness:0.7, metalness:0.1 }),
   mem:   new THREE.MeshPhysicalMaterial({ color:0x9fb6d8, transparent:true, opacity:0.45,
@@ -369,13 +343,25 @@ const MAT = {
   outlet:new THREE.MeshStandardMaterial({ color:0xc9333f, emissive:0x6d1a21,
                                           emissiveIntensity:0.6, roughness:0.5 }),
 };
+const RIB_EDGE = new THREE.LineBasicMaterial({ color:0x101820, transparent:true, opacity:0.85 });
 // base opacities to restore when leaving a flat view
 MAT.plate._op = 1; MAT.ribC._op = 1; MAT.ribA._op = 1; MAT.ptl._op = 0.42; MAT.mem._op = 0.35;
+MAT.ribCside._op = 1; MAT.ribAside._op = 1;
 
 function setSolidsTransparency(flat) {
-  const fade = { plate: 0.12, ribC: 0.16, ribA: 0.16, ptl: 0.14, mem: 0.10 };
-  for (const k of ["plate", "ribC", "ribA", "ptl", "mem"])
-    MAT[k].opacity = flat ? fade[k] : MAT[k]._op;
+  // flat views: ribs stay clearly WALL-like (0.55, was a ghostly 0.16) while the
+  // plate/PTL/membrane fade far enough to see the bubbles behind them.
+  const fade = { plate: 0.12, ribC: 0.55, ribCside: 0.55, ribA: 0.55,
+                 ribAside: 0.55, ptl: 0.14, mem: 0.10 };
+  for (const k of ["plate", "ribC", "ribCside", "ribA", "ribAside", "ptl", "mem"]) {
+    const m = MAT[k], op = flat ? fade[k] : m._op;
+    m.opacity = op;
+    // keep opaque materials OUT of the transparent pass (see MAT comment)
+    if (k === "ptl" || k === "mem") continue;           // always translucent
+    m.transparent = op < 1;
+    m.needsUpdate = true;
+  }
+  RIB_EDGE.opacity = flat ? 0.35 : 0.85;
 }
 
 let gravArrow = null, camHome = new THREE.Vector3();
@@ -427,8 +413,12 @@ function updateFaceTexture(tex, field, ny, nz) {
   for (let jy = 0; jy < ny; jy++) {
     for (let kz = 0; kz < nz; kz++) {
       const v = field[jy * nz + kz];
-      // flip y so inlet (jy=0) is at the bottom of the plane
-      const o = ((ny - 1 - jy) * nz + kz) * 4;
+      // grid row jy=0 is the inlet/bottom. DataTexture.flipY is false and the
+      // face plane's local +Y = world +Y, so texel row 0 sits at the BOTTOM —
+      // write jy straight through. (The old ny-1-jy flip put the map upside
+      // down vs the ribs/bubbles, so the coloured channels landed on the rib
+      // rows and bubbles looked like they sat on the lands.)
+      const o = (jy * nz + kz) * 4;
       if (v < 0) {                                  // land: neutral structure
         data[o] = 38; data[o + 1] = 44; data[o + 2] = 54; data[o + 3] = 235;
       } else {
@@ -480,7 +470,11 @@ function buildMaskRibs(land) {
   }
   for (const [sub, side] of [[ribSubC, -1], [ribSubA, +1]]) {
     sub.clear();
-    const ribMat = side < 0 ? MAT.ribC : MAT.ribA;
+    // two-tone: bright crest on the +-x faces (the wall top the bubbles slide
+    // along), dark flanks on y/z — BoxGeometry material order [+x,-x,+y,-y,+z,-z]
+    const face = side < 0 ? MAT.ribC : MAT.ribA;
+    const flank = side < 0 ? MAT.ribCside : MAT.ribAside;
+    const mats = [face, face, flank, flank, flank, flank];
     const xRib = side * (coreT / 2 + chT / 2);       // rib fills the channel layer
     let j = 0;
     while (j < ny) {
@@ -490,8 +484,14 @@ function buildMaskRibs(land) {
       const y0 = (j / ny) * H, y1 = ((j2 + 1) / ny) * H;
       for (const [k0, k1] of runs) {
         const z0 = (k0 / nz) * W - W / 2, z1 = ((k1 + 1) / nz) * W - W / 2;
-        box(chT, y1 - y0, z1 - z0, ribMat,
-            xRib, (y0 + y1) / 2, (z0 + z1) / 2, sub);
+        const geo = new THREE.BoxGeometry(chT, y1 - y0, z1 - z0);
+        const m = new THREE.Mesh(geo, mats);
+        m.position.set(xRib, (y0 + y1) / 2, (z0 + z1) / 2);
+        sub.add(m);
+        // crisp dark outline so each wall reads as a 3-D block, not a stripe
+        const eg = new THREE.LineSegments(new THREE.EdgesGeometry(geo), RIB_EDGE);
+        eg.position.copy(m.position);
+        sub.add(eg);
       }
       j = j2 + 1;
     }
@@ -501,8 +501,11 @@ function buildMaskRibs(land) {
 function buildPorts(ports) {
   if (!plateCtx || !portGroup) return;
   const { W, H, chT, coreT } = plateCtx;
-  const L = Math.max(1.5, 0.9 * chT);          // nozzle length outside the plate
-  // one nozzle per contiguous run of open boundary cells, on BOTH channel sides
+  const L = Math.max(3.0, 1.6 * chT);          // tube length OUTSIDE the plate
+  const depth = coreT + 2 * chT;               // spans both channel layers + core
+  // one channel-width TUBE per contiguous run of open boundary cells, protruding
+  // out of the plate at exactly the projection's port cells (serpentine: a
+  // single bottom-right inlet and top-right outlet, not a full-edge manifold)
   const runs = (arr, n) => {
     const out = []; let k0 = -1;
     for (let k = 0; k <= n; k++) {
@@ -518,17 +521,14 @@ function buildPorts(ports) {
     const cw = (face === "bottom" || face === "top") ? W / ports.nz : H / ports.ny;
     for (const [k0, k1] of runs(arr, along)) {
       const a0 = k0 * cw, a1 = (k1 + 1) * cw;
-      for (const sgn of [-1, +1]) {
-        const x = sgn * (coreT / 2 + chT / 2);
-        if (face === "bottom" || face === "top") {
-          const z = (a0 + a1) / 2 - W / 2;
-          const y = face === "bottom" ? -L / 2 : H + L / 2;
-          box(chT, L, a1 - a0, mat, x, y, z, portGroup);
-        } else {
-          const y = (a0 + a1) / 2;               // along the electrode height
-          const z = face === "left" ? -W / 2 - L / 2 : W / 2 + L / 2;
-          box(chT, a1 - a0, L, mat, x, y, z, portGroup);
-        }
+      if (face === "bottom" || face === "top") {
+        const z = (a0 + a1) / 2 - W / 2;
+        const y = face === "bottom" ? -L / 2 : H + L / 2;
+        box(depth, L, a1 - a0, mat, 0, y, z, portGroup);
+      } else {
+        const y = (a0 + a1) / 2;               // along the electrode height
+        const z = face === "left" ? -W / 2 - L / 2 : W / 2 + L / 2;
+        box(depth, a1 - a0, L, mat, 0, y, z, portGroup);
       }
     }
   };
@@ -587,12 +587,12 @@ function rebuildCell() {
   facePlaneC.visible = facePlaneA.visible = showMap;
   cellGroup.add(facePlaneC, facePlaneA);
 
-  // inlet (bottom, green) / outlet (top, red) bands
+  // NOTE: no full-width inlet/outlet BANDS here anymore. They spanned the whole
+  // bottom/top edge and made every plate look like it breathed through its
+  // entire base and top — but the pump feeds a channel-width PORT (serpentine:
+  // bottom-right in, top-right out). The real ports are drawn as nozzle tubes by
+  // buildPorts() at exactly the boundary cells the projection uses.
   const tot = coreT + 2 * chT + 2 * baseT;
-  const bandC = new THREE.MeshBasicMaterial({ color:0x37d39a });
-  const bandO = new THREE.MeshBasicMaterial({ color:0xff6b6b });
-  box(tot * 1.02, 0.8, W * 1.01, bandC, 0, 0.4, 0, cellGroup);
-  box(tot * 1.02, 0.8, W * 1.01, bandO, 0, H - 0.4, 0, cellGroup);
 
   // bounding edges
   const eg = new THREE.LineSegments(
@@ -643,7 +643,81 @@ let lastState = null;
 // without this the poll cadence shows as the "뚝뚝 끊김" stutter.
 const _col = new THREE.Color();
 let bubPrev = null, bubCur = null;
+
+// ---- position-continuity render pool -------------------------------------
+// The free-bubble parcels are a Monte-Carlo SAMPLE of the real swarm, re-drawn
+// as a fresh random subset (=> fresh ids) every poll; at full load ~all ids
+// change between snapshots. Matching by id then treated ~every bubble as a
+// newborn -> it grew 25%->100% then vanished -> the whole cloud pulsed and
+// flickered ("생겼다 없어졌다"). So the 3-D RENDER keeps a persistent pool and
+// matches each new snapshot bubble to the NEAREST pooled bubble of the same
+// class: the void/density field is stable, so the pool flows smoothly no matter
+// how the underlying ids churn. (bubCur.map above is still the raw sample, used
+// by the per-segment stats + click/slice panels.)
+let visPool = [];
+let bubGrid = null;
+function _lerpNow(v, now) {
+  const a = Math.min(1, Math.max(0, (now - v.t0) / Math.max(1, v.t1 - v.t0)));
+  return [v.sx + (v.tx - v.sx) * a, v.sy + (v.ty - v.sy) * a,
+          v.sz + (v.tz - v.sz) * a, v.sr + (v.tr - v.sr) * a];
+}
+function _updateVisPool(st, now) {
+  const b = st.bubbles || [], n = b.length / 7 | 0;
+  const dtSim = (bubCur && st.t > bubCur.simT) ? st.t - bubCur.simT : 0;
+  const nextT = now + ((bubCur && bubCur.t) ? Math.max(60, now - bubCur.t) : 110);
+  for (const v of visPool) {                       // freeze at current pose -> start
+    const s = _lerpNow(v, now);
+    v.sx = s[0]; v.sy = s[1]; v.sz = s[2]; v.sr = s[3]; v.claimed = false;
+  }
+  const CELL = 0.004;                              // 4 mm hash buckets (metres)
+  const hash = new Map();
+  for (let i = 0; i < visPool.length; i++) {
+    const v = visPool[i];
+    if (v.dying) continue;
+    const k = ((v.sx / CELL) | 0) + "," + ((v.sy / CELL) | 0) + "," + ((v.sz / CELL) | 0);
+    let a = hash.get(k); if (!a) { a = []; hash.set(k, a); } a.push(i);
+  }
+  const MATCH2 = 0.008 * 0.008;                    // nearest-match within 8 mm
+  for (let q = 0; q < n; q++) {
+    const o = q * 7;
+    const x = b[o], y = b[o + 1], z = b[o + 2], r = b[o + 3];
+    const side = b[o + 4], att = b[o + 5] > 0.5;
+    const cx = (x / CELL) | 0, cy = (y / CELL) | 0, cz = (z / CELL) | 0;
+    let best = -1, bd = MATCH2;
+    for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) for (let az = -1; az <= 1; az++) {
+      const a = hash.get((cx + ax) + "," + (cy + ay) + "," + (cz + az));
+      if (!a) continue;
+      for (const i of a) {
+        const v = visPool[i];
+        if (v.claimed || v.side !== side || v.att !== att) continue;
+        const dx = v.sx - x, dy = v.sy - y, dz = v.sz - z, d = dx * dx + dy * dy + dz * dz;
+        if (d < bd) { bd = d; best = i; }
+      }
+    }
+    if (best >= 0) {                               // continue an existing bubble
+      const v = visPool[best];
+      v.claimed = true; v.dying = false;
+      v.tx = x; v.ty = y; v.tz = z; v.tr = r; v.t0 = now; v.t1 = nextT;
+      if (dtSim > 0) {
+        const dx = x - v.sx, dy = y - v.sy, dz = z - v.sz;
+        v.spd = Math.sqrt(dx * dx + dy * dy + dz * dz) / dtSim;
+      }
+    } else if (visPool.length < MAXB) {            // a genuine newcomer: fade in
+      visPool.push({ sx: x, sy: y, sz: z, sr: r * 0.3, tx: x, ty: y, tz: z, tr: r,
+        side, att, key: (Math.random() * 4294967296) | 0, spd: 0,
+        t0: now, t1: nextT, dying: false, claimed: true });
+    }
+  }
+  for (const v of visPool) {                       // unmatched: shrink out over 1 poll
+    if (v.claimed || v.dying) continue;
+    v.dying = true; v.t0 = now; v.t1 = nextT; v.tr = 0;
+  }
+  visPool = visPool.filter(v => !(v.dying && now >= v.t1));
+  bubGrid = st.grid;
+}
+
 function ingestBubbles(st) {
+  const now = performance.now();
   const b = st.bubbles || [];
   const n = b.length / 7 | 0;
   const map = new Map();
@@ -653,7 +727,7 @@ function ingestBubbles(st) {
     map.set(b[o + 6], [b[o], b[o + 1], b[o + 2], b[o + 3], b[o + 4], b[o + 5], 0]);
   }
   // physical rise speed per bubble from the id-matched SIM-time displacement
-  // (this is the u_p the CFD papers colour by)
+  // (this is the u_p the CFD papers colour by; used by the stats panel)
   if (bubCur && bubCur.map && st.t > bubCur.simT) {
     const dt = st.t - bubCur.simT;
     for (const [id, cur] of map) {
@@ -664,31 +738,21 @@ function ingestBubbles(st) {
       }
     }
   }
+  _updateVisPool(st, now);            // feed the smooth render pool (uses prev bubCur)
   bubPrev = bubCur;
-  bubCur = { t: performance.now(), simT: st.t, map, grid: st.grid };
+  bubCur = { t: now, simT: st.t, map, grid: st.grid };
 }
 function renderBubbles(now) {
-  if (mode !== "live" || !bubCur) { if (mode !== "live") return; inst.count = 0; return; }
-  const g = bubCur.grid, gridLx = (g.nx * g.h_mm);   // mm
+  if (mode !== "live" || !bubGrid) { if (mode !== "live") return; inst.count = 0; return; }
+  const g = bubGrid, gridLx = (g.nx * g.h_mm);   // mm
   const Lm = [g.nx * g.h_mm, g.ny * g.h_mm, g.nz * g.h_mm].map(v => v / 1000);
   const cut = slabOnly ? slicePos * Lm[sliceAxis] : 0;
   const slabW = 0.10 * Lm[sliceAxis];
-  const span = bubPrev ? Math.max(40, bubCur.t - bubPrev.t) : 120;
-  const alpha = Math.min(1, Math.max(0, (now - bubCur.t) / span));
   let w = 0;
-  for (const [id, cur] of bubCur.map) {
-    const side = cur[4], attached = cur[5] > 0.5;
-    if (side < 0.5 ? !layers.her : !layers.oer) continue;
-    const prev = bubPrev ? bubPrev.map.get(id) : undefined;
-    let px, py, pz, pr;
-    if (prev) {                                     // lerp prev -> cur
-      px = prev[0] + (cur[0] - prev[0]) * alpha;
-      py = prev[1] + (cur[1] - prev[1]) * alpha;
-      pz = prev[2] + (cur[2] - prev[2]) * alpha;
-      pr = prev[3] + (cur[3] - prev[3]) * alpha;
-    } else {                                        // newborn: grow in smoothly
-      px = cur[0]; py = cur[1]; pz = cur[2]; pr = cur[3] * Math.max(0.25, alpha);
-    }
+  for (const v of visPool) {
+    if (v.side < 0.5 ? !layers.her : !layers.oer) continue;
+    const s = _lerpNow(v, now);                     // smooth pose from the pool
+    const px = s[0], py = s[1], pz = s[2], pr = s[3];
     if (slabOnly) {
       const pa = [px, py, pz][sliceAxis];
       if (Math.abs(pa - cut) > slabW) continue;
@@ -703,14 +767,14 @@ function renderBubbles(now) {
     _m.compose(_p, _q, _s); inst.setMatrixAt(w, _m);
     if (P.bcol === "vel") {
       // CFD-paper style: colour by rise speed u_p (attached ~0 -> blue)
-      const [cr, cg, cb] = turbo(Math.min(1, (cur[6] || 0) / VEL_SCALE));
+      const [cr, cg, cb] = turbo(Math.min(1, (v.spd || 0) / VEL_SCALE));
       _col.setRGB(cr / 255, cg / 255, cb / 255);
     } else {
-      // id-stable shade variation so bubbles don't read as clones; attached
+      // stable shade variation so bubbles don't read as clones; attached
       // (still growing on the wall) a touch darker than the risers
-      const base = side < 0.5 ? C_H2 : C_O2;
-      const jitter = 0.86 + 0.14 * (((id * 2654435761) >>> 8) & 255) / 255;
-      _col.copy(base).multiplyScalar(attached ? jitter * 0.82 : jitter);
+      const base = v.side < 0.5 ? C_H2 : C_O2;
+      const jitter = 0.86 + 0.14 * ((v.key >>> 8) & 255) / 255;
+      _col.copy(base).multiplyScalar(v.att ? jitter * 0.82 : jitter);
     }
     inst.setColorAt(w, _col);
     w++;
@@ -760,146 +824,37 @@ function updateFaces(st) {
     "j " + c.j_spread.toFixed(1) + "× / " + a.j_spread.toFixed(1) + "×";
 }
 
-// ==================== Track B playback (pore-scale scaffold) ===============
-const playGroup = new THREE.Group();
-playGroup.visible = false;
-scene.add(playGroup);
-let scaffoldMesh = null, gasMesh = null, playScale = 40, playN = 0;
-let playFrames = 0, playRun = null;
-let scaffoldBits = null, gasBits = null;     // Uint8Array n^3, for the 2-D slice
-
-function b64Bits(b64, n) {
-  const bin = atob(b64), bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const bits = new Uint8Array(n);            // numpy packbits is MSB-first
-  for (let i = 0; i < n; i++) bits[i] = (bytes[i >> 3] >> (7 - (i & 7))) & 1;
-  return bits;
-}
-
-// build an InstancedMesh of cubes at every set voxel of a (n,n,n) C-order mask
-function voxelMesh(bits, n, size, mat) {
-  let count = 0; for (let i = 0; i < bits.length; i++) count += bits[i];
-  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(size, size, size), mat, count);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1);
-  const half = (n * size) / 2;
-  let q2 = 0;
-  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) for (let k = 0; k < n; k++) {
-    if (!bits[i * n * n + j * n + k]) continue;
-    m.compose(new THREE.Vector3(i * size - half, j * size - half, k * size - half), q, s);
-    mesh.setMatrixAt(q2++, m);
-  }
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.count = count;
-  return mesh;
-}
-
-async function loadScaffold(run) {
-  const info = document.getElementById("runInfo");
-  info.textContent = "불러오는 중…";
-  try {
-    const sc = await (await fetch("/api3d/scaffold?run=" + encodeURIComponent(run))).json();
-    if (sc.error) { info.textContent = "오류: " + sc.error; return; }
-    playRun = run; playN = sc.shape[0];
-    const size = playScale / playN;
-    const bits = b64Bits(sc.solid_b64, playN * playN * playN);
-    scaffoldBits = bits; gasBits = null;         // keep for the 2-D slice viewer
-    if (scaffoldMesh) { playGroup.remove(scaffoldMesh); scaffoldMesh.geometry.dispose(); }
-    if (gasMesh) { playGroup.remove(gasMesh); gasMesh.geometry.dispose(); gasMesh = null; }
-    const metalCol = { Ni: 0xb8c4d0, SS: 0x9aa4ad, C: 0x3a3f46 }[sc.meta.metal] || 0xaab4c0;
-    const mat = new THREE.MeshStandardMaterial({ color: metalCol, metalness: 0.6, roughness: 0.5 });
-    scaffoldMesh = voxelMesh(bits, playN, size, mat);
-    playGroup.add(scaffoldMesh);
-    // fit camera to the scaffold cube
-    const R = playScale;
-    camera.position.set(R * 0.95, R * 0.6, R * 1.05);
-    controls.target.set(0, 0, 0); camera.lookAt(controls.target); controls.update();
-    const m = sc.meta;
-    info.innerHTML = `<b>${run}</b><br>${m.substrate} · ${playN}³ · ε=${(m.eps_achieved ?? m.porosity ?? 0).toFixed(2)}`
-      + ` · ${scaffoldMesh.count.toLocaleString()} voxels`
-      + `<br>비표면적 ${(m.specific_area ?? 0).toLocaleString()} /m · 관통 ${m.percolates_y ? "○" : "×"}`;
-    // set up the timeline scrubber from the manifest frame count
-    playFrames = (runsById[run] && runsById[run].frames) || 0;
-    const box = document.getElementById("scrubBox");
-    const scrub = document.getElementById("scrub");
-    box.style.display = playFrames > 0 ? "" : "none";
-    scrub.max = playFrames; scrub.value = 0;
-    document.getElementById("frLbl").textContent = `0 / ${playFrames}`;
-    playing = false; document.getElementById("bPlay").textContent = "▶ 재생";
-    if (playFrames > 0) showFrame(1);
-  } catch (e) { info.textContent = "로드 실패: " + e; }
-}
-
-// ---- playback frames: gas voxels grow inside the scaffold ----
-let gasMat = new THREE.MeshPhysicalMaterial({ color: 0x7fdcff, transparent: true,
-  opacity: 0.72, roughness: 0.1, metalness: 0, clearcoat: 1, envMapIntensity: 1.1 });
-let curFrame = 0, playing = false, frameBusy = false;
-
-async function showFrame(i) {
-  if (!playRun || i < 1 || i > playFrames || frameBusy) return;
-  frameBusy = true;
-  try {
-    const fr = await (await fetch(`/api3d/frame?run=${encodeURIComponent(playRun)}&i=${i}`)).json();
-    if (fr.error) return;
-    const size = playScale / playN;
-    const bits = b64Bits(fr.gas_b64, playN * playN * playN);
-    gasBits = bits;                                          // keep for the slice viewer
-    if (gasMesh) { playGroup.remove(gasMesh); gasMesh.geometry.dispose(); }
-    gasMesh = voxelMesh(bits, playN, size * 1.02, gasMat);   // slightly larger -> pop out
-    playGroup.add(gasMesh);
-    curFrame = i;
-    document.getElementById("scrub").value = i;
-    document.getElementById("frLbl").textContent = `${i} / ${playFrames}`;
-    const s = fr.scalars;
-    document.getElementById("frScal").innerHTML =
-      `t=${(s.t ?? 0).toFixed(3)}s · θ=${(s.coverage ?? 0).toFixed(3)} · holdup=${(s.holdup ?? 0).toFixed(4)}`
-      + `<br>발생 ${(s.produced ?? 0).toExponential(2)} · 잔류 ${(s.resident ?? 0).toExponential(2)} · 배출 ${(s.vented ?? 0).toExponential(2)} m³`;
-    drawSlice();                                   // update the 2-D cross-section
-  } finally { frameBusy = false; }
-}
-
-document.getElementById("scrub").addEventListener("input", e => {
-  playing = false; document.getElementById("bPlay").textContent = "▶ 재생";
-  showFrame(+e.target.value || 1);
-});
-document.getElementById("bPlay").onclick = e => {
-  playing = !playing; e.target.textContent = playing ? "⏸ 정지" : "▶ 재생";
-  if (playing && curFrame >= playFrames) curFrame = 0;
-  playLoop();
-};
-async function playLoop() {
-  if (!playing) return;
-  let next = curFrame + 1;
-  if (next > playFrames) { playing = false; document.getElementById("bPlay").textContent = "▶ 재생"; return; }
-  await showFrame(next);
-  setTimeout(playLoop, +document.getElementById("pbMs").value || 150);
-}
-document.getElementById("pbMs").addEventListener("input", e => {
-  document.getElementById("pbLbl").textContent = e.target.value + " ms";
-});
-
-// ============================ modes ========================================
-// `mode` drives rendering/polling (live | play). The EXPERIMENT tab is a
-// panel over the LIVE mode: the 3-D cell keeps running behind its curves.
+// ============================ modes / tabs =================================
+// (Track B pore-playback UI removed 2026-07-14 — the batch runner + server
+// endpoints + bubblesim3d pore modules stay; only this page's tab is gone.)
+// Tabs: 2D(page link) | 3D(live) | mesh experiment | user-saved experiments.
+// `mode` is always "live" — the 3-D cell keeps running behind every panel.
 let mode = "live", panelMode = "live";
+let activeUserExp = null;               // the saved experiment whose tab is on
 const modeSeg = document.getElementById("modeSeg");
-modeSeg.querySelectorAll("button").forEach(b => b.onclick = () => {
-  modeSeg.querySelectorAll("button").forEach(x => x.classList.remove("on"));
-  b.classList.add("on"); panelMode = b.dataset.m;
-  mode = panelMode === "play" ? "play" : "live";
-  document.getElementById("liveCtls").style.display = panelMode === "live" ? "" : "none";
-  document.getElementById("playCtls").style.display = panelMode === "play" ? "" : "none";
-  document.getElementById("expCtls").style.display = panelMode === "exp" ? "" : "none";
-  document.getElementById("plateEd").style.display = panelMode === "live" ? "" : "none";
-  const live = mode === "live";
-  cellGroup.visible = live; inst.visible = live; playGroup.visible = !live;
-  if (!live) loadRuns();
-  else {
-    playing = false;
-    document.getElementById("scrubBox").style.display = "none";
-  }
-  if (panelMode === "exp") expEnter();
-  setView(viewMode);                              // re-frame the active group
+
+function setPanel(m, expId) {
+  panelMode = m; activeUserExp = expId || null;
+  modeSeg.querySelectorAll("button").forEach(x =>
+    x.classList.toggle("on", x.dataset.m === m && (m !== "user" || x.dataset.exp === expId)));
+  // live controls stay visible on user-experiment tabs so the saved condition
+  // can be adjusted right there (the ask: "거기서 조절도 하고")
+  const showLive = m === "live" || m === "user";
+  document.getElementById("liveCtls").style.display = showLive ? "" : "none";
+  document.getElementById("plateEd").style.display = showLive ? "" : "none";
+  document.getElementById("expCtls").style.display = m === "exp" ? "" : "none";
+  document.getElementById("userExpBox").style.display = m === "user" ? "" : "none";
+  document.getElementById("expSaveBox").style.display = "none";
+  if (m === "exp") expEnter();
+  if (m === "user") showUserExp(expId);
+  setView(viewMode);
   drawSlice(); updateClip();
+}
+modeSeg.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b || b.id === "expAdd") return;
+  if (b.dataset.m === "2d") { location.href = "/2d"; return; }
+  setPanel(b.dataset.m, b.dataset.exp);
 });
 
 // ==================== experiment tab (NF + PP mesh) ========================
@@ -1067,61 +1022,96 @@ function expReadout(res) {
   el.innerHTML = html;
 }
 
-const runsById = {};
-async function loadRuns() {
-  const el = document.getElementById("runbox");
-  try {
-    const r = await (await fetch("/api3d/runs")).json();
-    for (const k in runsById) delete runsById[k];
-    (r.runs || []).forEach(x => runsById[x.run] = x);
-    if (!r.runs || !r.runs.length) {
-      el.innerHTML = `<div class="empty">아직 배치 결과가 없습니다.<br>runner로 계산 후 여기서 재생됩니다:<br>
-        <code>python -m bubblesim3d.runner --substrate ni_foam --grid 64</code></div>`;
-      return;
-    }
-    el.innerHTML = r.runs.map(x => {
-      const running = x.status && x.status !== "done";
-      const badge = running ? ` <span style="color:var(--gold)">● 계산 중</span>` : "";
-      return `<div class="run" data-run="${x.run}" data-done="${!running}"><b>${x.run}</b>${badge}
-       <div class="meta">${x.substrate} · ${x.grid}³ · ${x.frames} 프레임</div></div>`;
-    }).join("");
-    el.querySelectorAll(".run").forEach(d => d.onclick = () => {
-      if (d.dataset.done === "true") loadScaffold(d.dataset.run);
-    });
-  } catch { el.innerHTML = `<div class="empty">서버 연결 실패</div>`; }
+// ==================== user-saved experiment tabs ===========================
+// Each saved experiment = a full designer snapshot (flow field incl. any
+// hand-drawn plate mask, dimensions, operating point, catalysts). Stored
+// server-side in experiments.json so they survive browser/PC changes and show
+// up on the cloud deploy too. Tabs are rebuilt from the list; clicking one
+// pushes its designer to /api3d/op (geometry keys rebuild the domain) and the
+// normal live controls stay up for further adjustment.
+let userExps = [];
+function renderExpTabs() {
+  modeSeg.querySelectorAll("button[data-m='user']").forEach(b => b.remove());
+  const addBtn = document.getElementById("expAdd");
+  for (const ex of userExps) {
+    const b = document.createElement("button");
+    b.dataset.m = "user"; b.dataset.exp = ex.id;
+    b.textContent = "🔬 " + ex.name;
+    b.title = (ex.note ? ex.note + " · " : "") + (ex.created || "");
+    if (panelMode === "user" && activeUserExp === ex.id) b.classList.add("on");
+    modeSeg.insertBefore(b, addBtn);
+  }
 }
-document.getElementById("bRefresh").onclick = loadRuns;
-
-// launch a Track B batch run on the server, then poll until it appears/completes
-let runPoll = null;
-document.getElementById("bRun").onclick = async () => {
-  const spec = {
-    substrate: document.getElementById("bxSub").value,
-    grid: +document.getElementById("bxGrid").value,
-    j: +document.getElementById("bxJ").value,
-    frames: +document.getElementById("bxFr").value,
-  };
-  const status = document.getElementById("runStatus");
-  status.textContent = "계산 시작 중…";
+async function loadExperiments() {
   try {
-    const r = await (await fetch("/api3d/run", { method: "POST",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) })).json();
-    if (r.error) { status.textContent = "오류: " + r.error; return; }
-    status.innerHTML = `<b>${r.run}</b> 계산 중… (오프라인, ${spec.grid}³ × ${spec.frames}프레임)`;
-    if (runPoll) clearInterval(runPoll);
-    runPoll = setInterval(async () => {
-      await loadRuns();
-      const info = runsById[r.run];
-      if (info && info.status === "done") {
-        clearInterval(runPoll); runPoll = null;
-        status.innerHTML = `<b>${r.run}</b> 완료 ✓ — 목록에서 클릭해 재생하세요.`;
-      } else if (info && info.status === "error") {
-        clearInterval(runPoll); runPoll = null;
-        status.textContent = "계산 실패: " + (info.error || "");
-      }
-    }, 2000);
-  } catch (e) { status.textContent = "요청 실패: " + e; }
+    const r = await (await fetch("/api3d/experiments")).json();
+    userExps = r.list || [];
+  } catch { userExps = []; }
+  renderExpTabs();
+}
+function currentDesigner() {
+  // the server's designer dict from the last poll = exactly what is running
+  return lastState && lastState.designer ? { ...lastState.designer } : { ...P };
+}
+async function expApi(body) {
+  const r = await (await fetch("/api3d/experiments", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+  if (r.error) throw new Error(r.error);
+  userExps = r.list || userExps;
+  renderExpTabs();
+  return r;
+}
+function showUserExp(id) {
+  const ex = userExps.find(x => x.id === id);
+  if (!ex) { setPanel("live"); return; }
+  document.getElementById("ueTitle").textContent = "🔬 " + ex.name;
+  document.getElementById("ueNote").textContent =
+    (ex.note ? ex.note + " — " : "") + "저장: " + (ex.created || "?") +
+    " · 아래 컨트롤로 계속 조절할 수 있어요 (저장본은 덮어쓰기 전까지 그대로).";
+  const stat = document.getElementById("ueStat");
+  stat.style.display = ""; stat.textContent = "저장된 조건 적용 중… (격자 재구축, 몇 초)";
+  // one POST with the whole designer: geometry keys rebuild the voxel domain
+  fetch("/api3d/op", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(ex.designer) })
+    .then(() => { stat.textContent = "적용됨 ✓ — 이 탭의 조건으로 시뮬레이션이 돌고 있습니다."; })
+    .catch(e => { stat.textContent = "적용 실패: " + e; });
+}
+// save form
+document.getElementById("expAdd").onclick = () => {
+  const box = document.getElementById("expSaveBox");
+  box.style.display = box.style.display === "none" ? "" : "none";
+  if (box.style.display === "") document.getElementById("expName").focus();
 };
+document.getElementById("expSaveCancel").onclick = () =>
+  document.getElementById("expSaveBox").style.display = "none";
+document.getElementById("expSaveGo").onclick = async () => {
+  const name = document.getElementById("expName").value.trim();
+  if (!name) { document.getElementById("expName").focus(); return; }
+  const note = document.getElementById("expNote").value.trim();
+  try {
+    const r = await expApi({ action: "save", name, note, designer: currentDesigner() });
+    document.getElementById("expName").value = ""; document.getElementById("expNote").value = "";
+    setPanel("user", r.id);                       // jump straight into the new tab
+  } catch (e) { alert("저장 실패: " + e.message); }
+};
+document.getElementById("ueOverwrite").onclick = async () => {
+  if (!activeUserExp) return;
+  const stat = document.getElementById("ueStat");
+  try {
+    await expApi({ action: "update", id: activeUserExp, designer: currentDesigner() });
+    stat.style.display = ""; stat.textContent = "덮어씀 ✓ — 지금 조건이 이 실험의 저장본이 됐습니다.";
+  } catch (e) { stat.textContent = "덮어쓰기 실패: " + e.message; }
+};
+document.getElementById("ueDelete").onclick = async () => {
+  if (!activeUserExp) return;
+  const ex = userExps.find(x => x.id === activeUserExp);
+  if (!confirm(`실험 "${ex ? ex.name : ""}"을(를) 삭제할까요?`)) return;
+  try {
+    await expApi({ action: "delete", id: activeUserExp });
+    setPanel("live");
+  } catch (e) { alert("삭제 실패: " + e.message); }
+};
+loadExperiments();
 
 // ============================ buttons ======================================
 let paused = false;
@@ -1196,7 +1186,7 @@ const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e9);
 const clipOn = document.getElementById("clipOn");
 
 function updateClip() {
-  const grp = mode === "play" ? playGroup : cellGroup;
+  const grp = cellGroup;
   if (!clipOn.checked || !grp.visible) { renderer.clippingPlanes = []; return; }
   const bb = new THREE.Box3().setFromObject(grp);
   const lo = bb.min.getComponent(sliceAxis), hi = bb.max.getComponent(sliceAxis);
@@ -1213,8 +1203,7 @@ function drawSlice() {
   const W = cv.width, H = cv.height;
   ctx.fillStyle = "#f7f9fc"; ctx.fillRect(0, 0, W, H);
   const lbl = document.getElementById("sliceLbl");
-  if (mode === "play") drawPoreSlice(ctx, W, H, lbl);
-  else if (sliceModeVal === "eps") drawHoldupSlice(ctx, W, H, lbl);
+  if (sliceModeVal === "eps") drawHoldupSlice(ctx, W, H, lbl);
   else drawCellSlice(ctx, W, H, lbl);
 }
 
@@ -1342,29 +1331,6 @@ function drawProfile() {
   }
 }
 
-// pore scaffold cross-section: solid=grey, gas=cyan, pore=dark
-function drawPoreSlice(ctx, W, H, lbl) {
-  if (!scaffoldBits || !playN) { lbl.textContent = "재생 실행을 선택하세요"; return; }
-  const n = playN, a = sliceAxis, idx = Math.min(n - 1, Math.round(slicePos * (n - 1)));
-  const axes = [0, 1, 2].filter(x => x !== a);
-  const cell = Math.min(W, H) / n, cs = Math.ceil(cell);
-  const at = (i, j, k) => i * n * n + j * n + k;
-  const coord = [0, 0, 0]; coord[a] = idx;
-  let solidN = 0, gasN = 0;
-  for (let u = 0; u < n; u++) for (let v = 0; v < n; v++) {
-    coord[axes[0]] = u; coord[axes[1]] = v;
-    const f = at(coord[0], coord[1], coord[2]);
-    let col;
-    if (gasBits && gasBits[f]) { col = "#7fdcff"; gasN++; }
-    else if (scaffoldBits[f]) { col = "#5a6675"; solidN++; }
-    else col = "#0e1620";
-    ctx.fillStyle = col;
-    ctx.fillRect(u * cell, (n - 1 - v) * cell, cs, cs);   // flip v so up = +axis
-  }
-  lbl.innerHTML = `${AXNAME[a]} 단면 @ ${(slicePos * 100) | 0}% (복셀 ${idx}/${n - 1})`
-    + ` · <span style="color:#5a6675">고체 ${solidN}</span> · <span style="color:#7fdcff">가스 ${gasN}</span>`;
-}
-
 // live cell cross-section: bubbles within a thin slab at the cut plane
 function drawCellSlice(ctx, W, H, lbl) {
   const st = lastState;
@@ -1427,7 +1393,7 @@ drawSlice();                                    // initial paint (before first p
 // so bubbles behind them show through. "얇은 단면만" shows just one z-layer.
 let viewMode = "orbit", slabOnly = false;
 
-function targetGroup() { return mode === "play" ? playGroup : cellGroup; }
+function targetGroup() { return cellGroup; }
 
 function setView(v) {
   viewMode = v;
@@ -1440,9 +1406,8 @@ function setView(v) {
   if (v === "orbit") {
     activeCam = camera;
     controls.object = camera;
-    camera.position.copy(mode === "play" ? new THREE.Vector3(c.x + orthoHalf, c.y + orthoHalf * 0.6, c.z + orthoHalf * 1.1) : camHome);
-    controls.target.copy(mode === "play" ? c
-      : new THREE.Vector3(0, gridInfo.ny * gridInfo.h / 2, 0));
+    camera.position.copy(camHome);
+    controls.target.copy(new THREE.Vector3(0, gridInfo.ny * gridInfo.h / 2, 0));
   } else {
     // frame the two axes in view; place the ortho cam far along the third
     let half, dir;
@@ -1569,6 +1534,33 @@ window.__dbg3d = () => {
 };
 window.__clipCount = () => renderer.clippingPlanes.length;
 window.__renderNow = () => { renderBubbles(performance.now()); return inst.count; };
+window.__ribInfo = () => {
+  const info = sub => {
+    if (!sub) return null;
+    const boxes = sub.children.filter(o => o.isMesh);
+    const edges = sub.children.filter(o => o.isLineSegments);
+    return { boxes: boxes.length, edges: edges.length,
+             twoTone: boxes.length ? Array.isArray(boxes[0].material) : false,
+             opaque: boxes.length ? !boxes[0].material[0].transparent : null,
+             visible: sub.visible && sub.parent.visible };
+  };
+  return { cathode: info(ribSubC), anode: info(ribSubA) };
+};
+window.__visInfo = () => {
+  const now = performance.now();
+  let alive = 0, dying = 0, att = 0;
+  const disp = [];
+  for (const v of visPool) {
+    if (v.dying) dying++; else alive++;
+    if (v.att) att++;
+    const s = _lerpNow(v, now);
+    disp.push(Math.hypot(s[0] - v.tx, s[1] - v.ty, s[2] - v.tz) * 1000);  // mm to target
+  }
+  disp.sort((a, b) => a - b);
+  return { pool: visPool.length, alive, dying, att,
+           medDistToTarget_mm: disp.length ? disp[disp.length >> 1] : 0,
+           rawBub: bubCur ? bubCur.map.size : 0 };
+};
 window.__portInfo = () => {
   if (!portGroup) return null;
   const bb = new THREE.Box3();

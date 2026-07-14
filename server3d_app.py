@@ -302,6 +302,66 @@ JOBS = {}                       # name -> {status, progress, ...}
 JOBS_LOCK = threading.Lock()
 
 
+# ----------------------- user-saved experiments (designer snapshots) --------
+# Each experiment = a full designer dict (flow field incl. hand-drawn mask,
+# dimensions, operating point, catalysts) + name/note. Persisted to a JSON file
+# next to the server so saved conditions survive restarts and travel with the
+# cloud deploy. The UI shows one tab per experiment.
+EXP_FILE = ROOT / "experiments.json"
+EXP_LOCK = threading.Lock()
+
+
+def _exp_load() -> list:
+    try:
+        data = json.loads(EXP_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _exp_save(lst: list):
+    EXP_FILE.write_text(json.dumps(lst, ensure_ascii=False, indent=1),
+                        encoding="utf-8")
+
+
+def experiments_api(data: dict) -> dict:
+    """save / update / delete a named experiment; always returns the list."""
+    action = str(data.get("action", ""))
+    with EXP_LOCK:
+        lst = _exp_load()
+        if action == "save":
+            name = str(data.get("name", "")).strip()
+            if not name:
+                return {"error": "name required"}
+            ex = {"id": "exp%d" % int(time.time() * 1000),
+                  "name": name[:60],
+                  "note": str(data.get("note", ""))[:300],
+                  "created": time.strftime("%Y-%m-%d %H:%M"),
+                  "designer": dict(data.get("designer") or {})}
+            lst.append(ex)
+            _exp_save(lst)
+            return {"ok": 1, "id": ex["id"], "list": lst}
+        if action == "update":
+            for ex in lst:
+                if ex["id"] == data.get("id"):
+                    if "name" in data and str(data["name"]).strip():
+                        ex["name"] = str(data["name"]).strip()[:60]
+                    if "note" in data:
+                        ex["note"] = str(data["note"])[:300]
+                    if "designer" in data:
+                        ex["designer"] = dict(data["designer"] or {})
+                    _exp_save(lst)
+                    return {"ok": 1, "id": ex["id"], "list": lst}
+            return {"error": "experiment not found"}
+        if action == "delete":
+            kept = [ex for ex in lst if ex["id"] != data.get("id")]
+            if len(kept) == len(lst):
+                return {"error": "experiment not found"}
+            _exp_save(kept)
+            return {"ok": 1, "list": kept}
+    return {"error": "unknown action"}
+
+
 def start_batch(spec: dict):
     """Launch a Track B batch run in a daemon thread. Returns the run name."""
     from bubblesim3d.params3d import Pore3DConfig
@@ -379,6 +439,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(LIVE.snapshot(faces=q.get("faces") == "1"))
         if p == "/api3d/runs":
             return self._json({"runs": list_runs()})
+        if p == "/api3d/experiments":
+            with EXP_LOCK:
+                return self._json({"list": _exp_load()})
         if p == "/api3d/meshes":
             with LIVE.lock:
                 dsn = dict(LIVE.designer)
@@ -440,6 +503,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api3d/op":
             LIVE.update(data)
             return self._json({"ok": 1})
+        if self.path == "/api3d/experiments":
+            res = experiments_api(data)
+            return self._json(res, 400 if "error" in res else 200)
         if self.path == "/api3d/sweep":
             with LIVE.lock:
                 dsn = dict(LIVE.designer)

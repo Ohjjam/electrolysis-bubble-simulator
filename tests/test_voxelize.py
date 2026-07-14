@@ -229,11 +229,11 @@ def test_inlet_port_follows_its_position_and_width():
 
 
 def test_outlet_port_closes_the_rest_of_the_top():
-    """out_w == 1 vents the whole top (the original behaviour); anything
-    narrower is a real port and the rest of the top row becomes plate."""
+    """out_w == 1 vents the whole top; a value in (0,1) is an explicit port and
+    the rest of the top row becomes plate; out_w == 0 is the AUTO exit port."""
     from bubblesim3d.geometry import outlet_mask
     g = _grid()
-    full = Cell3DConfig(ff="serp", n_ch=6)
+    full = Cell3DConfig(ff="serp", n_ch=6, out_w=1.0)
     land = ~voxelize(full, g)[1]
     assert outlet_mask(full, g, land).all()
 
@@ -244,6 +244,23 @@ def test_outlet_port_closes_the_rest_of_the_top():
     # a port can never close completely: an incompressible inflow needs an exit
     shut = Cell3DConfig(ff="serp", n_ch=6, out_w=0.0, out_z=0.5)
     assert outlet_mask(shut, g, land).sum() >= 1
+
+
+def test_serpentine_auto_outlet_is_a_port_at_the_snake_end():
+    """out_w == 0 (the default) puts a channel-width EXIT port at the last
+    pass's far end, mirroring the inlet — not a whole-top vent. The inlet sits
+    at the z-high end of the first pass; the exit alternates with n's parity."""
+    from bubblesim3d.geometry import inlet_mask, outlet_mask
+    g = _grid()
+    for n, exit_high in ((6, True), (7, False), (8, True), (9, False)):
+        cfg = Cell3DConfig(ff="serp", n_ch=n, out_w=0.0)
+        land = ~voxelize(cfg, g)[1]
+        ins = np.nonzero(inlet_mask(cfg, g, land))[0]
+        outs = np.nonzero(outlet_mask(cfg, g, land))[0]
+        assert 1 <= len(outs) <= 0.25 * g.nz, n        # a port, not the whole face
+        assert ins.mean() > 0.75 * g.nz, n             # inlet at the z-high end
+        end_high = bool(outs.mean() > 0.5 * g.nz)
+        assert end_high == exit_high, (n, outs.tolist())   # exit end tracks parity
 
 
 def test_custom_mask_becomes_the_flow_field():
