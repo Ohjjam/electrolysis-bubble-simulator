@@ -58,6 +58,9 @@ class LiveSim3D:
     BLOCK = 0.012            # wall-clock chunk per loop [s]: small -> lock freed
                              # often (snapshots stay fresh) + frequent frames
     PROJ_ITERS = 80       # CAP; CellSim3D.PROJ_TOL stops the solve early (~52 avg)
+    IDLE_PAUSE = 45.0        # [s] no /api3d/state poll for this long -> stop
+                             # stepping so an unwatched sim doesn't peg a CPU
+                             # core (a viewer's poll wakes it within one loop)
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -71,6 +74,8 @@ class LiveSim3D:
         self.params = Params(fritz_scale=0.08)
         self.speed = 1.0
         self.paused = False
+        self.last_poll = 0.0     # perf_counter of last /api3d/state poll
+                                 # (0 -> starts idle; no CPU until a viewer)
         self.speed_actual = 0.0
         self._carry = 0.0        # fractional sim steps carried between blocks
         self._build()
@@ -141,9 +146,13 @@ class LiveSim3D:
     def run_forever(self):
         while True:
             start = time.perf_counter()
-            if self.paused:
+            # auto-pause when unwatched: if no client polled /api3d/state within
+            # IDLE_PAUSE seconds, skip stepping (frees the CPU; the next poll
+            # wakes it within one loop). Manual pause is still honored too.
+            idle = (start - self.last_poll) > self.IDLE_PAUSE
+            if self.paused or idle:
                 self.speed_actual *= 0.8
-                time.sleep(0.06)
+                time.sleep(0.1 if idle else 0.06)
                 continue
             adv = self._advance(self.BLOCK)
             elapsed = time.perf_counter() - start
@@ -365,6 +374,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "forbidden"}, 403)
             return self._file(target)
         if p == "/api3d/state":
+            LIVE.last_poll = time.perf_counter()   # a viewer is here -> keep running
             q = self._query(self.path)
             return self._json(LIVE.snapshot(faces=q.get("faces") == "1"))
         if p == "/api3d/runs":

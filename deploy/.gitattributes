@@ -1,0 +1,3 @@
+# Server-side scripts must stay LF (they run on Linux) even though the repo is
+# edited on Windows. Without this, CRLF endings break the shebang / bash.
+* text eol=lf

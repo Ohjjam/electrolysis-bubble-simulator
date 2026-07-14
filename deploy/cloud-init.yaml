@@ -1,0 +1,14 @@
+#cloud-config
+# ===========================================================================
+# PASTE THIS into Hetzner's "Cloud config" (user-data) box when you create the
+# server. On first boot it installs git, clones this repo, and runs the full
+# setup script (deploy/setup.sh) -> Python + numpy + the app + HTTPS, all
+# automatic. No SSH or Linux commands needed from you.
+#
+# After ~3-5 min the site is live at  https://<server-ip-with-dashes>.sslip.io
+# (setup writes the exact address to /opt/bubblesim/deploy/PUBLIC_HOST.txt and
+#  to /var/log/bubblesim-setup.log).
+# ===========================================================================
+package_update: true
+runcmd:
+  - [ bash, -c, "apt-get update -y && apt-get install -y git && git clone --depth 1 --branch main https://github.com/ate0339-rgb/electrolysis-bubble-simulator.git /opt/bubblesim && bash /opt/bubblesim/deploy/setup.sh 2>&1 | tee /var/log/bubblesim-setup.log" ]
