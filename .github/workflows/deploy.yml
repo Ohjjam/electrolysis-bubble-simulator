@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Build the Pyodide web app
-        run: python build_web.py
+        run: python "2세대 라이브앱/build_web.py"
       - name: Assemble site (app at root, /docs/ -> redirect)
         run: |
           mkdir -p _site/docs

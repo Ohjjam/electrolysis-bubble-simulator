@@ -6,11 +6,15 @@ Showcases the two-electrode Butler-Volmer fidelity: overpotential decomposition,
 the electrode-surface local pH split, membrane/contact resistance, the thermal
 feedback (T as a state), and a lumped-vs-two_electrode polarization comparison.
 """
+import os
 import sys
 try:
     sys.stdout.reconfigure(encoding="utf-8")   # robust on Windows consoles
 except Exception:
     pass
+
+# this file lives in a subfolder; the bubblesim package is at the project root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bubblesim import Operating, Params, Simulator
 from bubblesim.kernel.context import build_context

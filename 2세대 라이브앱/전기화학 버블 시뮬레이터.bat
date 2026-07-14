@@ -2,33 +2,34 @@
 setlocal
 title Bubble Simulator (HER/OER electrolysis)
 
-rem --- locate the project next to this .bat. The parent folder may be non-ASCII
-rem     (Korean), so we derive its real path from the filesystem instead of typing it.
-set "PROJ="
+rem --- this .bat lives in the gen-2 folder ("2...") inside the project root.
+rem     Sibling folders may have non-ASCII (Korean) names, so we resolve them
+rem     from the filesystem with wildcards instead of typing them.
 set "HERE=%~dp0"
 set "HERE=%HERE:~0,-1%"
-if exist "%HERE%\server_app.py" set "PROJ=%HERE%"
-if not defined PROJ for /d %%D in ("%~dp0_*") do if exist "%%D\Bubble simulator\server_app.py" set "PROJ=%%D\Bubble simulator"
-if not defined PROJ if exist "%~dp0Bubble simulator\server_app.py" set "PROJ=%~dp0Bubble simulator"
-if not defined PROJ goto noproj
+if not exist "%HERE%\server_app.py" goto noproj
+for %%I in ("%HERE%\..") do set "ROOT=%%~fI"
+set "GEN1="
+for /d %%D in ("%ROOT%\1*") do set "GEN1=%%D"
 
 rem --- Python 3.14 (the one with the dependencies); fall back to PATH python ---
 set "PYEXE=%LOCALAPPDATA%\Python\pythoncore-3.14-64\python.exe"
 if not exist "%PYEXE%" set "PYEXE=python"
 
-cd /d "%PROJ%"
+rem run from the project root so the interactive console can import bubblesim
+cd /d "%ROOT%"
 
 :menu
 cls
 echo ============================================================
 echo    Bubble Simulator  -  HER / OER water electrolysis
 echo ============================================================
-echo    Project: %PROJ%
+echo    Project: %ROOT%
 echo    Python : %PYEXE%
 echo ------------------------------------------------------------
-echo    [1]  LIVE MULTIPHYSICS APP  (NEW - Python kernel + browser)
+echo    [1]  LIVE MULTIPHYSICS APP  (gen 2 - Python kernel + browser)
 echo         sliders: catalyst j0 / ECSA / membrane R / thermal / pH ...
-echo    [2]  Classic web app        (legacy lumped model, JS only)
+echo    [2]  Classic web app        (gen 1 - legacy lumped model, JS only)
 echo    [3]  Multiphysics text demo (numbers only)
 echo    [4]  Generate 4 figures     (run_demo.py - outputs folder)
 echo    [5]  Run all physics tests (38)
@@ -54,16 +55,16 @@ echo Starting the live multiphysics app (real Python kernel)...
 echo The browser opens automatically. KEEP THIS WINDOW OPEN while using it.
 echo Press Ctrl+C here (or close the window) to stop the app.
 echo.
-"%PYEXE%" "%PROJ%\server_app.py"
+"%PYEXE%" "%HERE%\server_app.py"
 goto menu
 
 :web
-start "" "%PROJ%\index.html"
+start "" "%GEN1%\index.html"
 goto menu
 
 :demo
 cls
-"%PYEXE%" "%PROJ%\demo_multiphysics.py"
+"%PYEXE%" "%GEN1%\demo_multiphysics.py"
 echo.
 pause
 goto menu
@@ -71,20 +72,20 @@ goto menu
 :figures
 cls
 echo Generating figures (this may take a little while)...
-"%PYEXE%" "%PROJ%\run_demo.py"
+"%PYEXE%" "%GEN1%\run_demo.py"
 echo.
-echo Done. Open the "outputs" folder to see the PNGs.
+echo Done. The PNGs are in the "outputs" folder inside the gen-1 folder.
 pause
 goto menu
 
 :tests
 cls
-"%PYEXE%" "%PROJ%\tests\test_physics.py"
-"%PYEXE%" "%PROJ%\tests\test_characterization.py"
-"%PYEXE%" "%PROJ%\tests\test_two_electrode.py"
-"%PYEXE%" "%PROJ%\tests\test_transport.py"
-"%PYEXE%" "%PROJ%\tests\test_chemistry.py"
-"%PYEXE%" "%PROJ%\tests\test_energy.py"
+"%PYEXE%" "%ROOT%\tests\test_physics.py"
+"%PYEXE%" "%ROOT%\tests\test_characterization.py"
+"%PYEXE%" "%ROOT%\tests\test_two_electrode.py"
+"%PYEXE%" "%ROOT%\tests\test_transport.py"
+"%PYEXE%" "%ROOT%\tests\test_chemistry.py"
+"%PYEXE%" "%ROOT%\tests\test_energy.py"
 echo.
 pause
 goto menu
@@ -103,16 +104,16 @@ goto menu
 
 :install
 cls
-"%PYEXE%" -m pip install -r "%PROJ%\requirements.txt"
+"%PYEXE%" -m pip install -r "%ROOT%\requirements.txt"
 echo.
 pause
 goto menu
 
 :noproj
 echo.
-echo  [!] Could not find the project folder next to this .bat.
-echo      Keep this .bat on the Desktop, beside the project folder
-echo      (the one whose name starts with "_" containing "Bubble simulator").
+echo  [!] server_app.py was not found next to this .bat.
+echo      Keep this .bat inside the gen-2 folder ("2...") of the
+echo      "Bubble simulator" project.
 echo.
 pause
 

@@ -9,8 +9,8 @@
 | | 무엇 | 용도 |
 |---|---|---|
 | **`bubblesim/`** | 순수 Python 물리 코어 (정답지) | 검증·파라미터 스윕·분극곡선·재현성. numpy 불필요(표준 라이브러리만) |
-| **`app.html` + `server_app.py`** | 코어를 그대로 브라우저에 띄우는 라이브 서버 앱 (:8765) | **메인 인터랙티브 앱.** `서버 켜기.bat`으로 실행. 멀티피직스 전 모델(2전극·다공·채널·2D CFD·EIS) 반영 |
-| **`index.html`** | 물리를 JS로 포팅한 단일 HTML (1세대) | 설치 0 간이판. 더블클릭 실행. lumped 0D만, 동결 |
+| **`2세대 라이브앱/`** (app.html + server_app.py) | 코어를 그대로 브라우저에 띄우는 라이브 서버 앱 (:8765) | **메인 인터랙티브 앱.** `2세대 라이브앱\서버 켜기.bat`으로 실행. 멀티피직스 전 모델(2전극·다공·채널·2D CFD·EIS) 반영 |
+| **`1세대 단일HTML/`** (index.html) | 물리를 JS로 포팅한 단일 HTML (1세대) | 설치 0 간이판. 더블클릭 실행. lumped 0D만, 동결 |
 
 웹은 코어의 "거울"입니다 — 같은 방정식/상수를 씁니다.
 
@@ -38,7 +38,7 @@ index.html 더블클릭                              (1세대 간이판, 설치 
 **Python (검증·그림):**
 ```bash
 pip install -r requirements.txt      # matplotlib만 (코어는 불필요)
-python run_demo.py                   # outputs/ 에 그림 4장 생성
+python "1세대 단일HTML/run_demo.py"   # 1세대 단일HTML/outputs/ 에 그림 4장 생성
 python tests/test_physics.py         # 물리 sanity 테스트
 ```
 
@@ -212,12 +212,9 @@ bubblesim/              물리 코어 (커널=순수 Python; numpy는 향후 1D/
     base.py             Solver 프로토콜 + ElectroState(j, j_field, overpotentials, fields)
     zerod.py            ZeroDSolver(lumped) · ZeroDTwoElectrodeSolver(Butler–Volmer)
   electrochem·forces·bubble·surface.py   구경로 shim (하위호환)
-index.html              [1세대] 단일 HTML 앱 (lumped 0D만, 동결) — 더블클릭
-app.html+server_app.py  [2세대] 라이브 서버 앱 (:8765) — 서버 켜기.bat · build_web.py가 docs/ 웹판 빌드
-bubblesim3d/ + web3d/   [3세대] 3D 셀 시뮬레이터 (:8766) — 3D 서버 켜기.bat · docs/3D_SIMULATOR.md
-run_demo.py             그림 4장 생성
-demo_multiphysics.py    신규 물리 텍스트 데모 (matplotlib 불필요)
+1세대 단일HTML/          [1세대] index.html(더블클릭, lumped 0D 동결) · run_demo.py(그림 4장→outputs/) · demo_multiphysics.py(텍스트 데모)
+2세대 라이브앱/          [2세대] app.html+server_app.py (:8765) — 서버 켜기.bat · build_web.py가 docs/ 웹판 빌드 · 터널/배포 도구
+bubblesim3d/ + web3d/   [3세대] 3D 셀 시뮬레이터 (:8766) — run3d.bat · docs/3D_SIMULATOR.md
 tests/                  전체 테스트 — py -3.14 -m pytest tests/ -q
-outputs/                생성 그림
 ※ 실행 .bat/.url 전체 목록과 상세 지도 → 프로젝트 지도.md
 ```

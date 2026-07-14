@@ -13,12 +13,16 @@ Endpoints:
     POST /api/reset   restart the bubble population (keeps current settings)
 """
 import json
+import sys
 import threading
 import time
 import webbrowser
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+# this file lives in a subfolder; the bubblesim package is at the project root
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bubblesim import Operating, Params, Simulator
 from bubblesim.constants import F, R_GAS

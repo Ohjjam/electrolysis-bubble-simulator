@@ -18,8 +18,9 @@ click (Settings -> Pages). Cloudflare Pages / Netlify can target docs/ too.
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "docs"
+ROOT = Path(__file__).resolve().parent          # this folder: app.html + server files
+PROJ = ROOT.parent                              # project root: bubblesim/ and docs/
+OUT = PROJ / "docs"
 PYODIDE = "0.28.3"
 
 # packed into the zip Pyodide unpacks into its virtual FS (importable at runtime)
@@ -120,10 +121,10 @@ def build():
             z.write(ROOT / f, f)
             n += 1
         for d in PKG_DIRS:
-            for p in sorted((ROOT / d).rglob("*.py")):
+            for p in sorted((PROJ / d).rglob("*.py")):
                 if "__pycache__" in p.parts:
                     continue
-                z.write(p, str(p.relative_to(ROOT)).replace("\\", "/"))
+                z.write(p, str(p.relative_to(PROJ)).replace("\\", "/"))
                 n += 1
 
     print("OK  ->  docs/index.html  +  docs/bubblesim_pkg.zip")

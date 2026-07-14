@@ -9,6 +9,10 @@ Runs the coupled model and writes four figures to outputs/:
 Usage:  python run_demo.py
 """
 import os
+import sys
+
+# this file lives in a subfolder; the bubblesim package is at the project root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import matplotlib
 matplotlib.use("Agg")
