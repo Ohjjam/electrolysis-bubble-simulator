@@ -24,6 +24,10 @@
   .pick .pic img { width: 100%; height: 118px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
   .pick b { display: block; margin: 6px 0 4px; font-size: 16px; }
   .pick span { font-size: 11px; opacity: .75; line-height: 1.4; display: block; }
+  .pick.difficulty { width: 190px; padding: 10px 12px; }
+  .pick.difficulty .pic { height: 30px; font-size: 26px; }
+  .pick.difficulty b { display: inline-block; margin: 3px 6px 2px 0; }
+  .pick.difficulty span { min-height: 30px; }
   #btnStart { margin-top: 22px; font-size: 20px; padding: 12px 54px; border-radius: 12px; border: 2px solid #ffd23e; background: #3a2f14; color: #ffd23e; font-weight: 900; cursor: pointer; letter-spacing: 2px; }
   #btnStart:hover { background: #4a3d1a; }
 
@@ -34,6 +38,9 @@
   #xpfill { height: 100%; width: 0%; background: linear-gradient(90deg, #63c8ff, #c86bff); transition: width .12s; }
   #lvtag { position: absolute; left: -54px; top: 26px; font-weight: 800; font-size: 16px; text-shadow: 0 2px 6px #000; }
   #kills { position: absolute; right: -60px; top: 26px; font-weight: 700; opacity: .85; text-shadow: 0 2px 6px #000; }
+  #runbar { position: relative; height: 6px; margin: 5px auto 0; width: 76%; overflow: hidden; border-radius: 4px; background: rgba(12,10,20,.72); border: 1px solid rgba(255,255,255,.2); }
+  #runfill { height: 100%; width: 0; background: linear-gradient(90deg, #ffd23e, #ff6a5b); transition: width .18s; }
+  #runlabel { margin-top: 2px; font-size: 10px; font-weight: 700; opacity: .72; text-shadow: 0 1px 4px #000; }
 
   /* 11시(좌상단): HP + 스태미나 */
   #hpwrap { position: absolute; left: 18px; top: 16px; width: 260px; }
@@ -127,10 +134,18 @@
   .keybind:hover { background: rgba(255,210,62,.12); }
   .keybind b { color: #8ad9ff; min-width: 46px; text-align: right; }
   .card.guard { opacity: .55; pointer-events: none; } /* 레벨업 직후 오클릭 가드 */
-  #end { position: absolute; inset: 0; display: none; place-items: center; background: rgba(8,6,14,.82); pointer-events: auto; }
+  #end { position: absolute; inset: 0; display: none; place-items: center; background: rgba(8,6,14,.88); pointer-events: auto; }
+  #endbox { width: min(700px, 90vw); padding: 28px; border-radius: 20px; background: linear-gradient(160deg, rgba(40,36,62,.96), rgba(17,15,27,.96)); border: 2px solid #4a5068; box-shadow: 0 22px 70px rgba(0,0,0,.55); }
   #end h1 { font-size: 56px; margin: 0 0 8px; }
-  #endstat { opacity: .8; margin-bottom: 18px; }
+  #endstat { opacity: .82; margin-bottom: 16px; }
+  #enddetails { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 auto 18px; text-align: left; }
+  .result { padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.08); }
+  .result span { display: block; font-size: 10px; opacity: .58; letter-spacing: .7px; margin-bottom: 3px; }
+  .result b { font-size: 14px; }
+  #endrecord { min-height: 18px; color: #ffd23e; font-weight: 800; margin-bottom: 12px; }
+  #endbuttons { display: flex; justify-content: center; gap: 10px; }
   #end button { font-size: 18px; padding: 10px 28px; border-radius: 10px; border: 2px solid #667; background: #2a2d3a; color: #edf; cursor: pointer; }
+  #end #retry { border-color: #ffd23e; color: #ffd23e; background: #3a2f14; }
 
   /* ── 로비 ── */
   .tcol { text-align: center; max-width: 860px; width: 92vw; }
@@ -187,8 +202,20 @@
   .lvtimer { display: inline-block; margin-left: 12px; font-size: 20px; color: #ffd23e; opacity: .9; }
   #lvWaiting { margin-top: 14px; font-size: 13px; opacity: .7; text-align: center; }
   #pause.nopause h1::after { content: ' (멀티 — 게임은 계속 진행 중)'; font-size: 15px; opacity: .6; font-weight: 400; }
+  @media (max-height: 820px) {
+    .pick { padding: 8px; }
+    .pick .pic, .pick .pic img { height: 76px; }
+    .selLabel { margin: 8px 0 5px; }
+    #btnStart { margin-top: 12px; }
+  }
+  @media (max-width: 650px) {
+    #enddetails { grid-template-columns: 1fr 1fr; }
+    #help, #equips { display: none; }
+    #hpwrap { width: 190px; }
+    #minimap { width: 120px; height: 120px; }
+  }
 </style>
-  <script type="module" crossorigin src="/survivors/assets/survivors-BD8FTBjJ.js"></script>
+  <script type="module" crossorigin src="/survivors/assets/survivors-soB5w7Uq.js"></script>
 </head>
 <body>
 <div id="title">
@@ -225,6 +252,8 @@
       <div id="charCards" class="pickrow"></div>
       <div class="selLabel">스테이지</div>
       <div id="stageCards" class="pickrow"></div>
+      <div class="selLabel">난이도</div>
+      <div id="difficultyCards" class="pickrow"></div>
       <button id="btnStart">시작</button>
     </div>
 
@@ -245,6 +274,8 @@
       <div id="roomChars" class="pickrow"></div>
       <div class="selLabel">스테이지 <span class="hostonly">— 방장만 선택</span></div>
       <div id="roomStages" class="pickrow"></div>
+      <div class="selLabel">난이도 <span class="hostonly">— 방장만 선택</span></div>
+      <div id="roomDifficultyCards" class="pickrow"></div>
       <div class="roombtns">
         <button id="btnReady">준비 완료</button>
         <button id="btnGo">출발!</button>
@@ -261,6 +292,8 @@
     <div id="lvtag">Lv.1</div>
     <div id="kills">☠ 0</div>
     <div id="xpbar"><div id="xpfill"></div></div>
+    <div id="runbar"><div id="runfill"></div></div>
+    <div id="runlabel">결전 준비 0%</div>
   </div>
   <div id="bosswrap"><div id="bossname"></div><div id="bossbar"><div id="bossfill"></div></div></div>
   <div id="banner"></div>
@@ -294,7 +327,7 @@
     <div id="statPanel"></div>
     <div style="display:flex;gap:12px;justify-content:center;margin-top:16px"><button id="btnResume">계속하기</button><button id="btnRestart">처음부터</button></div>
   </div></div>
-  <div id="end"><div style="text-align:center"><h1 id="endtitle"></h1><div id="endstat"></div><button id="retry">다시 도전</button></div></div>
+  <div id="end"><div id="endbox" style="text-align:center"><h1 id="endtitle"></h1><div id="endstat"></div><div id="enddetails"></div><div id="endrecord"></div><div id="endbuttons"><button id="retry">같은 조건 재도전</button><button id="menu">선택 화면</button></div></div></div>
 </div>
 </body>
 </html>

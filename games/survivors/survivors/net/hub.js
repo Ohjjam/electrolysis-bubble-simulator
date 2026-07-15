@@ -6,12 +6,15 @@
 import { RoomRegistry } from '../../engine/src/net/RoomRegistry.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { C2S, HOST_ONLY, MAX_PLAYERS, validInput, validSnapshot } from './protocol.js';
+import { DIFFICULTY_IDS, normalizeDifficulty } from '../data/difficulty.js';
 
 const CLIENT_TYPES = new Set(C2S);
 const HOST_TYPES = new Set(HOST_ONLY);
 const ID_PATTERN = /^[A-Za-z0-9_-]{3,64}$/;
 const ROOM_PATTERN = /^[A-HJ-NP-Z2-9]{5}$/;
 const CHAR_IDS = new Set(['knight', 'mage', 'rogue', 'archer']);
+const STAGE_IDS = new Set(['meadow', 'snowfield', 'ashland']);
+const DIFFICULTY_ID_SET = new Set(DIFFICULTY_IDS);
 
 // 제거 대상은 꺾쇠와 제어문자뿐 (HTML 주입·터미널 이스케이프 방지). 공백·하이픈은 이름에 남긴다.
 // ⚠ 반드시 이스케이프 표기로 쓸 것 — 리터럴 제어문자를 소스에 박으면 grep이 이 파일을
@@ -141,12 +144,14 @@ export class SurvivorsHub {
       case 'start': {
         // 방장이 시작 — 시드와 파티 구성을 전원에게 확정 배포 (시드가 같아야 봇/재현 검증이 성립)
         const stageId = clean(packet.stageId, 20);
-        if (!stageId) return this._reject(client, 'INVALID_STAGE', { strike: false });
+        const difficultyId = clean(packet.difficultyId ?? 'normal', 20);
+        if (!STAGE_IDS.has(stageId)) return this._reject(client, 'INVALID_STAGE', { strike: false });
+        if (!DIFFICULTY_ID_SET.has(difficultyId)) return this._reject(client, 'INVALID_DIFFICULTY', { strike: false });
         const party = [...room.players.values()]
           .filter((p) => p.profile.charId)
           .map((p, i) => ({ index: i, playerId: p.id, charId: p.profile.charId, name: p.profile.name }));
         if (!party.length) return this._reject(client, 'NO_CHARACTERS', { strike: false });
-        room.run = { stageId, seed: Number(packet.seed) >>> 0, party, startedAt: this.now() };
+        room.run = { stageId, difficultyId: normalizeDifficulty(difficultyId), seed: Number(packet.seed) >>> 0, party, startedAt: this.now() };
         this.broadcast(room, { type: 'start', ...room.run });
         break;
       }
