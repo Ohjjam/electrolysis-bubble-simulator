@@ -1,0 +1,13 @@
+{
+  "name": "realistic",
+  "description": "스타일라이즈드 리얼 — PBR 머티리얼 + IBL (외곽선/셀 램프 없음)",
+  "render": "realistic",
+  "timeOfDay": "day",
+  "material": { "roughness": 0.75, "metalness": 0.0, "envMapIntensity": 1.0 },
+  "env": { "ibl": "assets/hdri/kloofendal_43d_clear_puresky_2k.hdr", "background": true, "fog": false, "backgroundIntensity": 0.8, "environmentIntensity": 1.1 },
+  "post": { "bloom": { "intensity": 0.5, "threshold": 0.85 }, "ao": { "intensity": 2.2 } },
+  "prompt": {
+    "prefix": "photorealistic, physically based materials, realistic lighting",
+    "negative": "cel shading, outline, flat colors, toon"
+  }
+}
