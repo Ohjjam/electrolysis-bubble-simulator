@@ -17,6 +17,7 @@ Endpoints:
     POST /api3d/shutdown   local-only clean stop
 """
 import json
+import math
 import threading
 import time
 import webbrowser
@@ -80,14 +81,30 @@ class LiveSim3D:
         self._carry = 0.0        # fractional sim steps carried between blocks
         self._build()
 
+    @staticmethod
+    def _f(d, k, fallback):
+        """float(designer[k]) that can never raise. A bare float() here used to
+        blow up on a None/garbage value that `update` had ALREADY committed to
+        self.designer — after which every later /api3d/op AND /api3d/reset raised
+        too, bricking the live sim until the process was restarted (the browser
+        swallows the error, so the UI just went dead)."""
+        try:
+            v = float(d.get(k, fallback))
+        except (TypeError, ValueError):
+            return float(fallback)
+        return v if math.isfinite(v) else float(fallback)
+
     def _apply_params(self):
         """Push catalyst j0 + membrane resistance from the designer into Params
         (these live on Params, not Operating — like server_app._apply_catalyst)."""
         d = self.designer
-        self.params.cathode.j0_ref = max(1e-9, float(d.get("j0_cathode", 130.0)))
-        self.params.anode.j0_ref = max(1e-12, float(d.get("j0_anode", 1.3e-7)))
-        self.params.anode.alpha_a = min(2.0, max(0.1, float(d.get("alpha_a", 1.0))))
-        self.params.r_membrane_area = max(0.0, float(d.get("r_mem", 3.2e-6)))
+        self.params.cathode.j0_ref = max(1e-9, self._f(d, "j0_cathode", 130.0))
+        self.params.anode.j0_ref = max(1e-12, self._f(d, "j0_anode", 1.3e-7))
+        self.params.anode.alpha_a = min(2.0, max(0.1, self._f(d, "alpha_a", 1.0)))
+        self.params.r_membrane_area = max(0.0, self._f(d, "r_mem", 3.2e-6))
+        # double-layer capacitance (EIS + the CP relaxation time constant)
+        self.params.anode.C_dl = max(1e-3, self._f(d, "C_dl_anode", 0.2))
+        self.params.cathode.C_dl = max(1e-3, self._f(d, "C_dl_cathode", 0.2))
 
     def _build(self):
         """(Re)create the cell sim from the current designer state."""
@@ -106,17 +123,50 @@ class LiveSim3D:
                  "in_face", "out_face",
                  "h_mm"}                    # voxel size: resolution rebuild
 
+    @staticmethod
+    def _clean(k, v):
+        """Value accepted for designer key `k`, or None to REJECT it.
+
+        Validation happens BEFORE the value is stored. It used to be stored first
+        and coerced later, so one bad value (e.g. `{"j0_cathode": null}` — and
+        note JSON.stringify turns any NaN into null) poisoned self.designer
+        permanently: every later update AND reset then raised. A saved experiment
+        could persist the poison across restarts.
+        """
+        ref = DESIGNER_DEFAULTS[k]
+        if isinstance(ref, str):                  # ff, mode, electrolyte, mask...
+            return v if isinstance(v, str) else None
+        # numeric key: accept anything float() understands, but it must be FINITE.
+        # (The seg toggles send "0"/"1" strings; float() takes those, and _flag
+        # then reads the number correctly.)
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if math.isfinite(f) else None
+
     def update(self, data: dict):
         with self.lock:
             rebuild = False
             for k, v in data.items():
                 if k == "speed":
                     # down to 0.01x: true slow motion ("high-speed camera")
-                    self.speed = max(0.01, min(5.0, float(v)))
+                    try:
+                        s = float(v)
+                    except (TypeError, ValueError):
+                        continue
+                    if math.isfinite(s):
+                        self.speed = max(0.01, min(5.0, s))
                 elif k == "paused":
                     self.paused = bool(v)
                 elif k in DESIGNER_DEFAULTS:
-                    self.designer[k] = v
+                    cv = self._clean(k, v)
+                    if cv is None:              # garbage: drop it, keep the sim alive
+                        continue
+                    if self.designer.get(k) == cv:
+                        continue            # unchanged: re-applying an experiment
+                                            # must not trigger a pointless rebuild
+                    self.designer[k] = cv
                     if k in self.GEOM_KEYS:
                         rebuild = True
             if rebuild:
@@ -187,10 +237,12 @@ SWEEP_J = [10, 20, 50, 100, 200, 300, 400, 500, 625, 750, 875,
            1000, 1250, 1500, 2000, 2250]                 # mA/cm^2
 _sweep_cache = {}
 
-_SWEEP_KEYS = ("W_cm", "H_cm", "ff", "n_ch", "d_ch_mm", "u_flow", "electrolyte",
-               "c_mol", "T", "Pbar", "theta", "j0_cathode", "j0_anode",
-               "alpha_a", "r_mem", "gap_mm", "void_frac",
-               "mesh_id", "mesh_cover", "mesh_pos")
+_SWEEP_KEYS = ("W_cm", "H_cm", "ff", "n_ch", "w_ch_mm", "d_ch_mm", "u_flow",
+               "electrolyte", "c_mol", "T", "Pbar", "theta",
+               "j0_cathode", "j0_anode", "alpha_a", "r_mem", "gap_mm", "void_frac",
+               "mesh_id", "mesh_cover", "mesh_pos",
+               # dry cathode (anolyte-only AEM) membrane water transport
+               "dry_cathode", "n_drag", "D_w_mem", "t_mem_um")
 
 
 def _sweep_params(d: dict) -> Params:
@@ -210,13 +262,21 @@ def _sweep_one(d: dict, with_mesh: bool):
         d["mesh_id"] = ""
     solver = ChannelSolver()
     params = _sweep_params(d)
-    out = {"V": [], "theta_out": [], "eps_out": []}
+    # j_used = the current the solver ACTUALLY delivered. With a dry cathode the
+    # water-supply wall clamps j below the requested value, and plotting V at the
+    # requested abscissa drew the curve at the wrong x (and flat past the wall).
+    # The chart/CSV must use j_used, and points where it fell short are simply
+    # UNREACHABLE for this cell.
+    out = {"V": [], "theta_out": [], "eps_out": [], "j_used": [], "reachable": []}
     st = None
     for j in SWEEP_J:
         op = sweep_operating(d, j)
         sim = Simulator(op=op, params=params)
         st = solver.solve(op, sim.props(), sim.surfaces)
+        j_used = float(st.j) / 10.0                      # A/m^2 -> mA/cm^2
         out["V"].append(round(float(st.V), 4))
+        out["j_used"].append(round(j_used, 1))
+        out["reachable"].append(bool(j_used >= 0.999 * j))
         out["theta_out"].append(round(st.fields["theta_out"], 4))
         out["eps_out"].append(round(st.fields["eps_out"], 4))
     ov = st.overpotentials                                # split at the last (max) j
@@ -237,6 +297,13 @@ def sweep_polarization(designer: dict, overrides: dict) -> dict:
     if key in _sweep_cache:
         return _sweep_cache[key]
     res = {"j": SWEEP_J, "pristine": _sweep_one(d, False)}
+    # dry-cathode water-supply ceiling: the current the membrane can keep fed.
+    # 0 when the term is off. Reported so the tab can say "you are at X% of it".
+    from bubblesim.kernel import watertransport as _wt
+    _op0 = sweep_operating(d, SWEEP_J[-1])
+    _kw, _jw = _wt.dry_cathode_terms(_op0, float(d.get("t_mem_um", 50.0)) * 1e-6)
+    res["water"] = {"k_w": round(_kw, 5),
+                    "j_lim_water_mAcm2": round(_jw / 10.0, 1)}   # A/m^2 -> mA/cm^2
     ms = mesh_spec(str(d.get("mesh_id", "")))
     if ms is not None:
         res["mesh"] = _sweep_one(d, True)
@@ -309,14 +376,50 @@ JOBS_LOCK = threading.Lock()
 # cloud deploy. The UI shows one tab per experiment.
 EXP_FILE = ROOT / "experiments.json"
 EXP_LOCK = threading.Lock()
+# which saved experiment the running sim was last set to. In-memory on purpose:
+# a server restart rebuilds the sim from defaults, so "no active experiment" is
+# then the truth. Both pages read it (GET) so a choice made in one page shows
+# up in the other's selector.
+ACTIVE_EXP = None
 
 
 def _exp_load() -> list:
+    """Saved experiments, with malformed entries dropped.
+
+    Entries are indexed as ex["id"] / ex["designer"] all over; a hand-edited or
+    truncated file used to raise KeyError/TypeError deep inside a handler.
+    """
     try:
         data = json.loads(EXP_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
     except (OSError, json.JSONDecodeError):
         return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for ex in data:
+        if not isinstance(ex, dict) or not isinstance(ex.get("id"), str):
+            continue
+        ex.setdefault("name", ex["id"])
+        ex.setdefault("note", "")
+        ex.setdefault("created", "")
+        if not isinstance(ex.get("designer"), dict):
+            ex["designer"] = {}
+        out.append(ex)
+    return out
+
+
+def _clean_designer(d) -> dict:
+    """Only known designer keys, only values the live sim can actually take."""
+    if not isinstance(d, dict):
+        return {}
+    out = {}
+    for k, v in d.items():
+        if k not in DESIGNER_DEFAULTS:
+            continue
+        cv = LiveSim3D._clean(k, v)
+        if cv is not None:
+            out[k] = cv
+    return out
 
 
 def _exp_save(lst: list):
@@ -325,8 +428,27 @@ def _exp_save(lst: list):
 
 
 def experiments_api(data: dict) -> dict:
-    """save / update / delete a named experiment; always returns the list."""
+    """save / update / delete / apply a named experiment; returns list+active."""
+    global ACTIVE_EXP
     action = str(data.get("action", ""))
+    if action == "apply":
+        # set the running sim to this experiment's saved designer, and remember
+        # it as the active one (both pages' selectors show it)
+        with EXP_LOCK:
+            lst = _exp_load()
+            eid = data.get("id") or None
+            if eid is None:                          # "no experiment": just clear
+                ACTIVE_EXP = None
+                return {"ok": 1, "active": None, "list": lst}
+            hit = next((ex for ex in lst if ex["id"] == eid), None)
+            if hit is None:
+                return {"error": "experiment not found"}
+            ACTIVE_EXP = eid
+            designer = _clean_designer(hit.get("designer"))
+        # LIVE.update outside EXP_LOCK: a geometry change rebuilds the voxel
+        # domain for seconds and must not block the other page's list fetch
+        LIVE.update(designer)
+        return {"ok": 1, "active": eid, "list": lst}
     with EXP_LOCK:
         lst = _exp_load()
         if action == "save":
@@ -337,7 +459,7 @@ def experiments_api(data: dict) -> dict:
                   "name": name[:60],
                   "note": str(data.get("note", ""))[:300],
                   "created": time.strftime("%Y-%m-%d %H:%M"),
-                  "designer": dict(data.get("designer") or {})}
+                  "designer": _clean_designer(data.get("designer"))}
             lst.append(ex)
             _exp_save(lst)
             return {"ok": 1, "id": ex["id"], "list": lst}
@@ -349,7 +471,7 @@ def experiments_api(data: dict) -> dict:
                     if "note" in data:
                         ex["note"] = str(data["note"])[:300]
                     if "designer" in data:
-                        ex["designer"] = dict(data["designer"] or {})
+                        ex["designer"] = _clean_designer(data["designer"])
                     _exp_save(lst)
                     return {"ok": 1, "id": ex["id"], "list": lst}
             return {"error": "experiment not found"}
@@ -357,8 +479,10 @@ def experiments_api(data: dict) -> dict:
             kept = [ex for ex in lst if ex["id"] != data.get("id")]
             if len(kept) == len(lst):
                 return {"error": "experiment not found"}
+            if ACTIVE_EXP == data.get("id"):
+                ACTIVE_EXP = None
             _exp_save(kept)
-            return {"ok": 1, "list": kept}
+            return {"ok": 1, "active": ACTIVE_EXP, "list": kept}
     return {"error": "unknown action"}
 
 
@@ -445,9 +569,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(LIVE.snapshot(faces=q.get("faces") == "1"))
         if p == "/api3d/runs":
             return self._json({"runs": list_runs()})
+        if p == "/api3d/eis":
+            with LIVE.lock:
+                try:
+                    return self._json(LIVE.sim.eis())
+                except Exception as e:
+                    return self._json({"error": str(e)}, 500)
         if p == "/api3d/experiments":
             with EXP_LOCK:
-                return self._json({"list": _exp_load()})
+                return self._json({"list": _exp_load(), "active": ACTIVE_EXP})
         if p == "/api3d/meshes":
             with LIVE.lock:
                 dsn = dict(LIVE.designer)
@@ -500,12 +630,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "frame not found"}, 404)
         return self._json(snapshots.frame_blob(d, i))
 
+    MAX_BODY = 8 << 20            # 8 MB: a hand-drawn plate mask is the big one
+
     def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            return self._json({"error": "bad length"}, 400)
+        if length < 0 or length > self.MAX_BODY:
+            return self._json({"error": "body too large"}, 413)
         try:
             data = json.loads(self.rfile.read(length) or b"{}")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return self._json({"error": "bad json"}, 400)
+        # every handler below indexes the body like a dict. A bare list/string/
+        # null used to reach them and raise AttributeError INSIDE the handler,
+        # which drops the connection with no response at all (curl sees 000) —
+        # and this server is publicly deployed, so any scanner triggers it.
+        if not isinstance(data, dict):
+            return self._json({"error": "body must be a JSON object"}, 400)
         if self.path == "/api3d/op":
             LIVE.update(data)
             return self._json({"ok": 1})

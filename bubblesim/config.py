@@ -42,6 +42,16 @@ class Operating:
     face_height_cm: float = 10.0      # electrode height for the 2D face-field map [cm]
     high_fidelity: bool = False       # KOH: Pitzer activity + Gilliam conductivity (quantitative)
     gas_feedback: bool = False        # porous: internal gas saturation s_g(d) blocks area·kappa
+    # --- DRY CATHODE (anolyte-only AEM): membrane water transport -------------
+    # Off by default -> every existing result stays bit-identical. When on, the
+    # cathode is fed water ONLY through the membrane (back-diffusion), while the
+    # OH- current drags water the other way (electro-osmosis) -- see
+    # kernel.watertransport. Adds eta_water to the cell balance.
+    dry_cathode: bool = False         # cathode compartment has no liquid feed
+    n_drag: float = 2.5               # electro-osmotic drag [mol H2O / mol OH-]
+    D_w_mem: float = 1.0e-9           # water diffusivity in the membrane [m^2/s]
+    c_w_mem: float = 4.0e4            # water concentration in the membrane [mol/m^3]
+    t_mem_um: float = 50.0            # membrane thickness [um] (water path length)
     # flow-channel cell design (model="channel")
     channel_type: str = "serpentine"  # "serpentine" | "parallel" | "straight"
     n_pass: int = 4                   # serpentine passes / parallel channel count

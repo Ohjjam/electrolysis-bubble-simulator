@@ -38,9 +38,20 @@
       { k:"alpha_a", nm:"양극 α (Tafel 기울기)", un:"–", min:0.3, max:1.6, step:0.01, v:1, lo:0.1, hi:2 },
       { k:"r_mem", nm:"막 면저항", un:"Ω·m²", num:1, v:3.2e-6, lo:0, hi:1e-3 },
       { k:"gap_mm", nm:"전해질 갭 (모델 관례, r_mem과 짝)", un:"mm", min:0.1, max:3, step:0.05, v:2, lo:0.05, hi:10 },
+      { k:"C_dl_anode", nm:"양극 이중층 C_dl (EIS·CP 시상수)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
+      { k:"C_dl_cathode", nm:"음극 이중층 C_dl", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
       { k:"t_mem_um", nm:"막 두께", un:"µm", min:10, max:200, step:5, v:50, lo:1, hi:1000 },
       { k:"t_ptl_um", nm:"PTL 두께", un:"µm", min:50, max:600, step:10, v:200, lo:5, hi:3000 },
       { k:"eps_ptl", nm:"PTL 공극률", un:"–", min:0.3, max:0.9, step:0.01, v:0.7, lo:0.05, hi:0.95 },
+    ]],
+    // Dry cathode (anolyte-only AEM): the cathode gets NO liquid feed, so every
+    // electron's water must cross the membrane — back-diffusion supplies it while
+    // the OH- current drags water the other way. OFF by default (both electrodes
+    // wetted), so nothing changes until it is switched on.
+    ["음극 건식 (물 투과)", [
+      { k:"dry_cathode", nm:"음극 건식 (양극에만 전해질)", seg:[["0","꺼짐 (양쪽 습윤)"],["1","켜짐 (건식)"]], v:"0" },
+      { k:"n_drag", nm:"전기삼투 끌림 n_drag (OH⁻ 1개가 끌고가는 물)", un:"–", min:0, max:6, step:0.1, v:2.5, lo:0, hi:10 },
+      { k:"D_w_mem", nm:"막 내 물 확산계수", un:"m²/s", num:1, v:1e-9, lo:1e-12, hi:1e-7 },
     ]],
     ["환경", [
       { k:"B", nm:"자기장 B", un:"T", min:0, max:3, step:0.05, v:0, lo:0, hi:20 },
@@ -163,5 +174,162 @@
       }
     }
     return { sync, reg };
+  };
+
+  /* ---- volumetric pump flow <-> channel velocity -------------------------
+   * A pump is set in mL/min; the solvers need the CHANNEL VELOCITY u [m/s].
+   * The two are one geometric step apart:
+   *      Q = u * A_ch,   A_ch = w_ch * d_ch * (parallel channels in the field)
+   * A serpentine is ONE continuous channel, so all the flow goes through a
+   * single cross-section; parallel/interdigitated split it over n_ch.
+   * (The 1-D channel model's gas:liquid only needs u*d_ch — the width cancels
+   * — but the VOLUME the user's pump delivers does depend on w_ch, which is
+   * exactly why the m/s knob felt wrong.)
+   */
+  g.chanArea_m2 = function (d) {
+    const w = Math.max(1e-4, +d.w_ch_mm || 1) * 1e-3;
+    const dp = Math.max(1e-4, +d.d_ch_mm || 1) * 1e-3;
+    const par = (d.ff === "par" || d.ff === "inter")
+      ? Math.max(1, Math.round(+d.n_ch || 1)) : 1;   // serpentine/custom: one path
+    return w * dp * par;
+  };
+  g.flowMLmin = d => (+d.u_flow || 0) * g.chanArea_m2(d) * 60e6;   // m3/s -> mL/min
+  g.flowToU = (mlmin, d) => Math.max(0, mlmin) / 60e6 / g.chanArea_m2(d);
+
+  /* ---- shared CSV export (both pages, per-panel buttons) -----------------
+   * Every file is UTF-8 BOM (Excel opens Korean correctly) and carries the
+   * full condition as `# key,value` comment rows, so a folder of exports is
+   * self-describing and comparable. */
+  g.CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
+    "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt","drag_K",
+    "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","C_dl_anode","C_dl_cathode",
+    "t_ptl_um","eps_ptl","void_frac","mesh_id","mesh_cover","mesh_pos",
+    "dry_cathode","n_drag","D_w_mem","in_face","in_z","in_w","out_face","out_z","out_w"];
+  function csvCell(v){ if(v==null) return ""; const s=String(v);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+  // rows = array of arrays. designer = the condition dict (optional).
+  g.csvDownload = function(name, rows, designer, title){
+    const out = [];
+    if (title) out.push(["# "+title]);
+    out.push(["# 내보낸 시각", new Date().toLocaleString("ko-KR")]);
+    if (designer){
+      if (g.flowMLmin && designer.u_flow!=null){
+        out.push(["# 펌프유량_mL_per_min", +g.flowMLmin(designer).toFixed(3)]);
+        out.push(["# 유로단면_mm2", +(g.chanArea_m2(designer)*1e6).toFixed(4)]);
+      }
+      out.push(["# --- 조건 (designer) ---"]);
+      for (const k of g.CSV_KEYS) if (designer[k]!==undefined) out.push(["# "+k, designer[k]]);
+      out.push([]);
+    }
+    const body = out.concat(rows).map(r=>r.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob(["﻿"+body], {type:"text/csv;charset=utf-8;"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    const t = new Date(), p = n => String(n).padStart(2,"0");
+    a.download = `${name}_${t.getFullYear()}${p(t.getMonth()+1)}${p(t.getDate())}`
+              + `_${p(t.getHours())}${p(t.getMinutes())}${p(t.getSeconds())}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    g.csvDownload._last = a.download;    // headless verify
+    return a.download;
+  };
+
+  /* ---- drag-to-move + corner-resize for a floating/dashboard panel ---------
+   * Drag ANYWHERE on the panel (except form controls / [data-nodrag] / a canvas
+   * that handles clicks) to move it — window style, no thin title-bar to hunt
+   * for. A click (no real move) does NOT float it; only a >4 px drag does. Any
+   * pointerdown raises it to the FRONT. Corner-drag resizes (native CSS). Layout
+   * persists per `key` in localStorage; DOUBLE-CLICK the header resets it. */
+  g._zTop = g._zTop || 60;
+  g.dragResize = function (el, handle, key) {
+    if (!el) return;
+    handle = handle || el;                     // default: the whole panel is the grip
+    el.style.resize = "both";
+    if (getComputedStyle(el).overflow === "visible") el.style.overflow = "auto";
+    handle.style.touchAction = "none";
+    let saveT = null;
+    const save = () => {
+      clearTimeout(saveT);
+      saveT = setTimeout(() => {
+        try {
+          localStorage.setItem(key, JSON.stringify({
+            l: el.style.left, t: el.style.top, w: el.style.width, h: el.style.height,
+            z: el.style.zIndex }));
+        } catch (e) {}
+      }, 250);
+    };
+    const toFront = () => { el.style.zIndex = (g._zTop += 1); };
+    const lift = () => {                       // move out of flow, keep on-screen
+      if (el._floated) return;
+      const r = el.getBoundingClientRect();
+      el.style.position = "fixed";
+      el.style.left = r.left + "px"; el.style.top = r.top + "px";
+      el.style.width = r.width + "px"; el.style.height = r.height + "px";
+      el.style.right = "auto"; el.style.bottom = "auto";
+      el.style.margin = "0"; el._floated = true; toFront();
+    };
+    // restore a saved layout
+    try {
+      const s = JSON.parse(localStorage.getItem(key) || "null");
+      if (s && (s.l || s.t)) {
+        el.style.position = "fixed"; el.style.right = "auto"; el.style.bottom = "auto";
+        el.style.margin = "0"; el._floated = true;
+        if (s.l) el.style.left = s.l; if (s.t) el.style.top = s.t;
+        if (s.w) el.style.width = s.w; if (s.h) el.style.height = s.h;
+        el.style.zIndex = s.z || (g._zTop += 1);
+      }
+    } catch (e) {}
+    // ANY pointerdown on the panel brings it to the front (so clicking a chart —
+    // not just the box border — raises it above overlapping panels)
+    el.addEventListener("pointerdown", () => { if (el._floated) toFront(); }, true);
+    // drag with a 4 px threshold so a plain click never floats the panel
+    const NODRAG = "input,button,select,textarea,a,label,[data-nodrag]";
+    let sx, sy, ox, oy, armed = false, dragging = false, pid = null;
+    handle.addEventListener("pointerdown", e => {
+      if (e.target.closest(NODRAG)) return;
+      // the bottom-right ~20 px is the native CSS resize grip — leave it to
+      // resize, don't also start a MOVE (that double-action felt broken)
+      const r = el.getBoundingClientRect();
+      if (e.clientX > r.right - 20 && e.clientY > r.bottom - 20) return;
+      armed = true; dragging = false; pid = e.pointerId; sx = e.clientX; sy = e.clientY;
+    });
+    handle.addEventListener("pointermove", e => {
+      if (!armed) return;
+      if (!dragging) {
+        if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 4) return;
+        dragging = true; lift();
+        ox = parseFloat(el.style.left) || 0; oy = parseFloat(el.style.top) || 0;
+        try { handle.setPointerCapture(pid); } catch (er) {}
+        handle.style.cursor = "grabbing";
+      }
+      const mw = innerWidth - 40, mh = innerHeight - 30;
+      el.style.left = Math.max(-el.offsetWidth + 60, Math.min(mw, ox + e.clientX - sx)) + "px";
+      el.style.top = Math.max(0, Math.min(mh, oy + e.clientY - sy)) + "px";
+      e.preventDefault();
+    });
+    const end = e => { if (dragging) save(); dragging = false; armed = false;
+      handle.style.cursor = ""; try { handle.releasePointerCapture(pid); } catch (er) {} };
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    // native corner-resize: the browser sets el.style.width/height inline. On
+    // the closing mouseup, if a size was set (or the panel already floats), float
+    // it (so the size persists in place) and save. This does NOT rely on
+    // ResizeObserver (absent in some embedded viewers); RO, when present, just
+    // keeps the saved size live during the drag.
+    const endResize = () => {
+      if (el.style.width || el.style.height || el._floated) {
+        if (!el._floated) lift(); save();
+      }
+    };
+    el.addEventListener("mouseup", endResize);
+    el.addEventListener("pointerup", endResize);
+    if (window.ResizeObserver) new ResizeObserver(() => { if (el._floated) save(); }).observe(el);
+    // double-click the header: reset to default layout
+    handle.addEventListener("dblclick", () => {
+      try { localStorage.removeItem(key); } catch (e) {}
+      el._floated = false;
+      for (const p of ["position","left","top","right","bottom","width","height","zIndex","margin"])
+        el.style[p] = "";
+      el.style.resize = "both"; el.style.overflow = "auto";
+    });
   };
 })(window);

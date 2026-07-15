@@ -25,7 +25,7 @@ from .base import ElectroState
 from ..constants import F, R_GAS
 from ..kernel.kinetics import tafel_lumped, butler_volmer
 from ..kernel.transport import conc_overpotential, vogt_enhancement, vogt_limit
-from ..kernel import chemistry
+from ..kernel import chemistry, watertransport
 from ..kernel._solve import bisect
 
 
@@ -196,7 +196,20 @@ class ZeroDTwoElectrodeSolver:
         def eta_c_of(j):
             return _invert_bv(j / omt_c, j0_c, aa_c, ac_c, T, n=self.n_inner)
 
+        # DRY CATHODE: with no liquid feed, every electron needs a water molecule
+        # dragged (electro-osmosis) or diffused through the membrane. The ON/OFF
+        # switch is op.dry_cathode — NOT "j_lim_water > 0", because a membrane
+        # that passes no water gives j_lim_water == 0, which is TOTAL starvation,
+        # the exact opposite of "feature disabled".
+        dry = bool(getattr(op, "dry_cathode", False))
+        j_lim_w = context.get("j_lim_water", 0.0) if dry else 0.0
+
+        def eta_w_of(j):
+            return watertransport.eta_water(j, j_lim_w, T) if dry else 0.0
+
         j_lim_fp = vogt_limit(j_lim_base, j_ref_v, k_vogt)   # self-consistent ceiling
+        if dry:                               # water supply can be the tighter wall
+            j_lim_fp = min(j_lim_fp, max(j_lim_w, 1e-9))
         mode = getattr(op, "mode", "CA")
         if mode == "CP":
             # galvanostatic: j imposed, V follows. Clamp below the self-consistent
@@ -209,13 +222,16 @@ class ZeroDTwoElectrodeSolver:
             else:
                 def f(j):     # monotone increasing in j; root = operating current density
                     return (E_cell + eta_a_of(j) + eta_c_of(j)
-                            + conc_overpotential(j, jlim_of(j), z, T) + j * R_total - op.V_cell)
+                            + conc_overpotential(j, jlim_of(j), z, T) + eta_w_of(j)
+                            + j * R_total - op.V_cell)
                 hi = 0.995 * j_lim_fp     # exact ceiling: bisect can't return above it
                 j = hi if f(hi) < 0.0 else bisect(f, 0.0, hi, self.n_outer)
 
         eta_a, eta_c = eta_a_of(j), eta_c_of(j)
+        eta_w = eta_w_of(j)            # dry-cathode water starvation (0 when off)
         j_lim = jlim_of(j)             # Vogt-enhanced limit at the operating current
-        V_cp = E_cell + eta_a + eta_c + conc_overpotential(j, j_lim, z, T) + j * R_total
+        V_cp = (E_cell + eta_a + eta_c + conc_overpotential(j, j_lim, z, T)
+                + eta_w + j * R_total)
         # bubble bottleneck diagnostics: how much voltage each bubble channel costs.
         # Coverage: blocking area scales j0 by (1-theta); on the dominant Tafel
         # branch that costs exactly (RT / alpha F) ln(1/(1-theta)). Void: extra
@@ -232,6 +248,7 @@ class ZeroDTwoElectrodeSolver:
             "eta_bub_cov_anode": (fRT / aa_a) * math.log(1.0 / omt_a),
             "eta_bub_cov_cathode": (fRT / aa_c) * math.log(1.0 / omt_c),
             "eta_bub_void": j * (R_ohm - R_ohm_clear),
+            "eta_water": eta_w,        # dry-cathode water starvation (0 = wet/off)
         }
         med = context.get("electrolyte", "KOH")
         c_b = op.c_electrolyte

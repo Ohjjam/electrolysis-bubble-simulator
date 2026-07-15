@@ -53,6 +53,13 @@ DESIGNER_DEFAULTS = {
     # --- electrode kinetics shape + electrolyte-path convention -------------
     "alpha_a": 1.0,              # OER anodic transfer coefficient (Tafel slope lever)
     "gap_mm": 2.0,               # electrode-to-membrane electrolyte gap CONVENTION [mm]
+    "C_dl_anode": 0.2,           # anode double-layer capacitance [F/m^2] (EIS + CP tau)
+    "C_dl_cathode": 0.2,         # cathode double-layer capacitance [F/m^2]
+    # --- dry cathode (anolyte-only AEM): membrane water transport -------------
+    # OFF by default: every existing cell keeps both electrodes liquid-wetted.
+    "dry_cathode": 0,            # 1 = no liquid feed on the cathode side
+    "n_drag": 2.5,               # electro-osmotic drag [mol H2O / mol OH-]
+    "D_w_mem": 1.0e-9,           # water diffusivity in the membrane [m^2/s]
                                  # (calibrated r_mem pairs with a gap value; keep them together)
     "h_mm": 2.0,                 # live-grid voxel size [mm] (smaller = finer channels, slower)
     # --- PP-mesh bubble-management interlayer (experiment tab; sweep only) --
@@ -107,6 +114,16 @@ def _num(d, k, cast=float):
         return cast(DESIGNER_DEFAULTS[k])
 
 
+def _flag(d, k):
+    """Truthiness of a designer toggle. The UI's seg buttons send STRINGS, and
+    bool("0") is True — so parse the string form explicitly or an "off" switch
+    silently reads as on."""
+    v = d.get(k, DESIGNER_DEFAULTS.get(k, 0))
+    if isinstance(v, str):
+        return v.strip().lower() not in ("", "0", "off", "false", "no")
+    return bool(v)
+
+
 def operating_from_designer(d: dict) -> Operating:
     """Designer dict -> kernel Operating (two-electrode, CA or CP)."""
     mode = "CA" if str(d.get("mode", "CP")).upper() == "CA" else "CP"
@@ -129,6 +146,12 @@ def operating_from_designer(d: dict) -> Operating:
         E_ext=max(0.0, _num(d, "E")) * 1.0e6,           # MV/m -> V/m
         A_cm2=max(1e-3, _num(d, "W_cm") * _num(d, "H_cm")),
         gap_mm=max(0.05, _num(d, "gap_mm")),
+        # dry cathode (anolyte-only AEM): the cathode is fed water ONLY through
+        # the membrane. Off by default -> identical to before.
+        dry_cathode=_flag(d, "dry_cathode"),
+        n_drag=max(0.0, _num(d, "n_drag")),
+        D_w_mem=max(0.0, _num(d, "D_w_mem")),
+        t_mem_um=max(1.0, _num(d, "t_mem_um")),
     )
 
 

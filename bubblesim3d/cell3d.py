@@ -282,6 +282,60 @@ class CellSim3D:
             "j_Acm2": round(self.cell_current_A_m2() / 1.0e4, 4),
             "V_cell": round(self.cell_voltage(), 4),
             "up": [round(float(x), 3) for x in self.ns.up],
+            # voltage breakdown at the operating point (V), so the UI can draw a
+            # "where does the cell voltage go" bar at a glance
+            "eta": self._eta_breakdown(),
+        }
+
+    def _eta_breakdown(self):
+        ov = self._state.overpotentials if self._state else {}
+        return {k: round(float(ov.get(k, 0.0)), 4) for k in
+                ("E_rev", "eta_act_anode", "eta_act_cathode",
+                 "eta_conc", "eta_ohmic", "eta_water")}
+
+    def eis(self, f_lo=1e-1, f_hi=1e6, n=60):
+        """Small-signal EIS spectrum at the current operating point (analytic).
+
+        Linearises the two-electrode balance: per electrode R_ct is the inverse
+        Butler-Volmer slope at the present overpotential, in parallel with the
+        double-layer C_dl (both scaled by 1-theta for bubble-covered area), plus
+        a finite-length Warburg from the diffusion layer; R_s is the series
+        resistance the solver already reports. Returns Nyquist arrays in ohm*cm^2.
+        (Same construction as the 2-D app's LiveSim.eis.)
+        """
+        from bubblesim.kernel import impedance as imp
+        from bubblesim.constants import F as _F, R_GAS as _RG
+        st, ctx, op = self._state, self.ctx, self.op
+        if st is None:
+            return {"error": "no operating point yet"}
+        ov = st.overpotentials
+        j = max(self.cell_current_A_m2(), 1e-3)
+        T = op.T
+        th_c, th_a = self.parcels.coverage(0), self.parcels.coverage(1)
+        R_s = ov.get("eta_ohmic", 0.0) / j                     # series R [ohm*m^2]
+        Rct_a = imp.r_ct_bv(max(1e-3, 1 - th_a) * ctx["j0_anode"],
+                            ctx["alpha_a_anode"], ctx["alpha_c_anode"],
+                            ov.get("eta_act_anode", 0.0), T)
+        Rct_c = imp.r_ct_bv(max(1e-3, 1 - th_c) * ctx["j0_cathode"],
+                            ctx["alpha_a_cathode"], ctx["alpha_c_cathode"],
+                            ov.get("eta_act_cathode", 0.0), T)
+        j_lim = ctx["j_lim_transport"]
+        z = ctx["z_primary"]
+        R_d = (_RG * T / (z * _F)) / max(j_lim - j, 1e-3)      # dc mass-transport R
+        delta = min(ctx.get("delta_bl", 3e-5), 0.8 * ctx.get("gap_m", 5e-4))
+        tau_d = delta * delta / max(ctx.get("D_carrier", 3e-9), 1e-12)
+        Ca = max(1e-3, self.params.anode.C_dl) * max(1e-3, 1 - th_a)
+        Cc = max(1e-3, self.params.cathode.C_dl) * max(1e-3, 1 - th_c)
+        els = [{"R_ct": Rct_a, "C_dl": Ca, "R_d": 0.5 * R_d, "tau_d": tau_d},
+               {"R_ct": Rct_c, "C_dl": Cc, "R_d": 0.5 * R_d, "tau_d": tau_d}]
+        freqs = imp.log_freqs(f_lo, f_hi, n)
+        Z = imp.cell_impedance(freqs, R_s, els)
+        return {
+            "f": list(freqs),
+            "re": [round(z_.real * 1e4, 4) for z_ in Z],       # ohm*m^2 -> ohm*cm^2
+            "im": [round(-z_.imag * 1e4, 4) for z_ in Z],      # Nyquist: -Im
+            "Rs": round(R_s * 1e4, 4),
+            "Rct_a": round(Rct_a * 1e4, 4), "Rct_c": round(Rct_c * 1e4, 4),
         }
 
     def face_current_maps(self):

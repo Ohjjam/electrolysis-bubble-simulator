@@ -9,7 +9,7 @@ keys, never rename or remove them** (existing consumers and golden tests bind to
 append keys (e.g. `j0_anode`, `eta_conc` inputs) without disturbing this set.
 """
 from .. import properties as prop
-from . import transport, chemistry
+from . import transport, chemistry, watertransport
 
 
 def build_context(op, params) -> dict:
@@ -50,6 +50,16 @@ def build_context(op, params) -> dict:
     d["alpha_a_cathode"], d["alpha_c_cathode"] = c.alpha_a, c.alpha_c
     d["r_membrane_area"] = params.r_membrane_area
     d["r_contact_area"] = params.r_contact_area
+
+    # --- dry-cathode membrane water transport (add-only; 0 when disabled) ------
+    # An anolyte-only AEM cell feeds the cathode through the membrane alone:
+    # back-diffusion supplies it, electro-osmotic drag (OH- -> anode) steals from
+    # it. Yields a water-supply limiting current; the solver turns it into
+    # eta_water. Defaults (op.dry_cathode=False) give 0 -> golden-safe.
+    k_w, j_lim_w = watertransport.dry_cathode_terms(
+        op, getattr(op, "t_mem_um", 50.0) * 1e-6)
+    d["water_permeance"] = k_w                 # [mol/(m^2 s)] membrane ceiling
+    d["j_lim_water"] = j_lim_w                 # [A/m^2] 0 = no dry-cathode limit
 
     # --- mass transport: Sherwood-grounded limiting current + Henry saturation ---
     d["sh_enhancement"] = transport.flow_enhancement(op, d, params)

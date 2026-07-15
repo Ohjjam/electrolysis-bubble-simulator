@@ -1,0 +1,4 @@
+﻿variant,Rs_ohmcm2,Rct_a_ohmcm2,Rct_c_ohmcm2,Rct_tot_ohmcm2,theta_mean
+pristine,0.2841,0.1787,0.0965,0.2752,0.7259
+ref_mesh (pp_040x053),0.2806,0.0861,0.0678,0.154,0.4315
+best (pp_015x015),0.2806,0.0795,0.0643,0.1437,0.3839

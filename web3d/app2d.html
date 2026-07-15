@@ -15,12 +15,27 @@
   h1{font-size:19px;margin:0 0 2px} .sub{color:var(--dim);font-size:12px;margin-bottom:12px}
   .pill{display:inline-block;border:1px solid #b6e3d0;background:#e8f7f1;border-radius:99px;
         padding:1px 9px;font-size:11px;color:var(--grn)}
-  .app{display:grid;grid-template-columns:320px minmax(420px,1fr) minmax(420px,1fr);gap:12px;align-items:start}
+  .app{display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start}
   /* the left column is ONE grid item; adding a second one there pushed the
      panels onto row 2 (grid auto-placement, not a styling accident) */
   .side{display:flex;flex-direction:column;gap:12px;min-width:0}
-  @media (max-width:1180px){ .app{grid-template-columns:300px minmax(360px,1fr)}
-    .side{grid-row:span 2} }
+  /* right side = a compact dashboard: the two visual panels (small) + the
+     electrochemistry panels (LSV / 과전압 / CP / EIS / 시간추이) all at once.
+     auto-fit packs as many ~290px columns as the width allows, so on a wide
+     screen every panel is visible without scrolling. */
+  .dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
+        gap:10px;align-items:start;min-width:0}
+  @media (max-width:660px){ .app{grid-template-columns:1fr} }
+  .phead{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px}
+  .csvb{flex:none;background:var(--surf);color:var(--dim);border:1px solid var(--line);
+        border-radius:7px;padding:3px 9px;font-size:10.5px;cursor:pointer;white-space:nowrap}
+  .csvb:hover{border-color:var(--grn);color:var(--grn)}
+  /* cards are flex columns; a .chartcv canvas GROWS to fill the leftover space,
+     so dragging a panel bigger enlarges the plot (re-drawn crisp) instead of
+     stretching a fixed bitmap. Charts stay sharp at any size/aspect. */
+  .dash>.card{display:flex;flex-direction:column}
+  .chartcv{flex:1 1 140px;width:100%;min-height:140px;display:block}
+  canvas{width:100%}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
   .ctl{margin-bottom:9px} .lab{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:2px;align-items:baseline}
   .val{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
@@ -53,74 +68,125 @@
 <body>
 <h1>3D 셀 시뮬레이터 <span class="pill">계산 = 3D bubblesim3d 커널 (live)</span></h1>
 <div class="sub">모든 수치는 3-D 격자에서 계산 — NS 유동 + 기포 생애주기 + 전기화학. 브라우저는 그리기만.
+  <a href="/" style="color:var(--accent);margin-left:8px">🧊 3D 렌더 뷰로 →</a>
   <span id="conn">⚠ 서버 연결 끊김 — bat 창이 닫혔는지 확인</span></div>
-
-<!-- 2D/3D는 같은 시뮬레이션의 두 화면: 여기서 실험 탭을 고르면 그 저장 조건이
-     적용되고(3D 화면도 같이 바뀜), "현재 조건"은 지금 돌고 있는 상태 그대로. -->
-<div class="seg" id="expTabs2" style="flex-wrap:wrap;max-width:920px;margin:0 0 12px">
-  <button data-m="3d" style="flex:none;padding:5px 12px">🧊 3D 뷰로</button>
-  <button data-m="cur" class="on" style="flex:none;padding:5px 12px"
-    title="지금 돌고 있는 조건 그대로 (실험 저장/삭제는 3D 뷰에서)">▶ 현재 조건</button>
-</div>
 
 <div class="app">
 
   <!-- ===================== controls (one grid item, stacked) ===================== -->
   <div class="side">
+    <!-- experiment picker: which saved condition the running sim is set to.
+         Server-tracked, so a choice made in the 3-D view shows up here too. -->
+    <div class="card" style="padding:10px 12px">
+      <div style="font-size:12.5px;color:var(--dim);font-weight:600;margin-bottom:6px">🔬 실험 / 뷰 선택</div>
+      <select id="expPick" style="width:100%;background:var(--surf);color:var(--tx);
+        border:1px solid var(--line);border-radius:7px;padding:6px;font-size:12.5px">
+        <option value="">— 직접 조절 (실험 선택 안 함) —</option>
+      </select>
+      <div class="hint" style="margin-top:5px">실험을 고르면 저장된 유로·운전 조건이 통째로
+        적용됩니다 (3D 뷰도 같은 시뮬레이션이라 같이 바뀜).</div>
+      <div id="expSave2" style="display:none;margin-top:7px">
+        <input id="expName2" placeholder="실험 이름" style="width:100%;margin-bottom:5px;
+          background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:6px">
+        <input id="expNote2" placeholder="메모 (선택)" style="width:100%;margin-bottom:6px;
+          background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:6px">
+        <div style="display:flex;gap:6px">
+          <button id="expSaveGo2" style="flex:1;background:var(--surf2);color:var(--grn);border:1px solid var(--grn);
+            border-radius:8px;padding:6px;cursor:pointer;font-size:12px">💾 저장</button>
+          <button id="expSaveNo2" style="flex:1;background:var(--surf);color:var(--dim);border:1px solid var(--line);
+            border-radius:8px;padding:6px;cursor:pointer;font-size:12px">취소</button>
+        </div>
+      </div>
+    </div>
     <div class="card" id="controls"></div>
     <div class="card" id="plateEd"></div>
   </div>
 
-  <!-- ===================== PANEL 1: local zoom ===================== -->
+  <div class="dash">
+  <!-- ① local zoom (compact) -->
   <div class="card">
-    <div class="ptitle">① 촉매면 국소 확대 — <span style="color:var(--gold)">실제 버블 크기</span></div>
-    <div class="seg" id="sideSeg" style="margin-bottom:6px">
+    <div class="phead"><span class="ptitle">① 국소 확대 <span style="color:var(--gold);font-weight:400">실제 버블 크기</span></span>
+      <button class="csvb" data-csv="hero">⬇ CSV</button></div>
+    <div class="seg" id="sideSeg" style="margin:4px 0 5px">
       <button data-s="0" class="on">음극 (H₂)</button><button data-s="1">양극 (O₂)</button>
     </div>
-    <div class="psub">전극 표면의 µm 스케일. 전극은 <b>세로</b>로 서 있고 부력은 그와 <b>나란히 위로</b> 작용합니다.
-      여기서만 진짜 크기가 보입니다 — 핵생성 → 벽에서 성장 → 이탈 → 벽을 타고 상승.
-      시간 배속을 <b>0.02×</b>로 낮추면 초고속 카메라처럼 한 사이클을 관찰할 수 있습니다.</div>
-    <canvas id="hero" width="440" height="520"></canvas>
-    <div class="ctl" style="margin-top:8px">
-      <div class="lab"><span>확대 (벽 쪽으로 파고들기) — 1× = 채널 깊이 전체</span><span class="hint">×</span></div>
-      <div class="ri">
-        <input id="sZoom" type="range" min="1" max="12" step="0.5" value="1">
-        <input id="nZoom" type="number" min="1" max="60" step="0.5" value="1">
-      </div>
-    </div>
-    <div class="ctl">
-      <div class="lab"><span>투영 깊이 (현미경 초점 두께) — 두꺼울수록 겹쳐 보임</span><span class="hint">mm</span></div>
-      <div class="ri">
-        <input id="sWinZ" type="range" min="0.05" max="3" step="0.05" value="0.6">
-        <input id="nWinZ" type="number" min="0.05" max="3" step="0.05" value="0.6">
-      </div>
-    </div>
-    <div class="grid3">
-      <div class="met"><div class="k">이탈 반경 r<sub>dep</sub></div><div class="v"><span id="mRd">–</span><span class="u"> µm</span></div></div>
-      <div class="met"><div class="k">창 안 버블</div><div class="v"><span id="mHeroN">–</span></div></div>
-      <div class="met"><div class="k">최대 반경</div><div class="v"><span id="mHeroR">–</span><span class="u"> µm</span></div></div>
-    </div>
-    <div class="hint" id="heroLoc" style="margin-top:7px">–</div>
+    <canvas id="hero" width="400" height="200"></canvas>
+    <div class="ri" style="margin-top:6px"><span class="un" style="width:34px">확대</span>
+      <input id="sZoom" type="range" min="1" max="12" step="0.5" value="1">
+      <input id="nZoom" type="number" min="1" max="60" step="0.5" value="1"></div>
+    <div class="ri" style="margin-top:4px"><span class="un" style="width:34px">깊이</span>
+      <input id="sWinZ" type="range" min="0.05" max="3" step="0.05" value="0.6">
+      <input id="nWinZ" type="number" min="0.05" max="3" step="0.05" value="0.6"></div>
+    <!-- metrics live in their OWN line: drawHero rewrites #heroLoc every frame,
+         so the mRd/mHeroN/mHeroR spans must NOT sit inside it (they'd be wiped
+         and getElementById would then return null → the render loop would die) -->
+    <div class="hint" id="heroMet" style="margin-top:5px">r<sub>dep</sub> <b id="mRd">–</b>µm · 창 <b id="mHeroN">–</b>개 · 최대 <b id="mHeroR">–</b>µm</div>
+    <div class="hint" id="heroLoc" style="margin-top:4px">–</div>
   </div>
 
-  <!-- ===================== PANEL 2: whole-cell blocking ===================== -->
+  <!-- ② whole-cell blocking (compact) -->
   <div class="card">
-    <div class="ptitle">② 전체 셀 — <span style="color:var(--warn)">기포로 막히는 형상</span></div>
-    <div class="psub">전극면 전체의 가스 체적분율 ε. 빨강 = 기포가 채널을 막은 곳, 파랑 = 전해질이 흐르는 곳.
-      흰 화살표는 유동이 <b>기포 덩어리를 우회</b>하는 방향. 아무 데나 클릭하면 ①이 그 지점을 확대합니다.</div>
-    <canvas id="face" width="440" height="520"></canvas>
-    <div class="grid3">
-      <div class="met"><div class="k">가스 holdup ε</div><div class="v"><span id="mEps">–</span><span class="u"> %</span></div></div>
-      <div class="met"><div class="k">셀 전압 V</div><div class="v"><span id="mV">–</span><span class="u"> V</span></div></div>
-      <div class="met"><div class="k">가스 / 액체 유량</div><div class="v"><span id="mGL">–</span><span class="u"> ×</span></div></div>
+    <div class="phead"><span class="ptitle">② 전체 셀 <span style="color:var(--warn);font-weight:400">기포 막힘 형상</span></span>
+      <button class="csvb" data-csv="face">⬇ CSV</button></div>
+    <div class="psub">ε: 빨강=막힘, 파랑=흐름 · 클릭→①확대</div>
+    <canvas id="face" width="400" height="200"></canvas>
+    <div class="grid3" style="margin-top:6px">
+      <div class="met"><div class="k">holdup ε</div><div class="v"><span id="mEps">–</span><span class="u">%</span></div></div>
+      <div class="met"><div class="k">셀 전압</div><div class="v"><span id="mV">–</span><span class="u">V</span></div></div>
+      <div class="met"><div class="k">가스/액체</div><div class="v"><span id="mGL">–</span><span class="u">×</span></div></div>
     </div>
-    <div id="deadflow">⚠ <b>유동 경로 없음</b> — 입구에서 출구까지 이어진 채널이 없습니다.
-      압력 풀이가 질량을 보존할 수 없어 <b>이 화면의 모든 수치는 무의미합니다</b>.
-      (교차형 유로는 다공 수송층을 관통하는 유동이 필요한데, 이 모델은 코어를 고체로 둡니다.)</div>
-    <div id="choke">⚠ <b>가스 초킹</b> — 발생 가스가 펌프 유량을 넘어섰습니다 (<span id="chokeNum"></span>).
-      채널이 가스로 막혀 ε가 치솟고 옴 손실이 커집니다. <b>유량</b>을 올리거나 <b>전류밀도</b>를 낮추세요.</div>
-    <div class="hint" id="mBub" style="margin-top:7px">–</div>
-    <div class="hint" id="mGeom" style="margin-top:5px">–</div>
+    <div id="deadflow">⚠ <b>유동 경로 없음</b> — 입구→출구 채널이 없어 수치 무의미.</div>
+    <div id="choke">⚠ <b>가스 초킹</b> (<span id="chokeNum"></span>). 유량↑ / 전류↓.</div>
+    <div class="hint" id="mBub" style="margin-top:5px">–</div>
+    <div class="hint" id="mGeom" style="margin-top:4px">–</div>
+  </div>
+
+  <!-- ③ LSV -->
+  <div class="card">
+    <div class="phead"><span class="ptitle">③ 분극곡선 (LSV)</span><button class="csvb" data-csv="lsv">⬇ CSV</button></div>
+    <canvas id="cLsv" class="chartcv" width="400" height="200"></canvas>
+    <div class="leg" id="lsvLeg" style="margin-top:4px;font-size:10.5px"></div>
+    <div class="hint" id="lsvRead" style="margin-top:3px">–</div>
+  </div>
+
+  <!-- ④ voltage breakdown -->
+  <div class="card">
+    <div class="phead"><span class="ptitle">④ 셀 전압 분해 <span style="color:var(--vio);font-weight:400">손실 위치</span></span>
+      <button class="csvb" data-csv="eta">⬇ CSV</button></div>
+    <div class="psub">V<sub>cell</sub> = E<sub>rev</sub> + η들의 합 — 막대 = 각 항 크기(V)</div>
+    <div id="etaBar" style="display:flex;height:30px;border-radius:8px;overflow:hidden;margin:7px 0;
+      border:1px solid var(--line);background:var(--surf)"></div>
+    <div id="etaLeg" style="display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:11px"></div>
+  </div>
+
+  <!-- ⑤ CP/CA transient -->
+  <div class="card">
+    <div class="phead"><span class="ptitle">⑤ 과도응답 <span style="color:var(--grn);font-weight:400">CP:V(t)·CA:j(t)</span></span>
+      <button class="csvb" data-csv="cp">⬇ CSV</button></div>
+    <canvas id="cCp" class="chartcv" width="400" height="170"></canvas>
+    <div class="row" style="margin-top:5px"><button class="csvb" id="cpClr">🧹 기록 지우기</button></div>
+  </div>
+
+  <!-- ⑥ EIS Nyquist -->
+  <div class="card">
+    <div class="phead"><span class="ptitle">⑥ EIS 예상 (Nyquist)</span><button class="csvb" data-csv="eis">⬇ CSV</button></div>
+    <div class="psub">운전점 소신호(해석적). 고주파 절편=R<sub>s</sub>, 반원 지름=R<sub>ct</sub></div>
+    <canvas id="cEis" class="chartcv" width="400" height="200"></canvas>
+    <div class="hint" id="eisRead" style="margin-top:4px">–</div>
+  </div>
+
+  <!-- ⑦ holdup / blocking over time -->
+  <div class="card">
+    <div class="phead"><span class="ptitle">⑦ 시간별 가스 막힘 <span style="color:var(--warn);font-weight:400">ε·θ 추이</span></span>
+      <button class="csvb" data-csv="holdt">⬇ CSV</button></div>
+    <div class="psub">전류/유량을 바꾸면 기공 막힘이 시간에 따라 어떻게 쌓이는지</div>
+    <canvas id="cHoldT" class="chartcv" width="400" height="170"></canvas>
+    <div class="leg" style="margin-top:4px;font-size:10.5px">
+      <span><span style="display:inline-block;width:14px;height:2px;background:#c9333f;vertical-align:middle"></span> holdup ε</span>
+      <span><span style="display:inline-block;width:14px;height:2px;background:#1f6feb;vertical-align:middle"></span> 전극 덮임 θ</span>
+      <button class="csvb" id="holdClr" style="margin-left:auto">🧹 지우기</button>
+    </div>
+  </div>
   </div>
 </div>
 
@@ -157,12 +223,27 @@ const plateEd = mountPlateEditor(document.getElementById("plateEd"),
                                  { P, send, reg: ctls.reg });
 
 // -------------------------------------------------- helpers
-function prep(cv) {                                   // HiDPI-crisp canvas
-  const dpr = Math.min(2, devicePixelRatio || 1);
+const DPR = () => Math.min(3, Math.max(1, devicePixelRatio || 1));   // sharp on hi-dpi
+function prep(cv) {                                   // aspect-locked HiDPI canvas
+  const dpr = DPR();
   const W = cv.clientWidth || +cv.getAttribute("width");
   const H = Math.round(W * (+cv.getAttribute("height") / +cv.getAttribute("width")));
   if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   cv.style.height = H + "px";
+  const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, W, H);
+  return { c, W, H };
+}
+// FILL mode: the canvas fills whatever box CSS gives it (flex), so resizing the
+// panel re-fits the chart crisply instead of stretching a fixed bitmap. Backing
+// store tracks the real pixel size × dpr -> always sharp, any aspect.
+function prepFill(cv) {
+  const dpr = DPR();
+  const W = Math.max(40, cv.clientWidth || +cv.getAttribute("width"));
+  const H = Math.max(40, cv.clientHeight || +cv.getAttribute("height"));
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
   const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, W, H);
   return { c, W, H };
@@ -621,6 +702,17 @@ async function poll() {
                `폭 슬라이더는 <b>비율</b>만 정하고, 격자가 셀 단위로 양자화합니다. ` +
                `복셀 해상도를 낮추면 가까워집니다.</span>` : "");
     } else { gm.innerHTML = `복셀 ${(d.h_mm ?? 0).toFixed(1)} mm · 직접 그린 유로`; }
+    cpRecord(s);            // ⑤ CP/CA transient
+    holdRecord(s);          // ⑦ gas blocking over time
+    epsProfRecord(s);       // ② time×region blocking (for CSV)
+    drawEta(d.eta, d.V_cell);   // ④ voltage breakdown (every poll — it's cheap)
+    // pump flow as a VOLUME (what a real pump is set to) — u_flow is m/s, and
+    // the conversion through the channel cross-section was invisible until now
+    const dsn = s.designer || {};
+    const qCh = flowMLmin(dsn), q3d = (d.q_liq_mLs != null) ? d.q_liq_mLs * 60 : null;
+    gm.innerHTML += `<br>펌프 유량 ≈ <b style="color:var(--tx)">${qCh.toFixed(2)} mL/min</b>` +
+      ` (u ${(+dsn.u_flow || 0).toFixed(3)} m/s × 유로 단면 ${(chanArea_m2(dsn) * 1e6).toFixed(3)} mm²)` +
+      (q3d != null ? ` · 3-D 셀 실제 통과량 ${q3d.toFixed(2)} mL/min` : "");
   } catch {
     document.getElementById("conn").style.display = "inline";
     dt = 1200;
@@ -629,45 +721,362 @@ async function poll() {
 }
 poll();
 
-// ------------------------- experiment tabs (same list as the 3-D view) -----
-// 2D/3D are two windows onto ONE running simulation: picking an experiment
-// here pushes its saved designer to /api3d/op (the 3-D view follows on its
-// next poll). "현재 조건" just means "watch whatever is running" — it is not
-// a separate snapshot to go back to. Save/overwrite/delete live in the 3-D
-// view; this bar only APPLIES.
-const expTabs2 = document.getElementById("expTabs2");
-async function loadExpTabs2() {
-  let list = [];
-  try { list = (await (await fetch("/api3d/experiments")).json()).list || []; }
-  catch { /* server offline: the poll banner already says so */ }
-  expTabs2.querySelectorAll("button[data-m='user']").forEach(b => b.remove());
-  for (const ex of list) {
-    const b = document.createElement("button");
-    b.dataset.m = "user"; b.dataset.exp = ex.id;
-    b.style.flex = "none"; b.style.padding = "5px 12px";
-    b.textContent = "🔬 " + ex.name;
-    b.title = (ex.note ? ex.note + " · " : "") + "저장 " + (ex.created || "") +
-              " — 클릭하면 이 조건으로 전환 (3D 뷰도 같이 바뀜)";
-    b._designer = ex.designer;
-    expTabs2.appendChild(b);
+// ------------------------- experiment picker (dropdown) --------------------
+// 2D/3D are two windows onto ONE running simulation. The dropdown lists the
+// saved experiments; picking one asks the SERVER to apply it (action:"apply"),
+// and the server remembers which experiment is active — so an experiment
+// chosen in the 3-D view shows up selected here, and vice versa. Save /
+// overwrite / delete live in the 3-D view; this picker only applies.
+const expPick = document.getElementById("expPick");
+let expPickPrev = "";                      // restore point when an action is cancelled
+async function loadExpPick() {
+  let list = [], active = null;
+  try {
+    const r = await (await fetch("/api3d/experiments")).json();
+    list = r.list || []; active = r.active || null;
+  } catch { return; }                      // offline: the poll banner says so
+  if (document.activeElement === expPick) return;   // don't fight a pick in progress
+  if (document.getElementById("expSave2").style.display !== "none") return; // saving
+  expPick.querySelectorAll("option:not(:first-child), optgroup").forEach(o => o.remove());
+  if (list.length) {
+    const gE = document.createElement("optgroup"); gE.label = "저장된 실험 (적용)";
+    for (const ex of list) {
+      const o = document.createElement("option");
+      o.value = ex.id;
+      o.textContent = "🔬 " + ex.name + (ex.note ? " — " + ex.note : "");
+      gE.appendChild(o);
+    }
+    expPick.appendChild(gE);
   }
+  const gV = document.createElement("optgroup"); gV.label = "바로가기";
+  for (const [v, t] of [["__3d", "🧊 3D 렌더 뷰로 이동"],
+                        ["__mesh", "🧪 mesh 실험 탭으로 이동 (3D 뷰)"]]) {
+    const o = document.createElement("option"); o.value = v; o.textContent = t;
+    gV.appendChild(o);
+  }
+  expPick.appendChild(gV);
+  const gM = document.createElement("optgroup"); gM.label = "관리";
+  const oS = document.createElement("option");
+  oS.value = "__save"; oS.textContent = "＋ 지금 조건을 실험으로 저장…";
+  gM.appendChild(oS);
+  expPick.appendChild(gM);
+  expPick.value = active && list.some(x => x.id === active) ? active : "";
+  expPickPrev = expPick.value;
 }
-expTabs2.addEventListener("click", e => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  if (b.dataset.m === "3d") { location.href = "/"; return; }
-  expTabs2.querySelectorAll("button").forEach(x =>
-    x.classList.toggle("on", x === b));
-  if (b.dataset.m === "user" && b._designer) {
-    fetch("/api3d/op", { method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(b._designer) }).catch(() => {});
+expPick.addEventListener("change", () => {
+  const v = expPick.value;
+  if (v === "__3d") { location.href = "/"; return; }
+  if (v === "__mesh") { location.href = "/?tab=exp"; return; }
+  if (v === "__save") {                    // inline save form; restore on cancel
+    document.getElementById("expSave2").style.display = "";
+    document.getElementById("expName2").focus();
+    return;
   }
+  expPickPrev = v;
+  fetch("/api3d/experiments", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "apply", id: v }) })
+    .catch(() => {});
+  expPick.blur();                          // let the refresh keep syncing after
 });
-loadExpTabs2();
-setInterval(loadExpTabs2, 15000);   // pick up saves/deletes made in the 3-D view
+document.getElementById("expSaveNo2").onclick = () => {
+  document.getElementById("expSave2").style.display = "none";
+  expPick.value = expPickPrev;
+};
+document.getElementById("expSaveGo2").onclick = async () => {
+  const name = document.getElementById("expName2").value.trim();
+  if (!name) { document.getElementById("expName2").focus(); return; }
+  const note = document.getElementById("expNote2").value.trim();
+  const designer = st && st.designer ? { ...st.designer } : { ...P };
+  try {
+    const r = await (await fetch("/api3d/experiments", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "save", name, note, designer }) })).json();
+    if (r.error) throw new Error(r.error);
+    // mark it active (same designer -> the server skips the rebuild)
+    await fetch("/api3d/experiments", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "apply", id: r.id }) });
+    document.getElementById("expSave2").style.display = "none";
+    document.getElementById("expName2").value = "";
+    document.getElementById("expNote2").value = "";
+    await loadExpPick();
+  } catch (e) { alert("저장 실패: " + e.message); }
+};
+loadExpPick();
+setInterval(loadExpPick, 5000);   // reflect choices/saves made in the 3-D view
 
-function frame() { drawHero(); drawFace(); requestAnimationFrame(frame); }
+// ============================================================ dashboard panels
+// (LSV / voltage breakdown / CP transient / EIS) — the electrochemistry, at a
+// glance next to the two visual panels. All fed by the same /api3d server.
+const EXP_MEAS = [[10,1.48294],[20,1.4937],[50,1.5184],[100,1.55191],[200,1.60495],
+  [300,1.65078],[400,1.69504],[500,1.74178],[625,1.80051],[750,1.86602],[875,1.94376],
+  [1000,2.03323],[1250,2.20449],[1500,2.37841],[2000,2.6616],[2250,2.78376]];
+
+// ---- ③ LSV: fetch the cached channel-model sweep, mark the operating point ----
+let lsvRes = null;
+async function loadLsv() {
+  try { lsvRes = await (await fetch("/api3d/sweep", { method:"POST",
+    headers:{"Content-Type":"application/json"}, body:"{}" })).json(); }
+  catch { return; }
+  drawLsv();
+}
+// the measured points are the NF/PP mesh cell's calibration data — only a
+// reference when THAT cell is loaded (13-ch serpentine). Showing them for an
+// arbitrary geometry is misleading, so gate on the config.
+function lsvIsMeshCell(){ const d = st&&st.designer; return !!(d && d.ff==="serp"
+  && Math.round(d.n_ch)===13 && Math.abs((+d.W_cm||0)-2.2)<0.3); }
+function drawLsv() {
+  const { c, W, H } = prepFill(document.getElementById("cLsv"));
+  if (!lsvRes || !lsvRes.j) { c.fillStyle = INK.dim; c.font="12px system-ui";
+    c.fillText("스윕 대기…", 10, 22); return; }
+  const padL=34, padB=22, padT=16, jmax = Math.max(...lsvRes.j), vlo = 1.3, vhi = 3.0;
+  const X = j => padL + j/jmax*(W-padL-10), Y = v => H-padB - (v-vlo)/(vhi-vlo)*(H-padB-padT);
+  c.strokeStyle="rgba(128,138,160,.25)"; c.lineWidth=1; c.font="10px system-ui"; c.textAlign="left";
+  // y grid + labels (skip the very top so it can't collide with the "V" unit)
+  for (let v=1.5; v<=2.5; v+=0.5){ const y=Y(v); c.beginPath(); c.moveTo(padL,y); c.lineTo(W-8,y); c.stroke();
+    c.fillStyle=INK.dim; c.fillText(v.toFixed(1),4,y+3); }
+  for (let j=500; j<=jmax; j+=500){ const x=X(j); c.beginPath(); c.moveTo(x,padT); c.lineTo(x,H-padB); c.stroke();
+    c.fillStyle=INK.dim; c.textAlign="center"; c.fillText(j>=1000?(j/1000)+"k":j, x, H-7); c.textAlign="left"; }
+  c.fillStyle=INK.dim; c.fillText("V", 4, 12); c.textAlign="right"; c.fillText("mA/cm²", W-8, H-7); c.textAlign="left";
+  const showMeas = lsvIsMeshCell();
+  const ju = lsvRes.pristine.j_used || lsvRes.j, rc = lsvRes.pristine.reachable;
+  const line = (js, vs, col, reach) => { c.strokeStyle=col; c.lineWidth=2; c.beginPath(); let started=false;
+    for(let i=0;i<js.length;i++){ if(reach&&!reach[i])break; const x=X(js[i]),y=Y(vs[i]); started?c.lineTo(x,y):c.moveTo(x,y); started=true; } c.stroke(); };
+  if (showMeas){ c.fillStyle="#b7bccb"; for(const [j,v] of EXP_MEAS){ if(j<=jmax) c.fillRect(X(j)-2.5,Y(v)-2.5,5,5); } }
+  line(ju, lsvRes.pristine.V, "#3f86e0", rc);
+  if (lsvRes.mesh) line(lsvRes.mesh.j_used||lsvRes.j, lsvRes.mesh.V, "#2fa356", lsvRes.mesh.reachable);
+  // operating point ●
+  if (st && st.diag){ const j=(st.diag.j_Acm2||0)*1000, v=st.diag.V_cell||0;
+    if(j<=jmax){ c.fillStyle="#c9333f"; c.beginPath(); c.arc(X(j),Y(v),4.5,0,2*Math.PI); c.fill();
+      c.strokeStyle="#fff"; c.lineWidth=1.5; c.stroke(); } }
+  // DYNAMIC legend: only the curves/marks actually on screen
+  const leg = document.getElementById("lsvLeg"); if (leg) {
+    const items = [[14,2,"#3f86e0","모델 pristine (계산)"]];
+    if (lsvRes.mesh) items.push([14,2,"#2fa356","mesh 예측"]);
+    if (showMeas) items.push([6,6,"#b7bccb","NF/PP 실측 ●"]);
+    items.push([8,8,"#c9333f","지금 운전점"]);
+    leg.innerHTML = items.map(([w,h,col,t])=>
+      `<span><span style="display:inline-block;width:${w}px;height:${h}px;${h>4?"border-radius:50%;":""}background:${col};vertical-align:middle"></span> ${t}</span>`).join(" ");
+  }
+  document.getElementById("lsvRead").innerHTML = st&&st.diag
+    ? `지금: <b>${((st.diag.j_Acm2||0)).toFixed(2)} A/cm²</b> · <b>${(st.diag.V_cell||0).toFixed(3)} V</b>`
+      + (lsvRes.water&&lsvRes.water.j_lim_water_mAcm2>0 ? ` · 물벽 ${(lsvRes.water.j_lim_water_mAcm2/1000).toFixed(2)} A/cm²` : "")
+    : "–";
+}
+
+// ---- ④ voltage breakdown bar ----
+const ETA_PARTS = [
+  ["E_rev","E_rev","#8a95a5"], ["eta_act_anode","η OER","#c9333f"],
+  ["eta_act_cathode","η HER","#e8734a"], ["eta_conc","η 농도","#d8a400"],
+  ["eta_ohmic","η 옴","#1f6feb"], ["eta_water","η 물(건식)","#6b4fd8"]];
+function drawEta(eta, V) {
+  const bar = document.getElementById("etaBar"), leg = document.getElementById("etaLeg");
+  if (!eta) return;
+  // hide negligible terms (< 1 mV) so the legend stays clean — e.g. η_물(건식)
+  // when the cell isn't dry-cathode, and η_농도 when transport isn't limiting.
+  // E_rev always stays (it's the baseline).
+  const parts = ETA_PARTS.filter(([k]) => k==="E_rev" || Math.max(0,eta[k]||0) >= 1e-3);
+  const tot = parts.reduce((a,[k])=>a+Math.max(0,eta[k]||0),0) || 1;
+  bar.innerHTML=""; leg.innerHTML="";
+  for (const [k,nm,col] of parts){
+    const val=Math.max(0,eta[k]||0), pct=100*val/tot;
+    if (pct>0.3){ const seg=document.createElement("div");
+      seg.style.cssText=`width:${pct}%;background:${col}`; seg.title=`${nm} ${val.toFixed(3)} V`; bar.appendChild(seg); }
+    const li=document.createElement("div");
+    li.innerHTML=`<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${col};margin-right:5px"></span>`
+      +`${nm} <b style="color:var(--tx)">${val.toFixed(3)} V</b>`;
+    leg.appendChild(li);
+  }
+  const t=document.createElement("div"); t.style.gridColumn="1/3"; t.style.marginTop="3px";
+  t.innerHTML=`합계 V<sub>cell</sub> = <b style="color:var(--tx)">${(V||tot).toFixed(3)} V</b>`;
+  leg.appendChild(t);
+}
+
+// ---- ⑤ CP/CA transient recorder ----
+let cpRec=[], cpQty="V", cpMode=null;
+function cpRecord(s){
+  if(!s||!s.diag) return;
+  const mode=(s.designer&&s.designer.mode)||"CP";
+  if(mode!==cpMode){ cpMode=mode; cpRec=[]; cpQty = mode==="CA"?"j":"V"; }
+  const y = cpQty==="V" ? s.diag.V_cell : s.diag.j_Acm2;
+  if(y==null) return;
+  const t=s.t||0, last=cpRec[cpRec.length-1];
+  if(!last||t>=last[0]){ cpRec.push([t,y]); if(cpRec.length>900) cpRec.shift(); }
+  // drawing happens in the render loop (every frame) so a resize re-fits instantly
+}
+function drawCp(){
+  const { c, W, H } = prepFill(document.getElementById("cCp"));
+  if(cpRec.length<2){ c.fillStyle=INK.dim; c.font="11px system-ui"; c.fillText("기록 중…",8,18); return; }
+  const pad=34, t0=cpRec[0][0], t1=cpRec[cpRec.length-1][0], span=Math.max(0.1,t1-t0);
+  let lo=Infinity,hi=-Infinity; for(const[,y] of cpRec){ if(y<lo)lo=y; if(y>hi)hi=y; }
+  if(hi-lo<1e-4){ hi+=0.05; lo-=0.05; } const m=(hi-lo)*0.1; lo-=m; hi+=m;
+  const X=t=>pad+(t-t0)/span*(W-pad-8), Y=y=>H-18-(y-lo)/(hi-lo)*(H-30);
+  c.strokeStyle="rgba(128,138,160,.28)"; c.lineWidth=1; c.font="9px system-ui"; c.fillStyle=INK.dim;
+  for(let k=0;k<=4;k++){ const y=18+k*(H-30)/4, val=hi-(hi-lo)*k/4; c.beginPath(); c.moveTo(pad,y); c.lineTo(W-8,y); c.stroke(); c.fillText(val.toFixed(2),2,y+3); }
+  c.fillText(cpQty==="V"?"V":"A/cm²",2,12); c.fillText(span.toFixed(1)+"s",W-30,H-5);
+  c.strokeStyle="#0f8a63"; c.lineWidth=1.7; c.beginPath();
+  cpRec.forEach(([t,y],i)=> i?c.lineTo(X(t),Y(y)):c.moveTo(X(t),Y(y))); c.stroke();
+}
+document.getElementById("cpClr").onclick=()=>{ cpRec=[]; drawCp(); };
+
+// ---- ⑥ EIS Nyquist ----
+let eisRes=null;
+async function loadEis(){
+  try{ eisRes=await (await fetch("/api3d/eis")).json(); }catch{ return; }
+  eisTimeRecord();      // ⑥ log Rs/Rct over time for the CSV
+  drawEis();
+}
+function drawEis(){
+  const { c, W, H } = prepFill(document.getElementById("cEis"));
+  if(!eisRes||eisRes.error||!eisRes.re){ c.fillStyle=INK.dim; c.font="11px system-ui";
+    c.fillText(eisRes&&eisRes.error?eisRes.error:"계산 대기…",8,18); return; }
+  const re=eisRes.re, im=eisRes.im, pad=34;
+  const rmax=Math.max(...re, ...im, 1e-6)*1.1;
+  // equal aspect so a semicircle looks like a semicircle
+  const sc=Math.min((W-pad-10)/rmax,(H-28)/rmax);
+  const X=x=>pad+x*sc, Y=y=>H-18-y*sc;
+  c.strokeStyle="rgba(128,138,160,.28)"; c.lineWidth=1; c.font="9px system-ui"; c.fillStyle=INK.dim;
+  c.beginPath(); c.moveTo(pad,H-18); c.lineTo(W-8,H-18); c.stroke();   // Re axis
+  c.beginPath(); c.moveTo(pad,18); c.lineTo(pad,H-18); c.stroke();     // -Im axis
+  c.fillText("Z′ (Ω·cm²)",W-70,H-5); c.save(); c.translate(9,H/2); c.rotate(-Math.PI/2); c.fillText("-Z″",0,0); c.restore();
+  for(let g=0.2; g<rmax; g+=0.2){ const x=X(g); if(x<W-8){ c.beginPath(); c.moveTo(x,H-18); c.lineTo(x,H-22); c.stroke(); c.fillText(g.toFixed(1),x-6,H-8);} }
+  c.strokeStyle="#1f6feb"; c.lineWidth=1.7; c.beginPath();
+  re.forEach((x,i)=> i?c.lineTo(X(x),Y(im[i])):c.moveTo(X(x),Y(im[i]))); c.stroke();
+  c.fillStyle="#1f6feb"; for(let i=0;i<re.length;i+=8) c.fillRect(X(re[i])-1.5,Y(im[i])-1.5,3,3);
+  document.getElementById("eisRead").innerHTML=
+    `R<sub>s</sub> <b>${eisRes.Rs.toFixed(3)}</b> · R<sub>ct</sub>(OER) <b>${eisRes.Rct_a.toFixed(3)}</b> · `
+    +`R<sub>ct</sub>(HER) <b>${eisRes.Rct_c.toFixed(3)}</b> Ω·cm²`;
+}
+
+// ---- ⑦ gas blocking over time (holdup ε + electrode coverage θ) ----
+// How the pore/channel blocking BUILDS UP as the sim runs — change j or the
+// pump and watch ε climb (or relax). θ is the worst-electrode coverage.
+let holdRec=[];  // [t, eps(0-1), theta(0-1)]
+function holdRecord(s){
+  if(!s||!s.diag) return;
+  const t=s.t||0, eps=s.diag.holdup||0, th=Math.max(s.diag.theta_c||0, s.diag.theta_a||0);
+  const last=holdRec[holdRec.length-1];
+  if(!last||t>=last[0]){ holdRec.push([t,eps,th]); if(holdRec.length>900) holdRec.shift(); }
+  // drawing happens in the render loop (every frame)
+}
+function drawHoldT(){
+  const { c, W, H } = prepFill(document.getElementById("cHoldT"));
+  if(holdRec.length<2){ c.fillStyle=INK.dim; c.font="11px system-ui"; c.fillText("기록 중…",8,18); return; }
+  const pad=32, t0=holdRec[0][0], t1=holdRec[holdRec.length-1][0], span=Math.max(0.1,t1-t0);
+  let hi=0; for(const[,e,th] of holdRec){ hi=Math.max(hi,e,th); } hi=Math.max(0.05,hi*1.15);
+  const X=t=>pad+(t-t0)/span*(W-pad-8), Y=v=>H-16-v/hi*(H-26);
+  c.strokeStyle="rgba(128,138,160,.28)"; c.lineWidth=1; c.font="9px system-ui"; c.fillStyle=INK.dim;
+  for(let k=0;k<=4;k++){ const y=14+k*(H-26)/4, val=hi*(1-k/4); c.beginPath(); c.moveTo(pad,y); c.lineTo(W-8,y); c.stroke(); c.fillText((val*100).toFixed(0)+"%",2,y+3); }
+  c.fillText(span.toFixed(1)+"s",W-30,H-4);
+  const line=(idx,col)=>{ c.strokeStyle=col; c.lineWidth=1.7; c.beginPath();
+    holdRec.forEach((r,i)=> i?c.lineTo(X(r[0]),Y(r[idx])):c.moveTo(X(r[0]),Y(r[idx]))); c.stroke(); };
+  line(1,"#c9333f"); line(2,"#1f6feb");
+}
+document.getElementById("holdClr").onclick=()=>{ holdRec=[]; drawHoldT(); };
+
+// ---- time recorders for ②(구간별 막힘) and ⑥(EIS 추이) ------------------
+// ② holdup PROFILE over time: each row is a moment, each column a height band →
+// "when did which region block". ⑥ the series R_s/R_ct as bubbles accumulate.
+let epsTimeRec=[];   // [t, [eps per height layer]]
+function epsProfRecord(s){
+  if(!s||!s.eps_prof||!s.eps_prof.length) return;
+  const t=s.t||0, last=epsTimeRec[epsTimeRec.length-1];
+  if(!last || t>=last[0]+0.15){ epsTimeRec.push([t, s.eps_prof.slice()]); if(epsTimeRec.length>500) epsTimeRec.shift(); }
+}
+let eisTimeRec=[];   // [t, Rs, Rct_a, Rct_c]
+function eisTimeRecord(){
+  if(!eisRes||eisRes.error||!eisRes.re) return;
+  const t=(st&&st.t)||0, last=eisTimeRec[eisTimeRec.length-1];
+  if(!last || t>last[0]){ eisTimeRec.push([t, eisRes.Rs, eisRes.Rct_a, eisRes.Rct_c]); if(eisTimeRec.length>500) eisTimeRec.shift(); }
+}
+
+// ---- per-panel CSV export (each dashboard panel → its own file) ----
+const dsn = () => (st && st.designer) ? st.designer : P;
+const CSV = {
+  hero(){ // reconstructed local sites (same numbers the panel draws from)
+    const d = st&&st.diag; if(!d) return null;
+    return { title:"① 국소 확대 — 재구성 사이트 파라미터",
+      rows:[["항목","값","단위"],
+        ["이탈반경 r_dep", d.r_dep_um, "µm"], ["핵생성반경 r_nuc", d.r_nuc_um, "µm"],
+        ["사이트밀도", d.sites_per_mm2, "1/mm²"], ["사이트당 발생율", d.rate_um3_ms, "µm³/ms"],
+        ["종말속도", d.v_term_mm_s, "mm/s"], ["이탈크기 분산", d.spread, "-"]] };
+  },
+  face(){ // ② TIME × HEIGHT holdup matrix → when did which region block?
+    if(!st||!st.eps_prof) return null; const g=st.grid, dy=g.h_mm, n=st.eps_prof.length;
+    if(epsTimeRec.length>=2){
+      const head=["시간_t_s"]; for(let i=0;i<n;i++) head.push("eps@y"+(((i+0.5)*dy).toFixed(1))+"mm");
+      const rows=[["# 각 열=높이(입구 아래→출구 위), 값=가스 홀드업 ε(0~1) — 커질수록 그 구간이 막힘"], head];
+      for(const [t,prof] of epsTimeRec) rows.push([+t.toFixed(3), ...prof.map(e=>+(+e).toFixed(4))]);
+      return { title:"② 전체 셀 — 시간×구간 가스 막힘 (ε)", rows };
+    }
+    const rows=[["높이_y_mm","높이_정규화","가스홀드업_eps"]];
+    st.eps_prof.forEach((e,i)=>rows.push([+((i+0.5)*dy).toFixed(2),+((i+0.5)/n).toFixed(4),e]));
+    return { title:"② 전체 셀 — 높이별 가스 홀드업 (스냅샷)", rows };
+  },
+  lsv(){ if(!lsvRes||!lsvRes.j) return null; const p=lsvRes.pristine, ju=p.j_used||lsvRes.j, rc=p.reachable;
+    const meas=new Map(EXP_MEAS);
+    const rows=[["j_설정_mA_cm2","j_실제_mA_cm2","도달가능","실측_V","모델_pristine_V"].concat(lsvRes.mesh?["mesh_V"]:[])];
+    lsvRes.j.forEach((j,i)=>{ const r=[j,ju[i],rc?(rc[i]?1:0):1,meas.has(j)?meas.get(j):"",p.V[i]];
+      if(lsvRes.mesh) r.push(lsvRes.mesh.V[i]); rows.push(r); });
+    return { title:"③ 분극곡선 (LSV)", rows };
+  },
+  eta(){ const d=st&&st.diag; if(!d||!d.eta) return null;
+    const rows=[["항목","전압_V"]]; for(const[k,nm] of ETA_PARTS) rows.push([nm,d.eta[k]||0]);
+    rows.push(["합계 V_cell", d.V_cell]);
+    return { title:"④ 셀 전압 분해", rows };
+  },
+  cp(){ if(cpRec.length<2) return null;
+    const rows=[["시간_t_s", cpQty==="V"?"셀전압_V":"전류밀도_j_A_cm2"]];
+    for(const[t,y] of cpRec) rows.push([+t.toFixed(4),+y.toFixed(5)]);
+    return { title:"⑤ 과도응답 "+(cpQty==="V"?"CP V(t)":"CA j(t)"), rows };
+  },
+  eis(){ if(!eisRes||!eisRes.re) return null;
+    const rows=[["# --- 현재 운전점 Nyquist 스펙트럼 ---"],["주파수_Hz","Z_re_ohm_cm2","-Z_im_ohm_cm2"]];
+    eisRes.f.forEach((f,i)=>rows.push([f,eisRes.re[i],eisRes.im[i]]));
+    // ⑥ EIS OVER TIME: how the resistances evolve as bubbles accumulate
+    if(eisTimeRec.length>=2){
+      rows.push([],["# --- 시간별 임피던스 추이 (기포 축적에 따라) ---"],
+        ["시간_t_s","Rs_ohm_cm2","Rct_OER_ohm_cm2","Rct_HER_ohm_cm2"]);
+      for(const [t,rs,ra,rc] of eisTimeRec) rows.push([+t.toFixed(3),rs,ra,rc]);
+    }
+    return { title:"⑥ EIS — 스펙트럼 + 시간추이", rows };
+  },
+  holdt(){ if(holdRec.length<2) return null;
+    const rows=[["시간_t_s","가스홀드업_eps","전극덮임_theta"]];
+    for(const[t,e,th] of holdRec) rows.push([+t.toFixed(4),+e.toFixed(5),+th.toFixed(5)]);
+    return { title:"⑦ 시간별 가스 막힘 (ε·θ)", rows };
+  },
+};
+document.querySelectorAll(".csvb[data-csv]").forEach(b => b.onclick = () => {
+  const fn = CSV[b.dataset.csv]; const got = fn && fn();
+  if(!got){ b.textContent="데이터 없음"; setTimeout(()=>b.textContent="⬇ CSV",1200); return; }
+  csvDownload(b.dataset.csv, got.rows, dsn(), got.title);
+});
+
+// ---- make every dashboard card draggable (header) + resizable (corner) ----
+// The user rearranges them freely; layout persists in localStorage. Double-
+// click a card's header to snap it back into the tidy grid.
+// interactive canvases must NOT start a drag (they handle clicks themselves)
+document.querySelectorAll("#face").forEach(c => c.setAttribute("data-nodrag", ""));
+document.querySelectorAll(".dash > .card").forEach((card, i) => {
+  if (window.dragResize) dragResize(card, card, "dash2d_" + i);   // whole card is the grip
+});
+// left controls column: whole column draggable (form controls excluded) + resizable
+(function(){
+  const side = document.querySelector(".side");
+  if (side && window.dragResize) dragResize(side, side, "side2d");
+})();
+
+// slow panels (operating-point spectra) refresh on their own cadence
+loadLsv(); loadEis();
+setInterval(() => { loadLsv(); loadEis(); }, 2500);
+
+// redraw EVERYTHING each frame (cheap canvas ops over cached data) so any panel
+// resize re-fits the plots crisply within one frame — no stretched bitmaps.
+// each guarded: one panel's draw error must never freeze the whole render loop
+function drawAll(){ for (const f of [drawHero,drawFace,drawLsv,drawEis,drawCp,drawHoldT]){ try{ f(); }catch(e){ if(!drawAll._e){drawAll._e=1; console.warn("draw error", e);} } } }
+function frame() { drawAll(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 
 // ------------------------------------------------------------ interactions
@@ -704,7 +1113,7 @@ addEventListener("resize", () => { drawHero(); drawFace(); });
 
 // verification handles (headless: rAF is throttled in some hosts)
 window.__st = () => st;
-window.__frame = () => { drawHero(); drawFace(); };
+window.__frame = () => drawAll();
 window.__heroProbe = () => {
   const g = st && st.grid;
   return { heroY, heroZ, side,

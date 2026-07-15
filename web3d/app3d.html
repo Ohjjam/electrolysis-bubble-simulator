@@ -15,7 +15,10 @@
   #stage{position:fixed;inset:0;display:block;width:100%;height:100%}
   #panel{position:fixed;top:12px;left:12px;width:300px;background:var(--glass);
     border:1px solid var(--line);border-radius:14px;padding:12px 13px;backdrop-filter:blur(9px);
-    box-shadow:0 8px 30px rgba(20,32,52,.10);max-height:calc(100vh - 24px);overflow:auto}
+    box-shadow:0 8px 30px rgba(20,32,52,.10);max-height:calc(100vh - 24px);overflow:auto;
+    resize:horizontal;min-width:210px;max-width:640px}
+  /* drag the ⤡ bottom-right corner of any floating panel to resize it */
+  #panel::-webkit-resizer,.fpanel::-webkit-resizer{background:var(--line)}
   h1{font-size:15px;margin:0 0 2px} .sub{color:var(--dim);font-size:11px;margin-bottom:10px}
   .seg{display:flex;gap:6px;margin:2px 0 10px} .seg button{flex:1;background:var(--surf);color:var(--dim);
     border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:11.5px;cursor:pointer}
@@ -36,7 +39,8 @@
   .btn:hover{border-color:var(--accent);background:var(--surf2)}
   #hud{position:fixed;top:12px;right:12px;background:var(--glass);border:1px solid var(--line);
     border-radius:14px;padding:10px 13px;font-variant-numeric:tabular-nums;min-width:168px;
-    backdrop-filter:blur(9px);box-shadow:0 8px 30px rgba(20,32,52,.10)}
+    backdrop-filter:blur(9px);box-shadow:0 8px 30px rgba(20,32,52,.10);
+    resize:horizontal;overflow:auto;max-width:420px}
   #hud .k{color:var(--dim);font-size:11px} #hud .v{font-size:13.5px;font-weight:600;margin-bottom:5px}
   #hud .v.small{font-size:12px;font-weight:500}
   .st{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
@@ -46,15 +50,33 @@
   .note{color:var(--dim);font-size:10.5px;margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
   .empty{color:var(--dim);font-size:11.5px;padding:6px 2px}
   #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);z-index:50}
-  #slicePanel{position:fixed;bottom:12px;right:12px;width:250px;background:var(--glass);
-    border:1px solid var(--line);border-radius:14px;padding:11px 12px;backdrop-filter:blur(9px);
-    box-shadow:0 8px 30px rgba(20,32,52,.10)}
+  .fpanel{position:fixed;width:238px;background:var(--glass);
+    border:1px solid var(--line);border-radius:14px;padding:10px 11px;backdrop-filter:blur(9px);
+    box-shadow:0 8px 30px rgba(20,32,52,.10);max-height:calc(100vh - 24px);overflow:auto;
+    resize:both;min-width:184px;min-height:118px}
+  .fhead{display:flex;align-items:center;justify-content:space-between;gap:6px;
+    font-size:12px;color:var(--tx);font-weight:600;margin-bottom:7px;cursor:move;user-select:none}
+  .fhead .csvb{flex:none}
   .sliceHdr{font-size:12px;color:var(--tx);font-weight:600;margin-bottom:8px}
   #sliceCanvas{width:100%;height:auto;display:block;background:#f7f9fc;border:1px solid var(--line);
     border-radius:8px;image-rendering:pixelated;margin-bottom:7px}
   .sliceRow{display:flex;gap:7px;align-items:center;margin-bottom:5px}
   .sliceLbl{color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums;margin-bottom:6px}
+  .csvb{flex:none;background:var(--surf);color:var(--dim);border:1px solid var(--line);
+        border-radius:7px;padding:2px 8px;font-size:10px;cursor:pointer;white-space:nowrap}
+  .csvb:hover{border-color:var(--grn,#0f8a63);color:var(--grn,#0f8a63)}
+  #lsv3,#eis3{width:100%;height:150px;display:block}   /* full-width HiDPI mini charts */
   .sliceChk{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--dim);cursor:pointer}
+  /* 📐 equations tab */
+  .eq{background:var(--surf);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:6px;padding:7px 9px;margin:5px 0;font-size:12px;line-height:1.7;
+    font-family:"Cambria Math","Times New Roman",Georgia,serif;color:var(--tx);
+    overflow-x:auto;white-space:nowrap}
+  .eq sub,.eq sup{font-size:9px}
+  .eq-h{font-size:11px;color:var(--accent);font-weight:600;margin:9px 0 2px;letter-spacing:.3px}
+  .eq-n{font-size:11px;color:var(--dim);line-height:1.6;margin:3px 0 2px}
+  .eq-n b{color:var(--tx)}
+  .src{display:block;margin-top:3px;font-size:10px;color:var(--gold);font-family:ui-monospace,monospace}
 </style>
 </head>
 <body>
@@ -70,6 +92,8 @@
     <button data-m="2d" title="2D 패널 뷰(app.html 스타일)로 이동">📊 2D</button>
     <button data-m="live" class="on">🧊 3D</button>
     <button data-m="exp">🧪 mesh 실험</button>
+    <button data-m="eq" title="이 프로그램이 실제로 푸는 식과 그 근거">📐 수식</button>
+    <button data-m="csv" title="LSV·프로파일·CP·기포 데이터를 Excel로 내보내기">📊 데이터</button>
     <button id="expAdd" title="지금 조건(유로·운전 전부)을 실험 탭으로 저장">＋ 실험 저장</button>
   </div>
 
@@ -98,11 +122,10 @@
     <div id="ueStat" class="note" style="display:none"></div>
   </div>
 
-  <div id="liveCtls"><!-- controls injected --></div>
-<div id="plateEd"></div>
-
   <!-- (포어 3D 재생 탭은 제거됨 — Track B 배치/재생은 CLI runner + 코드로만 유지) -->
-
+  <!-- mesh-experiment boxes sit ABOVE the shared live controls: on the exp tab
+       both are shown, so 유량·접촉각·버블 표시 크기 등을 여기서 바로 조절하고
+       그 조건으로 분극곡선을 다시 계산할 수 있다 -->
   <div id="expCtls" style="display:none">
     <div class="box" style="border-color:#4a5f2c"><h3>실험: NF + PP mesh (AEM 수전해)</h3>
       <div class="note" style="border:none;margin:0;padding:0;font-size:11px;line-height:1.55">
@@ -113,9 +136,38 @@
         <b>방법</b>: pristine 실측 곡선으로만 캘리브레이션(점선 대비 ●) →
         mesh 효과는 기하(구멍·개구율·두께)에서 <b>순수 예측</b>(실측 mesh 데이터 미사용).</div>
     </div>
+    <div class="box" style="border-color:#4a5f2c"><h3>✓ dry cathode(물 투과) — 이 프리셋은 켜서 캘리브레이션됨</h3>
+      <div class="note" style="border:none;margin:0;padding:0;font-size:11px;line-height:1.55">
+        실측 셀은 <b>양극에만 anolyte</b>를 흘리는 <b>건식 음극</b>입니다. HER은 전자 1개당 물 1개를
+        쓰는데, AEM에선 OH⁻가 <b>음극→양극</b>으로 이동하며 물을 <b>n_drag개씩 끌고 나갑니다</b>
+        (전기삼투 = 음극 입장에선 <b>손실</b>). 음극이 받아야 할 물 = <b>(1 + n_drag)·j/F</b>,
+        막 확산이 다 못 대주면 <b>물 공급 한계전류 j<sub>lim,water</sub> = F·k_w/(1+n_drag)</b>가
+        생기고 부족분은 <b>η_water = −(RT/F)·ln(1 − j/j<sub>lim,water</sub>)</b>.
+        (<code>kernel/watertransport.py</code>)<br><br>
+        <b style="color:var(--grn)">이 프리셋은 물 항을 켠 채로 재피팅됐습니다</b> — pristine 16점
+        전체에 대해 <b>RMSE 26 mV</b> (물 항 없던 옛 피팅은 39 mV). 핵심: 셀이 <b>2.25 A/cm²에
+        실제로 도달</b>했으므로 물 벽은 그 위여야 합니다. D_w=1.6e-9로 벽을 <b>3.5 A/cm²</b>에 두니
+        (측정 최대의 1.5배) 물 페널티는 최대전류에서 <b>~30 mV</b>로 온건하고, 나머지 항(j₀·void)이
+        그 주위로 재조정됩니다. 16점 모두 도달가능.<br>
+        <span style="color:var(--dim)">재피팅값: j₀_OER 7.9e-4→6.3e-4 · j₀_HER 3000→6500 ·
+        α_a 1.14→1.19 · r_mem 9.6e-6→1.33e-5 · void 0.82→0.81. 잔차에 ±40 mV 굴곡이 남는데
+        이는 채널 모델의 void-onset 형태(EPS_FILM 문턱)에서 오는 구조적 한계입니다.</span><br><br>
+        <b>여전히 미구현:</b> 막 내부 함수율 λ(x) 분포·건조에 따른 막 전도도 저하·이력현상(모두
+        건식을 <b>더 나쁘게</b> 만드므로 이 항은 <b>하한</b>) · 음극의 기체상 H₂ 배출 ·
+        mesh는 라이브 3-D 물리엔 없음(LSV 예측 전용) · Ni foam 내부 관통류.</div>
+    </div>
     <div class="box"><h3>① 셀 프리셋</h3>
       <div class="row"><button class="btn" id="exPreset" style="border-color:var(--gold);color:var(--gold)">⚙ 실측 셀 프리셋 적용 (격자 재생성)</button></div>
       <div id="exPresetStat" class="note">13채널·0.88mm를 해상하려 복셀 0.55mm로 재구축 — 몇 초 걸림.</div>
+      <!-- the pump is set in mL/min; the solvers need the channel velocity.
+           This box makes the conversion explicit instead of hiding it. -->
+      <div class="ri" style="margin-top:8px">
+        <span class="un" style="width:78px">펌프 유량</span>
+        <input id="exQ" type="number" step="0.1" min="0" style="flex:1;background:var(--surf);
+          color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:4px">
+        <span class="un" style="width:46px">mL/min</span>
+      </div>
+      <div id="exQnote" class="note" style="margin-top:4px">–</div>
     </div>
     <div class="box"><h3>② PP mesh 선택 · 배치</h3>
       <div class="ctl"><div class="lab"><span class="nm">mesh (두께&gt;채널깊이 = 장착불가)</span></div>
@@ -135,12 +187,17 @@
       <div class="row"><button class="btn" id="exGo" style="border-color:var(--grn);color:var(--grn)">▶ 분극곡선 예측 계산</button></div>
       <div id="exWarn" class="note" style="display:none"></div>
     </div>
-    <div class="box"><h3>③ 분극곡선 — 실측(캘리브레이션) vs 예측</h3>
+    <div class="box"><h3>③ 분극곡선 — 실측(캘리브레이션) vs 예측 (여러 개 겹쳐보기)</h3>
       <canvas id="exCurve" width="272" height="235" style="width:100%;border-radius:8px;background:var(--surf)"></canvas>
       <div class="leg" style="margin-top:5px">
         <span><span class="dot" style="background:#c9c9d4"></span>실측 pristine</span>
         <span><span class="dot" style="background:#5aa7e8"></span>모델 pristine</span>
-        <span><span class="dot" style="background:#39b26a"></span>mesh 예측</span>
+      </div>
+      <!-- accumulated mesh predictions: mesh/커버%/위치를 바꿔 계산할 때마다 곡선이
+           쌓여 서로 비교된다; ×로 하나씩, 버튼으로 전부 지움 -->
+      <div id="exList" style="margin-top:4px"></div>
+      <div class="row" id="exClearRow" style="display:none">
+        <button class="btn" id="exClear" style="font-size:11px;padding:4px">🧹 비교 곡선 모두 지우기</button>
       </div>
       <div id="exRead" class="note">곡선을 계산하면 ΔV 요약이 표시됩니다.</div>
     </div>
@@ -149,7 +206,218 @@
       <div class="note" style="margin-top:4px">가로 = 유로 입구→출구. 회색 = pristine, 초록 = mesh
         (음영 구간 = mesh 덮인 곳). 최대전류에서의 프로파일.</div>
     </div>
+    <div class="box"><h3>⑤ CP 실시간 — 기포 축적에 따른 V(t)</h3>
+      <canvas id="exCp" width="272" height="104" style="width:100%;border-radius:8px;background:var(--surf)"></canvas>
+      <div class="row" style="margin-top:5px"><button class="btn" id="exCpClr" style="font-size:11px;padding:4px">↺ 기록 리셋</button></div>
+      <div class="note" style="margin-top:4px">지금 돌아가는 <b>라이브 3-D 셀</b>의 실제 거동 —
+        CP 모드면 V(t), CA 모드면 j(t). 기포가 촉매를 덮고 유로를 막을수록 곡선이 떠오릅니다.
+        아래 슬라이더로 조건을 바꾸면 새 과도응답부터 다시 기록.
+        ※ mesh는 아직 라이브 3-D 물리에는 없음 — mesh 효과는 위 LSV 예측으로 비교.</div>
+    </div>
+    <div class="note" style="margin:0 0 9px">⬇ 아래는 3D 탭과 같은 전체 컨트롤 —
+      유로 형식·채널수·유량·접촉각 등을 바꾸고 <b>▶ 분극곡선 예측 계산</b>을 다시 누르면
+      그 조건의 곡선이 ③에 <b>겹쳐 쌓입니다</b> (mesh 없이도 쌓여서 유로끼리 비교 가능).</div>
   </div>
+
+  <!-- ===================== 📐 equations / model basis ===================== -->
+  <!-- What this program actually solves, where each term comes from, and what it
+       does NOT do. Kept honest: every box names the source file. -->
+  <div id="eqCtls" style="display:none">
+    <div class="box" style="border-color:#3d5a80"><h3>이 시뮬레이터가 실제로 푸는 것</h3>
+      <div class="eq-n">3개의 층이 <b>양방향</b>으로 맞물려 돕니다.<br>
+        <b>① 전기화학(0-D)</b> — 셀 전압↔전류. <b>② 기포(Lagrangian)</b> — 핵생성·성장·이탈·상승.
+        <b>③ 유동(3-D NS)</b> — 전해질이 유로를 흐르며 기포를 쓸어냄.<br>
+        기포가 촉매를 덮으면 ①의 전류가 떨어지고, 기포가 유로를 막으면 ③의 흐름이 바뀌고,
+        그 흐름이 다시 ②의 기포를 옮깁니다. <b>커플링이 핵심</b>이지, 각 식이 새로운 건 아닙니다.</div>
+    </div>
+
+    <div class="box"><h3>① 전기화학 — 완전셀 전압 수지</h3>
+      <div class="eq">V<sub>cell</sub> = E<sub>rev</sub> + η<sub>a</sub>(j) + η<sub>c</sub>(j)
+        + η<sub>conc</sub>(j) + η<sub>water</sub>(j) + j·(R<sub>ohm</sub> + R<sub>mem</sub>)</div>
+      <div class="eq-n">양극·음극은 <b>같은 전류</b>를 흘리는 직렬 회로 (그래서 j₀가 달라도 j는 하나).
+        j는 위 식의 단조성 덕에 <b>이분법</b>으로 한 번에 풉니다.
+        <span class="src">solvers/zerod.py · ZeroDTwoElectrodeSolver</span></div>
+
+      <div class="eq-h">가역전압 (Nernst)</div>
+      <div class="eq">E<sub>rev</sub> = 1.229 − 0.9×10⁻³(T − 298.15)
+        + (RT/zF)·ln[ (p<sub>H₂</sub>·p<sub>O₂</sub><sup>½</sup>) / a<sub>H₂O</sub> ]</div>
+      <div class="eq-n">압력 지수 <b>1.5</b> (H₂ 1 + O₂ ½). 물활동도·수증기압 항은
+        <b>정량모드에서만</b> 켜집니다(기본은 이상). 열중성전압 V<sub>tn</sub> = 1.481 V.
+        <span class="src">properties.reversible_voltage</span></div>
+
+      <div class="eq-h">활성화 과전압 (Butler–Volmer, 전극별)</div>
+      <div class="eq">j / (1 − θ) = j₀ · [ exp(α<sub>a</sub>Fη/RT) − exp(−α<sub>c</sub>Fη/RT) ]</div>
+      <div class="eq-n">기포가 덮은 면적은 <b>못 쓰는 면적</b>이라 국소 전류밀도가 j/(1−θ)로 뜁니다 —
+        이게 기포가 전압을 올리는 <b>첫 번째</b> 경로. Tafel 기울기 b = 2.303RT/αF.
+        η는 BV를 <b>수치 역산</b>해서 얻습니다(고전류 근사 안 씀).
+        <span class="src">kernel/kinetics.py · butler_volmer</span></div>
+
+      <div class="eq-h">농도 과전압 · 옴 손실</div>
+      <div class="eq">η<sub>conc</sub> = −(RT/zF)·ln(1 − j/j<sub>lim</sub>) &nbsp;·&nbsp;
+        j<sub>lim</sub> = j<sub>lim,0</sub>·(1 + k<sub>Vogt</sub>·√(j/j<sub>ref</sub>))</div>
+      <div class="eq">R<sub>ohm</sub> = L / [κ·(1 − ε)<sup>1.5</sup>] &nbsp;&nbsp;(Bruggeman)</div>
+      <div class="eq-n"><b>Vogt 자가교반</b>: 기포가 떨어지며 전해질을 저어서 물질전달 한계를 <b>올립니다</b>
+        (기포의 유일한 순기능). 반대로 기공률 ε만큼 이온 경로가 막혀 저항이 오릅니다 —
+        기포가 전압을 올리는 <b>두 번째</b> 경로.
+        <span class="src">kernel/transport.py · properties.conductivity</span></div>
+    </div>
+
+    <div class="box" style="border-color:#8a4d2a"><h3>② 건식 음극 — 막 물수지 (신규)</h3>
+      <div class="eq">음극: 2H₂O + 2e⁻ → H₂ + 2OH⁻ &nbsp;(전자당 물 <b>1개 소비</b>)</div>
+      <div class="eq">N<sub>EOD</sub> = n<sub>drag</sub>·j/F &nbsp;<b>(음극 → 양극, 손실)</b>
+        &nbsp;·&nbsp; N<sub>diff</sub> ≤ k<sub>w</sub> = D<sub>w</sub>c<sub>w</sub>/t<sub>mem</sub></div>
+      <div class="eq">j<sub>lim,water</sub> = F·k<sub>w</sub> / (1 + n<sub>drag</sub>)
+        &nbsp;·&nbsp; η<sub>water</sub> = −(RT/F)·ln(1 − j/j<sub>lim,water</sub>)</div>
+      <div class="eq-n"><b>부호 함정</b>: AEM은 OH⁻가 <b>음극→양극</b>으로 가므로 전기삼투가 음극 물을
+        <b>빼앗아 갑니다</b> (PEM은 반대로 음극에 <b>공급</b>). 그래서 소비(1) + 끌림(n<sub>drag</sub>)이
+        <b>더해져서</b> 물 수요가 됩니다. 막이 못 대주면 물 부족 한계전류가 생기고,
+        z=1인 이유는 전자 1개당 물 1개이기 때문.
+        <span class="src">kernel/watertransport.py · 기본 꺼짐</span></div>
+    </div>
+
+    <div class="box"><h3>③ 기포 — 생애주기 (Lagrangian)</h3>
+      <div class="eq-h">발생 (Faraday)</div>
+      <div class="eq">Q<sub>gas</sub> = η<sub>F</sub>·(j·A)/(zF) · RT/P &nbsp;&nbsp;[m³/s]</div>
+      <div class="eq-n">발생량은 <b>협상 불가</b>. 전류를 정하면 가스량이 정해집니다 — 모델 전체의
+        보존 기준선이고, <b>발생 = 잔류 + 배출</b>이 매 스텝 기계정밀도로 지켜집니다.
+        <span class="src">kernel/sources.py · faradaic_gas_rate</span></div>
+
+      <div class="eq-h">이탈 크기 (힘 평형)</div>
+      <div class="eq">부력 F<sub>b</sub> = (4/3)πr³Δρg &nbsp;vs&nbsp; 부착 F<sub>s</sub> ~ σ·r<sub>d0</sub>²
+        &nbsp;+ 항력 F<sub>d</sub>(u) &nbsp;→&nbsp; r<sub>dep</sub></div>
+      <div class="eq-n">Fritz 상관식(<b>비등</b> 유래)은 전해기포를 과대예측해서
+        <code>fritz_scale=0.08</code>로 축소 — 그래야 문헌값(반경 50~150 µm)이 나옵니다.
+        <b>중요</b>: 이탈하는 기포는 수십 µm 크기라 <b>벽면 전단층</b> 안에 있으므로,
+        벌크 유속이 아니라 <b>국소 유속 u<sub>eff</sub></b>로 힘 평형을 다시 풉니다
+        (안 그러면 u≥0.2 m/s에서 전부 최소크기로 붙어버림).
+        접촉각 θ가 여기서 작동 — θ 30/60/120° → 51/87/129 µm.
+        <span class="src">kernel/bubbles/forces.py · bubblesim3d/parcels.py</span></div>
+
+      <div class="eq-h">상승 (Schiller–Naumann 항력)</div>
+      <div class="eq">v<sub>t</sub>: (4/3)·(Δρ/ρ)·g·d = C<sub>D</sub>(Re)·v<sub>t</sub>²
+        &nbsp;·&nbsp; C<sub>D</sub> = (24/Re)(1 + 0.15Re<sup>0.687</sup>)</div>
+      <div class="eq-n">Re를 알아야 C<sub>D</sub>를 알고 C<sub>D</sub>를 알아야 v를 알기에 <b>반복해서</b> 풉니다.
+        Stokes 근사 아님. 실제 기포 속도는 여기에 <b>액체 유속</b>이 더해집니다(≈70 mm/s 측정).</div>
+
+      <div class="eq-h">벽면 수직 이동 (Tomiyama 양력 vs Antal 벽윤활)</div>
+      <div class="eq">v<sub>n</sub> = (2r²ρ/9µ)·[ C<sub>W</sub>u²/r − C<sub>L</sub>|u|·γ̇ ]</div>
+      <div class="eq-n">전해기포는 Eo ≈ 10⁻³ (아주 작음)이라 Tomiyama <b>양력계수가 양수</b> →
+        <b>벽으로 밀려갑니다</b>. 그래서 기포가 전극을 안 떠나는 게 <b>물리적으로 설명</b>됩니다
+        (예전엔 그냥 물리가 빠져서 그랬음).</div>
+
+      <div class="eq-h">합체 (Prince–Blanch)</div>
+      <div class="eq">ω = n·S·Δv &nbsp;·&nbsp; λ = exp(−t<sub>drain</sub>/t<sub>contact</sub>)
+        &nbsp;·&nbsp; P<sub>merge</sub> = ω·λ·p</div>
+      <div class="eq-n">농전해질(KOH &gt; 0.3 M)은 <b>salting-out</b>으로 막배수를 막아 합체를 억제 —
+        그래서 6 M KOH에서는 기포가 잘 안 합쳐집니다.</div>
+    </div>
+
+    <div class="box"><h3>④ 유동 — 3-D Navier–Stokes</h3>
+      <div class="eq">∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u + <b>g(1 − ε)</b>
+        − <b>K<sub>drag</sub>·ε·u</b> &nbsp;,&nbsp; ∇·u = 0</div>
+      <div class="eq-n"><b>MAC 엇갈림 격자 + Chorin 투영</b>(반-Lagrangian 이류, red-black SOR).
+        비엇갈림(collocated) 격자는 체커보드 모드가 남아서 MAC이 <b>필수</b>였습니다.<br>
+        <b>Boussinesq 부력</b>: 기포가 있는 셀은 가벼워져 위로 떠오름 → <b>자가교반이 창발</b>.<br>
+        <b>Brinkman 상간 항력</b> K<sub>drag</sub>: 가스가 찬 셀은 액체 운동량을 뺏겨서,
+        투영이 흐름을 <b>기포 커튼을 피해</b> 재배치합니다 — “기포가 유로를 막는다”가 여기서 나옴.<br>
+        리브/랜드는 <b>고체 마스크</b>로 들어가고, 기포는 축별 <b>충돌 판정</b>으로 벽을 타고 미끄러집니다.
+        <span class="src">bubblesim3d/ns3d.py · geometry.py</span></div>
+    </div>
+
+    <div class="box"><h3>⑤ 유로 축방향 — 가스 누적 (LSV 예측용 1-D)</h3>
+      <div class="eq">V<sub>gas</sub>(s) = ∫₀ˢ (RT/P)·j(s′)/(zF·u·d<sub>ch</sub>) ds′
+        &nbsp;·&nbsp; ε(s) = V<sub>gas</sub>/(1 + V<sub>gas</sub>)</div>
+      <div class="eq">θ(s) = θ<sub>max</sub>·[1 − exp(−3ε)] &nbsp;&nbsp;(Vogt–Balzer 포화형)</div>
+      <div class="eq-n">가스는 입구→출구로 <b>쌓입니다</b> → 출구가 병목. θ = ε로 두면 안 되고
+        <b>포화함수</b>여야 합니다(벌크 기공률 ≠ 전극 덮임률).
+        분극곡선(LSV) 예측은 이 1-D 모델로 계산합니다(즉시 계산, 3-D는 과도응답 담당).
+        <span class="src">solvers/channel.py</span></div>
+    </div>
+
+    <div class="box"><h3>⑥ PP mesh — 기하 → 기포 물리</h3>
+      <div class="eq">wick = (1 − φ)·min(1, L<sub>ref</sub>/L<sub>h</sub>)
+        &nbsp;·&nbsp; u<sub>boost</sub> = d<sub>ch</sub>/(d<sub>ch</sub> − t<sub>m</sub>)</div>
+      <div class="eq">θ<sub>factor</sub> = 1 − 0.6·wick &nbsp;·&nbsp;
+        retention = (1 − 0.5·wick)/√u<sub>boost</sub> &nbsp;·&nbsp;
+        θ<sub>add</sub> = 0.3·(1 − φ)·(t<sub>m</sub>/d<sub>ch</sub>)</div>
+      <div class="eq-n">세 메커니즘이 <b>경쟁</b>: ① 소수성 PP가 기포를 <b>빨아내고</b>(wick)
+        ② 두께가 유로를 좁혀 <b>유속을 올리고</b>(u_boost) ③ 대신 가닥이 촉매면을 <b>가립니다</b>(θ_add).<br>
+        <b style="color:var(--gold)">상수는 mesh 실측을 보기 전에 고정</b>했습니다 — 그래야 예측이
+        <b>블라인드</b>로 성립합니다. mesh 분극곡선 데이터는 모델에 <b>절대 안 들어갑니다</b>.
+        <span class="src">kernel/meshlayer.py</span></div>
+    </div>
+
+    <div class="box" style="border-color:#8a6d1f"><h3>⚠ 정직한 한계 (이건 안 합니다)</h3>
+      <div class="eq-n">
+        <b>계면해상 CFD 아님</b> — 기포 표면을 VOF로 풀지 않습니다(µm 격자 + 표면장력 CFL →
+        HPC 영역). 우리 것은 <b>Euler–Lagrange</b> 등가물: 기포는 <b>부분격자</b> 입자입니다.<br>
+        <b>추적 기포는 표본</b> — 초당 ~10만 개 나오는 실제 기포를 1400개로 <b>몬테카를로 표본</b>합니다
+        (1개 ≈ mult개 실제). 그래서 화면 개수는 통계지 실개수가 아닙니다.<br>
+        <b>Ni foam 내부 관통류 없음</b> · <b>막 함수율 분포 λ(x) 없음</b> ·
+        <b>기체 crossover 없음</b> · mesh는 <b>3-D 물리엔 미반영</b>(LSV 예측 전용).<br>
+        <b>외부 검증 상태</b>: 알칼라인 2전극 I–V는 실측(AHEAD)에 <b>캘리브레이션됨</b>(2.0V에서 12% 이내).
+        PEM/산성은 <b>미검증</b>. 기포 동역학·EIS 스펙트럼은 <b>정량 검증 안 됨</b>.
+        <span class="src">VALIDATION.md — 모델 카드 전문</span></div>
+    </div>
+  </div>
+
+  <!-- ===================== 📊 CSV / Excel export ===================== -->
+  <div id="csvCtls" style="display:none">
+    <div class="box" style="border-color:#2c6e4a"><h3>Excel로 내보내기</h3>
+      <div class="eq-n">모든 파일은 <b>UTF-8 BOM CSV</b>라 Excel에서 바로 열립니다(한글 안 깨짐).
+        각 파일 맨 위에 <b>그 데이터가 나온 조건 전체</b>가 <code># key,value</code> 주석으로 붙어서,
+        나중에 봐도 어떤 설정이었는지 알 수 있고 조건별로 비교할 수 있습니다.</div>
+    </div>
+
+    <div class="box"><h3>① LSV (분극곡선)</h3>
+      <div class="eq-n">지금 <b>🧪 mesh 실험</b> 탭 ③에 쌓여 있는 <b>모든 곡선</b>을 한 파일로.
+        열 = j(mA/cm²) · 실측 pristine · 모델 pristine · 곡선마다 V(V) 한 열씩 + ΔV(mV).
+        <b>조건이 다른 곡선도 같이</b> 나가므로 Excel에서 바로 겹쳐 그릴 수 있습니다.</div>
+      <div class="row"><button class="btn" id="csvLsv">⬇ LSV 곡선 전부 (.csv)</button></div>
+      <div id="csvLsvStat" class="note">–</div>
+    </div>
+
+    <div class="box"><h3>② 유로 위치별 — 기포 막힘 프로파일</h3>
+      <div class="eq-n">입구→출구 경로를 따라 <b>가스 홀드업 ε(s)</b>와 <b>전극 덮임 θ(s)</b>.
+        mesh를 계산했다면 mesh 곡선과 <b>덮인 구간 표시</b>까지 같이 나갑니다. 최대전류 기준.</div>
+      <div class="row"><button class="btn" id="csvProf">⬇ θ(s)·ε(s) 프로파일 (.csv)</button></div>
+      <div id="csvProfStat" class="note">–</div>
+    </div>
+
+    <div class="box"><h3>③ 높이별 가스 홀드업 (라이브 3-D)</h3>
+      <div class="eq-n">지금 돌아가는 3-D 셀의 <b>높이(y)별 평균 ε</b> — 입구에서 출구로 가스가
+        쌓이는 실제 프로파일 (<code>eps_prof</code>).</div>
+      <div class="row"><button class="btn" id="csvEps">⬇ 높이별 ε (.csv)</button></div>
+      <div id="csvEpsStat" class="note">–</div>
+    </div>
+
+    <div class="box"><h3>④ CP/CA 과도응답 V(t)</h3>
+      <div class="eq-n"><b>🧪 실험</b> 탭 ⑤에 기록된 시계열 그대로 — 기포가 쌓이며 전압이
+        뜨는(또는 전류가 죽는) 곡선. 열 = t(s) · V 또는 j.</div>
+      <div class="row"><button class="btn" id="csvCp">⬇ V(t) / j(t) 기록 (.csv)</button></div>
+      <div id="csvCpStat" class="note">–</div>
+    </div>
+
+    <div class="box"><h3>⑤ 기포 스냅샷 (라이브 3-D)</h3>
+      <div class="eq-n">현재 프레임의 <b>추적 기포 전부</b>: 위치 x,y,z(mm) · 반경(µm) ·
+        전극(음극/양극) · 부착/상승 · 속도(mm/s).<br>
+        <b style="color:var(--gold)">주의</b>: 이건 <b>몬테카를로 표본</b>입니다 —
+        1개가 실제 <code>mult</code>개를 대표하므로, 개수를 세지 말고 <b>분포</b>를 보세요.</div>
+      <div class="row"><button class="btn" id="csvBub">⬇ 기포 스냅샷 (.csv)</button></div>
+      <div id="csvBubStat" class="note">–</div>
+    </div>
+
+    <div class="box"><h3>⑥ 요약 지표 한 줄 (조건 비교용)</h3>
+      <div class="eq-n">현재 조건의 <b>모든 진단값을 한 행</b>으로 — V·j·θ·홀드업·r_dep·기액비·
+        펌프유량·물 한계 등 + <b>designer 설정 전체</b>. 조건을 바꿔가며 여러 번 눌러
+        Excel에 <b>행으로 쌓으면</b> 그대로 비교표가 됩니다.</div>
+      <div class="row"><button class="btn" id="csvRow" style="border-color:var(--grn);color:var(--grn)">⬇ 요약 1행 추가 (.csv)</button></div>
+      <div id="csvRowStat" class="note">–</div>
+    </div>
+  </div>
+
+  <div id="liveCtls"><!-- controls injected --></div>
+<div id="plateEd"></div>
 
   <div style="font-size:11.5px;color:var(--dim);margin:6px 0 3px">부품 레이어 (켜기/끄기)</div>
   <div id="layerBox" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;margin-bottom:6px">
@@ -179,6 +447,9 @@
     <button class="btn" id="bReset">↺ 리셋</button>
     <button class="btn" id="bCam">⌖ 시점</button>
   </div>
+  <div class="row" style="margin-top:6px">
+    <button class="btn" id="bTidy" title="분석 패널(단면·구간·전압·LSV·EIS)을 오른쪽에 깔끔히 재배치">🧹 패널 정렬</button>
+  </div>
   <div class="leg">
     <span><span class="dot" style="background:#2f9fd4"></span>H₂ (음극)</span>
     <span><span class="dot" style="background:#d98420"></span>O₂ (양극)</span>
@@ -201,22 +472,44 @@
   <div class="k">fps</div><div class="v small" id="hFps">–</div>
 </div>
 
-<div id="slicePanel">
-  <div class="sliceHdr">단면 뷰 (2D) — 원하는 지점 잘라보기</div>
+<!-- ===== 개별 이동·크기조절 가능한 분석 패널들 (기본 배치는 tidyPanels()가 정렬) ===== -->
+<div id="pSlice" class="fpanel">
+  <div class="fhead">✂ 단면 뷰 (2D)</div>
   <div class="seg mini" id="sliceMode" style="margin-bottom:5px">
     <button data-m="bub" class="on">버블</button><button data-m="eps">ε 홀드업 (CFD풍)</button>
   </div>
   <div class="seg mini" id="sliceAxis">
     <button data-a="0">X (관통)</button><button data-a="1" class="on">Y (높이)</button><button data-a="2">Z (폭)</button>
   </div>
-  <canvas id="sliceCanvas" width="230" height="230"></canvas>
+  <canvas id="sliceCanvas" width="230" height="230" data-nodrag></canvas>
   <div class="sliceRow"><span class="un" style="width:38px">위치</span>
     <input id="slicePos" type="range" min="0" max="1" step="0.02" value="0.5" style="flex:1;accent-color:var(--accent)"></div>
   <div class="sliceLbl" id="sliceLbl">–</div>
   <label class="sliceChk"><input type="checkbox" id="clipOn"> 3D도 이 위치에서 잘라 보기</label>
-  <div class="sliceHdr" style="margin-top:9px">구간 비교 — inlet→outlet 가스 축적</div>
-  <canvas id="profCanvas" width="230" height="58"></canvas>
+</div>
+
+<div id="pProf" class="fpanel">
+  <div class="fhead">📊 구간 비교 — inlet→outlet 가스 축적</div>
+  <canvas id="profCanvas" width="230" height="58" data-nodrag></canvas>
   <div class="sliceLbl" id="segStats">–</div>
+</div>
+
+<div id="pEta" class="fpanel">
+  <div class="fhead">⚡ 셀 전압 분해 <button class="csvb" data-csv="eta">⬇ CSV</button></div>
+  <div id="etaBar3" style="display:flex;height:26px;border-radius:7px;overflow:hidden;
+    border:1px solid var(--line);background:var(--surf)"></div>
+  <div id="etaLeg3" style="display:grid;grid-template-columns:1fr 1fr;gap:1px 8px;font-size:10px;margin-top:5px"></div>
+</div>
+
+<div id="pLsv" class="fpanel">
+  <div class="fhead">📈 분극곡선 · ● 운전점 <button class="csvb" data-csv="lsv">⬇ CSV</button></div>
+  <canvas id="lsv3" width="230" height="150" data-nodrag></canvas>
+</div>
+
+<div id="pEis" class="fpanel">
+  <div class="fhead">🌀 EIS 예상 (Nyquist) <button class="csvb" data-csv="eis">⬇ CSV</button></div>
+  <canvas id="eis3" width="230" height="150" data-nodrag></canvas>
+  <div class="sliceLbl" id="eis3Read">–</div>
 </div>
 
 <div id="velLegend" style="display:none;position:fixed;bottom:12px;left:12px;background:var(--glass);
@@ -250,7 +543,7 @@ const CTRL = SIM_CTRL.concat([
     { k:"jmap", nm:"전극면 전류맵", seg:[["on","켜기"],["off","끄기"]], v:"on", local:1 },
     { k:"bcol", nm:"버블 색", seg:[["gas","기체 종류"],["vel","상승속도"]], v:"gas", local:1 },
     { k:"bscale", nm:"버블 표시 크기 (물리 크기는 실제)", seg:[["1","실제 ×1"],["4","×4"],["12","×12"]], v:"4", local:1 },
-    { k:"trace", nm:"흐름 궤적 (계산된 속도장 트레이서)", seg:[["on","켜기"],["off","끄기"]], v:"on", local:1 },
+    { k:"trace", nm:"흐름 궤적 트레이서 개수 (계산된 속도장)", seg:[["off","끄기"],["300","300"],["700","700"],["1400","1400"]], v:"700", local:1 },
   ]],
 ]);
 
@@ -291,7 +584,41 @@ const orthoCam = new THREE.OrthographicCamera(-50, 50, 50, -50, -1000, 1000);
 let activeCam = camera;                    // swapped by the view presets
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
+// Zoom limits + clip planes are SET FROM THE CELL SIZE in rebuildCell (see
+// fitCameraRange). They used to be fixed constants — minDistance 0.05 and
+// maxDistance 1500 against a camera.far of 500 — on a cell only ~48 mm across.
+// Zooming out therefore pushed the whole cell PAST the far plane (screen goes
+// blank) and zooming in buried the camera ~1000x too close (crawling back out
+// took ~100 wheel ticks). Both read as "휠 줌이 고장났다", and it changed with
+// the grid, which is why it only showed up "가끔 수정하다".
+let camBase = { near: 0.01, far: 500, minD: 1, maxD: 300 };
 let orthoHalf = 50;                        // half-extent the ortho frustum frames
+// declared HERE (not next to the 국소 확대 button) because fitCameraRange reads
+// `zoomed`, and rebuildCell() -> fitCameraRange() runs at module load — a later
+// `let` would sit in the temporal dead zone and throw.
+let zoomed = false, zoomPrev = null;
+
+function fitCameraRange(cellR) {
+  const R = Math.max(1, cellR);            // cell bounding size [mm]
+  // R is the cell's LARGEST dimension (full extent, ~50 mm default), so its
+  // half-extent — centre to a face — is ~0.5R. minD 0.6R keeps the closest
+  // orbit just OUTSIDE that face: the cell fills the frame but the camera never
+  // tunnels inside the ribs. The old 0.22R (11 mm on a 50 mm cell) let the wheel
+  // dive well inside the half-extent -> the "너무 크게 확대" runaway. Getting
+  // truly close to one bubble is the 국소 확대 button's job (it unlocks 0.02R).
+  camBase = { near: Math.max(0.01, 0.01 * R), far: 20 * R,
+              minD: 0.6 * R, maxD: 6 * R };
+  if (!zoomed) {                           // 국소 확대 owns the range while active
+    controls.minDistance = camBase.minD;
+    controls.maxDistance = camBase.maxD;
+    camera.near = camBase.near; camera.far = camBase.far;
+    camera.updateProjectionMatrix();
+  }
+  controls.zoomSpeed = 0.6;                             // gentler wheel steps
+  controls.minZoom = 0.35; controls.maxZoom = 8;        // ortho (flat views)
+  orthoCam.near = -20 * R; orthoCam.far = 20 * R;
+  orthoCam.updateProjectionMatrix();
+}
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xc3cede, 0.85));   // sky/ground for a light stage
 const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(1.2, 2.2, 1.6); scene.add(key);
@@ -620,12 +947,25 @@ function rebuildCell() {
   // camera home: keep the whole cell in view
   const R = Math.max(W, H) * 1.15;
   camHome.set(R * 0.9, H * 0.62, R * 1.05);
+  // zoom limits + clip planes track the CELL, not fixed constants — the grid
+  // changes with every geometry edit, and stale limits are what broke the wheel
+  fitCameraRange(Math.max(W, H, tot));
   if (!rebuildCell._did) {                          // first build: place camera
     camera.position.copy(camHome);
     controls.target.set(0, H / 2, 0);
     camera.lookAt(controls.target);                 // orient NOW (don't wait for rAF)
     controls.update();
     rebuildCell._did = true;
+  } else {
+    // an existing camera may now sit outside the new cell's zoom range (e.g. the
+    // grid shrank): pull it back into range instead of leaving it stranded
+    const d = camera.position.distanceTo(controls.target);
+    if (d < camBase.minD || d > camBase.maxD) {
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      const dc = Math.min(camBase.maxD, Math.max(camBase.minD, d));
+      camera.position.copy(controls.target).addScaledVector(dir, dc);
+      controls.update();
+    }
   }
   applyLayers();                                    // respect current layer toggles
 }
@@ -813,7 +1153,7 @@ const VEL_SCALE = 0.25;                             // colourbar max [m/s]
 // parcels feel — plus the ~3 mm/s terminal slip; the standard CFD
 // particle-trace visualisation. They seed at real bubble positions and expire
 // after a few seconds (or at the vent), so their paths ARE the flow field.
-const TR_N = 160;
+const TR_N = 1400;                       // capacity; the drawn count follows P.trace
 const trInst = new THREE.InstancedMesh(
   new THREE.SphereGeometry(1, 14, 10),
   new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0 }),
@@ -837,14 +1177,18 @@ function _trSeed() {
 function renderTracers(now) {
   const dtW = trLast ? Math.min(0.1, (now - trLast) / 1000) : 0;
   trLast = now;
-  if (P.trace === "off" || mode !== "live" || !bubGrid || !vel3dCur) {
+  // P.trace is the wanted COUNT ("off" | "300" | "700" | "1400"; legacy "on" -> 700)
+  const want = P.trace === "off" ? 0
+             : Math.min(TR_N, +P.trace > 0 ? +P.trace : 700);
+  if (!want || mode !== "live" || !bubGrid || !vel3dCur) {
     trInst.count = 0; return;
   }
   const g = bubGrid, h = g.h_mm / 1000;
   const Lx = g.nx * h, Ly = g.ny * h, Lz = g.nz * h;
   const rate = (lastState && lastState.speed_actual) || 1;
   const dt = dtW * rate;                            // SIM seconds this frame
-  while (tracers.length < TR_N) {
+  if (tracers.length > want) tracers.length = want;
+  while (tracers.length < want) {
     const t = _trSeed(); if (!t) break; tracers.push(t);
   }
   const { u, v, w } = vel3dCur;
@@ -934,17 +1278,21 @@ function setPanel(m, expId) {
   panelMode = m; activeUserExp = expId || null;
   modeSeg.querySelectorAll("button").forEach(x =>
     x.classList.toggle("on", x.dataset.m === m && (m !== "user" || x.dataset.exp === expId)));
-  // live controls stay visible on user-experiment tabs so the saved condition
-  // can be adjusted right there (the ask: "거기서 조절도 하고")
-  const showLive = m === "live" || m === "user";
+  // live controls stay visible on user-experiment tabs AND the mesh-experiment
+  // tab, so any condition (bubble display, flow, wettability, plate…) can be
+  // adjusted right there (the ask: "거기서 조절도 하고" / "실험탭에도 3D 기능").
+  // The 📐 equations tab is pure reading -> no sliders.
+  const showLive = m === "live" || m === "user" || m === "exp";
   document.getElementById("liveCtls").style.display = showLive ? "" : "none";
   document.getElementById("plateEd").style.display = showLive ? "" : "none";
   document.getElementById("expCtls").style.display = m === "exp" ? "" : "none";
+  document.getElementById("eqCtls").style.display = m === "eq" ? "" : "none";
+  document.getElementById("csvCtls").style.display = m === "csv" ? "" : "none";
   document.getElementById("userExpBox").style.display = m === "user" ? "" : "none";
   document.getElementById("expSaveBox").style.display = "none";
   if (m === "exp") expEnter();
   if (m === "user") showUserExp(expId);
-  setView(viewMode);
+  setView(viewMode, { reset: false });   // keep the user's zoom/rotation on tab switches
   drawSlice(); updateClip();
 }
 modeSeg.addEventListener("click", e => {
@@ -961,8 +1309,22 @@ modeSeg.addEventListener("click", e => {
 const EXP_PRESET = {
   W_cm: 2.2, H_cm: 2.2, ff: "serp", n_ch: 13, w_ch_mm: 0.88, d_ch_mm: 0.9,
   w_land_mm: 0.88, t_ptl_um: 600, eps_ptl: 0.95, electrolyte: "KOH", c_mol: 1.0,
-  T: 65, u_flow: 0.08, j0_anode: 7.94e-4, j0_cathode: 3000, alpha_a: 1.14,
-  r_mem: 9.6e-6, gap_mm: 0.5, void_frac: 0.82, h_mm: 0.55, mode: "CP", j: 0.5,
+  // u_flow is the CHANNEL VELOCITY the solvers need; the measured cell is a
+  // 4 mL/min anolyte pump. Serpentine = one continuous 0.88x0.9 mm channel, so
+  // u = Q/A = (4e-6/60) / (0.88e-3*0.9e-3) = 0.0842 m/s. (It was 0.08 = 3.80
+  // mL/min, a silent -5% on the calibrated flow.)
+  T: 65, u_flow: 0.0842, mode: "CP", j: 0.5,
+  // CALIBRATED WITH the dry-cathode water term ON (the cell IS anolyte-only).
+  // The pristine curve was re-fit against all 16 measured points with the water
+  // balance active: RMSE 26 mV (the old dry-OFF fit was 39 mV). The earlier
+  // "+116 mV double-count" was an artifact of the conservative default
+  // D_w=1e-9, which put the water wall at 2.21 A/cm² — BELOW the 2.25 the cell
+  // actually reached. D_w=1.6e-9 sets the wall at 3.5 A/cm² (safely above
+  // operation), so the water penalty is a modest ~30 mV at the top and the rest
+  // of the calibration re-balances around it. All 16 points reachable.
+  j0_anode: 6.3e-4, j0_cathode: 6500, alpha_a: 1.19, r_mem: 1.33e-5,
+  gap_mm: 0.5, void_frac: 0.81, h_mm: 0.55,
+  dry_cathode: "1", n_drag: 2.5, D_w_mem: 1.6e-9, t_mem_um: 50,
 };
 // measured pristine polarization (the calibration reference), j mA/cm^2 -> V
 const EXP_MEAS = [[10,1.48294],[20,1.4937],[50,1.5184],[100,1.55191],[200,1.60495],
@@ -1029,7 +1391,8 @@ async function expSweep() {
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
     if (res.error) throw new Error(res.error);
     expLast = res;
-    expDrawCurves(res); expDrawProfile(res); expReadout(res);
+    expOverlayAdd(res, body);                     // stack this prediction for comparison
+    expDrawCurves(); expDrawProfile(res); expReadout(res);
     const w = document.getElementById("exWarn");
     const warn = (res.mesh_info && res.mesh_info.warn) || (res.mesh && res.mesh.mesh_warn) || "";
     w.style.display = warn ? "" : "none";
@@ -1039,6 +1402,339 @@ async function expSweep() {
   }
   go.disabled = false; go.textContent = "▶ 분극곡선 예측 계산";
 }
+
+// ---- prediction overlay: every computed mesh curve stacks on the chart so
+// different meshes / cover fractions / positions compare side by side.
+// Same settings recompute -> the existing curve is replaced, not duplicated.
+const EXP_PALETTE = ["#39b26a", "#e8734a", "#8b5cf6", "#d8a400", "#d8467a", "#2fb6c9"];
+let expOverlay = [];
+function expOverlayAdd(res, body) {
+  // key = the FULL sweep settings the server actually used, so changing the
+  // flow field / pump / wettability stacks a NEW curve instead of silently
+  // replacing the old one (that made "유로 바꿔 비교" look broken). A curve
+  // with no mesh stacks too — pristine configs are comparable designs.
+  const s = res.settings || {};
+  const key = JSON.stringify(s);
+  const V = res.mesh ? res.mesh.V : res.pristine.V;
+  const ffKo = { serp: "서펜타인", par: "평행", inter: "인터디지트", custom: "직접그림" };
+  let label = `${ffKo[s.ff] || s.ff} ${s.n_ch}ch · u${(+s.u_flow).toFixed(2)}`;
+  if (+s.theta !== 60) label += ` · θ${s.theta}`;
+  if (res.mesh) {
+    const posKo = { inlet: "입구쪽", middle: "중간", outlet: "출구쪽" };
+    const cover = Math.round((s.mesh_cover ?? 1) * 100);
+    const full = (res.mesh_info && res.mesh_info.name) || s.mesh_id;
+    label += ` + ${full.split(" — ")[0]} ${cover}%` +
+      (cover < 100 ? `(${posKo[s.mesh_pos] || s.mesh_pos})` : "");
+  } else {
+    label += " (mesh 없음)";
+  }
+  // plot against the current the solver ACTUALLY delivered: with a dry cathode
+  // the water wall clamps j, and the curve must STOP there rather than run flat
+  // along a current the cell cannot reach.
+  const src = res.mesh || res.pristine;
+  const jx = src.j_used || res.j;
+  const ok = src.reachable || res.j.map(() => true);
+  const hit = expOverlay.find(c => c.key === key);
+  const rec = { key, label, j: jx, V, reach: ok };
+  if (hit) Object.assign(hit, rec);
+  else {
+    if (expOverlay.length >= EXP_PALETTE.length) expOverlay.shift();  // oldest out
+    const used = new Set(expOverlay.map(c => c.color));
+    expOverlay.push({ ...rec,
+                      color: EXP_PALETTE.find(c => !used.has(c)) || EXP_PALETTE[0] });
+  }
+  expRenderList();
+}
+function expRenderList() {
+  const el = document.getElementById("exList");
+  el.innerHTML = "";
+  for (const c of expOverlay) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;gap:5px;font-size:10.5px;margin:2px 0";
+    row.innerHTML = `<span class="dot" style="background:${c.color}"></span>` +
+      `<span style="flex:1;color:var(--dim)">${c.label}</span>`;
+    const x = document.createElement("button");
+    x.textContent = "×";
+    x.style.cssText = "background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:0 3px";
+    x.onclick = () => { expOverlay = expOverlay.filter(o => o !== c); expRenderList(); expDrawCurves(); };
+    row.appendChild(x);
+    el.appendChild(row);
+  }
+  document.getElementById("exClearRow").style.display = expOverlay.length ? "" : "none";
+}
+document.getElementById("exClear").onclick = () => {
+  expOverlay = []; expRenderList(); expDrawCurves();
+};
+
+// ---- ⑤ live CP recorder: the RUNNING 3-D cell's V(t) (CP) or j(t) (CA) -----
+// This is the honest transient the user asked about ("기포가 유로 막아서 CP가
+// 어떻게 되나"): the live sim already couples bubble coverage/void into the
+// two-electrode solve, so its V (or j) drifts as gas accumulates. We just
+// record the poll stream against SIM time. A grid rebuild restarts sim time
+// -> the recorder auto-resets, which is exactly "new condition, new transient".
+let cpRec = [], cpQty = "V";
+function cpRecord(st) {
+  if (!st || !st.diag) return;
+  const mode = (st.designer && st.designer.mode) || "CP";
+  const qty = mode === "CA" ? "j" : "V";
+  const val = qty === "j" ? st.diag.j_Acm2 : st.diag.V_cell;
+  if (val == null) return;
+  if (qty !== cpQty) { cpQty = qty; cpRec = []; }
+  if (cpRec.length && st.t < cpRec[cpRec.length - 1][0] - 1e-6) cpRec = [];  // rebuild
+  if (cpRec.length && st.t - cpRec[cpRec.length - 1][0] < 0.02) return;      // ~50/s cap
+  cpRec.push([st.t, val]);
+  if (cpRec.length > 900) cpRec.splice(0, cpRec.length - 900);
+  if (panelMode === "exp") expDrawCp();
+}
+function expDrawCp() {
+  const cv = document.getElementById("exCp"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, pad = 26;
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = "9px system-ui";
+  if (cpRec.length < 3) {
+    ctx.fillStyle = "rgba(128,138,160,.9)";
+    ctx.fillText("기록 중… (라이브 셀이 돌고 있어야 합니다)", pad, H / 2);
+    return;
+  }
+  const t0 = cpRec[0][0], t1 = cpRec[cpRec.length - 1][0];
+  let lo = Infinity, hi = -Infinity;
+  for (const [, v] of cpRec) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  const spanV = Math.max(cpQty === "V" ? 0.02 : 0.02, hi - lo);   // never a flat-line axis
+  const mid = (hi + lo) / 2, vlo = mid - spanV * 0.6, vhi = mid + spanV * 0.6;
+  const X = t => pad + (t - t0) / Math.max(1e-6, t1 - t0) * (W - pad - 6);
+  const Y = v => H - 14 - (v - vlo) / (vhi - vlo) * (H - 22);
+  ctx.strokeStyle = "rgba(128,138,160,.3)"; ctx.lineWidth = 1;
+  ctx.fillStyle = "rgba(128,138,160,.9)";
+  for (const f of [0, 0.5, 1]) {
+    const v = vlo + f * (vhi - vlo), y = Y(v);
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - 6, y); ctx.stroke();
+    ctx.fillText(v.toFixed(3), 1, y + 3);
+  }
+  ctx.strokeStyle = cpQty === "V" ? "#e8734a" : "#5aa7e8"; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  cpRec.forEach(([t, v], i) => i ? ctx.lineTo(X(t), Y(v)) : ctx.moveTo(X(t), Y(v)));
+  ctx.stroke();
+  ctx.fillStyle = "rgba(128,138,160,.9)";
+  ctx.fillText(`${(t1 - t0).toFixed(1)} s (sim)`, W - 64, H - 3);
+  ctx.fillText(cpQty === "V" ? "V (CP)" : "j A/cm² (CA)", pad, 9);
+}
+document.getElementById("exCpClr").onclick = () => { cpRec = []; expDrawCp(); };
+
+// ==================== 📊 CSV / Excel export ================================
+// Every file carries the FULL condition it came from as `# key,value` comment
+// rows, so a folder of exports is self-describing and comparable. UTF-8 BOM so
+// Excel opens Korean text correctly instead of mojibake.
+const CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
+  "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt","drag_K",
+  "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","t_ptl_um","eps_ptl",
+  "void_frac","mesh_id","mesh_cover","mesh_pos","dry_cathode","n_drag","D_w_mem",
+  "in_face","in_z","in_w","out_face","out_z","out_w"];
+
+function csvCell(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function csvRows(rows) { return rows.map(r => r.map(csvCell).join(",")).join("\r\n"); }
+
+function csvHeader(title) {
+  const d = (lastState && lastState.designer) || {};
+  const out = [["# " + title], ["# 내보낸 시각", new Date().toLocaleString("ko-KR")]];
+  if (typeof flowMLmin === "function" && d.u_flow != null) {
+    out.push(["# 펌프유량_mL_per_min", +flowMLmin(d).toFixed(3)]);
+    out.push(["# 유로단면_mm2", +(chanArea_m2(d) * 1e6).toFixed(4)]);
+  }
+  out.push(["# --- 조건 (designer) ---"]);
+  for (const k of CSV_KEYS) if (d[k] !== undefined) out.push(["# " + k, d[k]]);
+  out.push([]);
+  return out;
+}
+function csvSave(name, rows, statId, note) {
+  const body = csvRows(rows);
+  const blob = new Blob(["﻿" + body], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const t = new Date();
+  const stamp = `${t.getFullYear()}${String(t.getMonth()+1).padStart(2,"0")}${String(t.getDate()).padStart(2,"0")}`
+              + `_${String(t.getHours()).padStart(2,"0")}${String(t.getMinutes()).padStart(2,"0")}${String(t.getSeconds()).padStart(2,"0")}`;
+  a.download = `${name}_${stamp}.csv`;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  if (statId) document.getElementById(statId).textContent =
+    `✓ ${a.download} — ${note || (rows.length + "행")}`;
+  csvSave._last = { name: a.download, rows: rows.length };   // for headless verify
+}
+
+// ① LSV: every stacked curve, side by side, plus the measured points
+document.getElementById("csvLsv").onclick = () => {
+  const st = document.getElementById("csvLsvStat");
+  if (!expLast) { st.textContent = "먼저 🧪 실험 탭에서 ▶ 분극곡선을 계산하세요."; return; }
+  const js = expLast.j;
+  const meas = new Map(EXP_MEAS);
+  const rows = csvHeader("LSV 분극곡선 (여러 조건 비교)");
+  // j_설정 = what was asked for; j_실제 = what the cell could actually deliver
+  // (a dry cathode's water wall clamps it). 도달가능=0 rows are NOT operating
+  // points — filter them out in Excel before plotting.
+  const head = ["j_설정_mA_per_cm2", "j_실제_mA_per_cm2", "도달가능_1yes",
+                "실측_pristine_V", "모델_pristine_V"];
+  for (const c of expOverlay) { head.push(`${c.label}_V`, `${c.label}_dV_mV`); }
+  rows.push(head);
+  const pr = expLast.pristine, base = pr.V;
+  const ju = pr.j_used || js, rc = pr.reachable;
+  js.forEach((j, i) => {
+    const r = [j, ju[i], rc ? (rc[i] ? 1 : 0) : 1,
+               meas.has(j) ? meas.get(j) : "", +base[i].toFixed(4)];
+    for (const c of expOverlay) {
+      const v = c.V[i];
+      r.push(v != null ? +v.toFixed(4) : "",
+             v != null ? +((base[i] - v) * 1000).toFixed(1) : "");
+    }
+    rows.push(r);
+  });
+  csvSave("LSV", rows, "csvLsvStat",
+    `곡선 ${expOverlay.length + 1}개 × ${js.length}점`);
+};
+
+// ② along-the-path bubble blocking profile (channel model, at max current)
+document.getElementById("csvProf").onclick = () => {
+  const st = document.getElementById("csvProfStat");
+  const pp = expLast && expLast.pristine && expLast.pristine.prof_jmax;
+  if (!pp) { st.textContent = "먼저 🧪 실험 탭에서 ▶ 분극곡선을 계산하세요."; return; }
+  const pm = expLast.mesh && expLast.mesh.prof_jmax;
+  const rows = csvHeader("유로 위치별 기포 막힘 프로파일 (최대전류)");
+  const head = ["경로위치_s_0to1", "pristine_theta_덮임", "pristine_eps_홀드업",
+                "pristine_j_A_per_m2"];
+  if (pm) head.push("mesh_theta", "mesh_eps", "mesh_j_A_per_m2", "mesh_덮임구간_1yes");
+  rows.push(head);
+  pp.s.forEach((s, i) => {
+    const r = [+s.toFixed(4), +pp.theta[i].toFixed(4),
+               pp.eps ? +pp.eps[i].toFixed(4) : "",
+               pp.j ? pp.j[i] : ""];
+    if (pm) r.push(+pm.theta[i].toFixed(4), pm.eps ? +pm.eps[i].toFixed(4) : "",
+                   pm.j ? pm.j[i] : "", pm.mesh[i] ? 1 : 0);
+    rows.push(r);
+  });
+  csvSave("경로프로파일", rows, "csvProfStat", `${pp.s.length}점` + (pm ? " · mesh 포함" : ""));
+};
+
+// ③ live 3-D holdup vs height
+document.getElementById("csvEps").onclick = () => {
+  const s = lastState;
+  if (!s || !s.eps_prof) {
+    document.getElementById("csvEpsStat").textContent = "라이브 데이터 대기 중…"; return;
+  }
+  const g = s.grid, dy = g.h_mm;
+  const rows = csvHeader("라이브 3-D 셀 — 높이별 가스 홀드업");
+  rows.push(["높이_y_mm", "높이_정규화_0to1", "가스홀드업_eps"]);
+  s.eps_prof.forEach((e, i) => rows.push([
+    +((i + 0.5) * dy).toFixed(2), +((i + 0.5) / s.eps_prof.length).toFixed(4), e]));
+  csvSave("높이별홀드업", rows, "csvEpsStat", `${s.eps_prof.length}층 · t=${s.t.toFixed(2)}s`);
+};
+
+// ④ CP/CA transient recorded in the experiment tab
+document.getElementById("csvCp").onclick = () => {
+  if (cpRec.length < 2) {
+    document.getElementById("csvCpStat").textContent =
+      "기록이 없습니다 — 🧪 실험 탭 ⑤에서 잠시 돌린 뒤 받으세요."; return;
+  }
+  const rows = csvHeader(`CP/CA 과도응답 (${cpQty === "V" ? "정전류 CP → V(t)" : "정전압 CA → j(t)"})`);
+  rows.push(["시간_t_s", cpQty === "V" ? "셀전압_V" : "전류밀도_j_A_per_cm2"]);
+  for (const [t, v] of cpRec) rows.push([+t.toFixed(4), +v.toFixed(5)]);
+  csvSave("CP과도응답", rows, "csvCpStat", `${cpRec.length}점 · ${(cpRec.at(-1)[0]-cpRec[0][0]).toFixed(1)}s`);
+};
+
+// ⑤ bubble snapshot (the Monte-Carlo sample — distribution, not a headcount)
+document.getElementById("csvBub").onclick = () => {
+  const s = lastState;
+  if (!s || !s.bubbles || !s.bubbles.length) {
+    document.getElementById("csvBubStat").textContent = "기포 데이터 대기 중…"; return;
+  }
+  const b = s.bubbles, n = b.length / 7 | 0, g = s.grid;
+  const mult = (s.diag && s.diag.mult) || 1;
+  const rows = csvHeader("기포 스냅샷 (몬테카를로 표본 — 개수 아닌 분포를 보세요)");
+  rows.push(["# 1개가_대표하는_실제기포수_mult", mult]);
+  rows.push([]);
+  rows.push(["id", "x_mm", "y_mm(높이)", "z_mm", "반경_um", "전극", "상태", "속도_mm_per_s"]);
+  // speed from the id-matched previous snapshot (the same u_p the view colours by)
+  for (let q = 0; q < n; q++) {
+    const o = q * 7, id = b[o + 6];
+    const cur = bubCur && bubCur.map.get(id);
+    rows.push([id,
+      +(b[o] * 1000).toFixed(4), +(b[o+1] * 1000).toFixed(4), +(b[o+2] * 1000).toFixed(4),
+      +(b[o+3] * 1e6).toFixed(2),
+      b[o+4] < 0.5 ? "음극(H2)" : "양극(O2)",
+      b[o+5] > 0.5 ? "부착(성장중)" : "상승(자유)",
+      cur ? +((cur[6] || 0) * 1000).toFixed(2) : ""]);
+  }
+  csvSave("기포스냅샷", rows, "csvBubStat", `${n}개 (1개≈${mult.toFixed(0)}개 실제) · t=${s.t.toFixed(2)}s`);
+};
+
+// ⑥ one summary row per condition — paste-stack them in Excel to compare designs
+document.getElementById("csvRow").onclick = () => {
+  const s = lastState;
+  if (!s || !s.diag) { document.getElementById("csvRowStat").textContent = "라이브 데이터 대기 중…"; return; }
+  const d = s.designer || {}, dg = s.diag;
+  const metrics = {
+    "시각": new Date().toLocaleString("ko-KR"),
+    "sim_t_s": s.t,
+    "셀전압_V": dg.V_cell, "전류밀도_A_per_cm2": dg.j_Acm2,
+    "덮임_음극_theta_c": dg.theta_c, "덮임_양극_theta_a": dg.theta_a,
+    "가스홀드업": dg.holdup,
+    "이탈반경_um": dg.r_dep_um, "1개당_실제기포수_mult": dg.mult,
+    "추적기포수": s.n_bub, "부착": dg.n_attached, "상승": dg.n_free,
+    "가스유량_mL_per_s": dg.q_gas_mLs, "액체유량_mL_per_s": dg.q_liq_mLs,
+    "기액비": dg.gas_liq,
+    "펌프유량_mL_per_min": +flowMLmin(d).toFixed(3),
+    "유로단면_mm2": +(chanArea_m2(d) * 1e6).toFixed(4),
+    "리브_mm": dg.rib_mm, "채널_mm": dg.chan_mm, "복셀_mm": dg.h_mm,
+    "유동연결_ok": dg.flow_ok === false ? 0 : 1,
+  };
+  const lsv = expLast ? {
+    "LSV_V@1000": expLast.pristine.V[expLast.j.indexOf(1000)],
+    "LSV_V@2250": expLast.pristine.V[expLast.j.indexOf(2250)],
+    "LSV_출구eps": expLast.pristine.eps_out.at(-1),
+    "물공급한계_A_per_cm2": expLast.water ? expLast.water.j_lim_water_mAcm2 / 1000 : "",
+    "eta_water_V": (expLast.pristine.split_jmax || {}).eta_water,
+  } : {};
+  const all = { ...metrics, ...lsv };
+  for (const k of CSV_KEYS) all["설정_" + k] = d[k];
+  const rows = [Object.keys(all), Object.values(all)];   // header + 1 row, no # comments
+  csvSave("요약1행", rows, "csvRowStat",
+    "Excel에 붙여 행으로 쌓으세요 (헤더 1줄 + 데이터 1줄)");
+};
+
+// ---- pump flow in mL/min (the knob a real pump actually has) ---------------
+// u_flow (m/s) stays the stored physics key; this box converts through the
+// channel cross-section so the volumetric number is never a hidden hand
+// calculation again. It also flags when the 3-D voxel grid's inlet port does
+// not match the physical channel — the sim then pushes a DIFFERENT volume.
+const exQ = document.getElementById("exQ");
+function exSyncQ(st) {
+  if (!st || !st.designer || document.activeElement === exQ) return;
+  const d = st.designer;
+  exQ.value = flowMLmin(d).toFixed(2);
+  const A = chanArea_m2(d) * 1e6;                       // mm^2
+  const dg = st.diag || {};
+  const q3d = (dg.q_liq_mLs != null) ? dg.q_liq_mLs * 60 : null;   // mL/min
+  let html = `유로 단면 ${(+d.w_ch_mm).toFixed(2)}×${(+d.d_ch_mm).toFixed(2)} mm` +
+    ` = ${A.toFixed(3)} mm² → u = ${(+d.u_flow).toFixed(4)} m/s` +
+    ` (${d.ff === "par" || d.ff === "inter" ? d.n_ch + "채널 병렬" : "직렬 1채널"})`;
+  if (q3d != null) {
+    const off = Math.abs(q3d - flowMLmin(d)) > 0.25 * Math.max(1e-9, flowMLmin(d));
+    html += `<br><span style="color:${off ? "var(--gold)" : "var(--dim)"}">` +
+      `3-D 라이브 셀이 실제로 흘리는 양: ${q3d.toFixed(2)} mL/min` +
+      (off ? ` — 복셀 입구 포트가 실제 유로 단면과 달라 (양쪽 전극 채널 합산 + 격자 양자화)
+              LSV 예측의 기준 유량과 다릅니다. LSV(채널 모델)는 위 값을 씁니다.` : "") +
+      `</span>`;
+  }
+  document.getElementById("exQnote").innerHTML = html;
+}
+exQ.addEventListener("change", () => {
+  const d = (lastState && lastState.designer) || P;
+  const u = flowToU(+exQ.value || 0, d);
+  send("u_flow", +u.toFixed(5));
+  if (ctls.reg.u_flow) ctls.reg.u_flow(+u.toFixed(5));   // move the m/s slider too
+});
 
 function expAxes(ctx, W, H, pad, jmax, vlo, vhi) {
   ctx.clearRect(0, 0, W, H);
@@ -1057,19 +1753,34 @@ function expAxes(ctx, W, H, pad, jmax, vlo, vhi) {
   ctx.fillText("V", 2, 10); ctx.fillText("mA/cm²", W - 44, H - 3);
 }
 
-function expDrawCurves(res) {
+function expDrawCurves() {
   const cv = document.getElementById("exCurve"), ctx = cv.getContext("2d");
   const W = cv.width, H = cv.height, pad = 22, jmax = 2400, vlo = 1.3, vhi = 3.0;
   const X = j => pad + j / jmax * (W - pad - 6);
   const Y = v => H - pad - (v - vlo) / (vhi - vlo) * (H - 2 * pad);
   expAxes(ctx, W, H, pad, jmax, vlo, vhi);
-  const line = (js, vs, color) => {
-    ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.beginPath();
-    js.forEach((j, i) => i ? ctx.lineTo(X(j), Y(vs[i])) : ctx.moveTo(X(j), Y(vs[i])));
+  // draw only the REACHABLE stretch: past a hard wall (dry-cathode water supply)
+  // the solver clamps j, so the remaining points are the same operating point
+  // repeated — drawing them would be a flat line at a current the cell can't hit.
+  const line = (js, vs, color, lw, reach) => {
+    ctx.strokeStyle = color; ctx.lineWidth = lw || 1.8; ctx.beginPath();
+    let started = false, lastX = null, lastY = null;
+    for (let i = 0; i < js.length; i++) {
+      if (reach && !reach[i]) break;                    // wall: stop the curve
+      const x = X(js[i]), y = Y(vs[i]);
+      started ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      started = true; lastX = x; lastY = y;
+    }
     ctx.stroke();
+    // an unreachable tail gets an explicit end-cap: "the cell stops here"
+    if (reach && started && !reach[reach.length - 1]) {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(lastX, lastY, 3, 0, 2 * Math.PI); ctx.fill();
+    }
   };
-  line(res.j, res.pristine.V, "#5aa7e8");
-  if (res.mesh) line(res.j, res.mesh.V, "#39b26a");
+  if (expLast) line(expLast.pristine.j_used || expLast.j, expLast.pristine.V,
+                    "#5aa7e8", 1.8, expLast.pristine.reachable);   // model baseline
+  for (const c of expOverlay) line(c.j, c.V, c.color, 1.6, c.reach);
   ctx.fillStyle = "#c9c9d4";
   for (const [j, v] of EXP_MEAS) { ctx.fillRect(X(j) - 2, Y(v) - 2, 4, 4); }
 }
@@ -1101,8 +1812,12 @@ function expDrawProfile(res) {
 function expReadout(res) {
   const el = document.getElementById("exRead");
   const at = jt => res.j.indexOf(jt);
+  const reach = res.pristine.reachable;
   const rows = [1000, 1500, 2250].map(jt => {
     const i = at(jt);
+    // a point past a hard wall (dry-cathode water supply) is NOT an operating
+    // point — quoting a voltage there would be quoting a lower current's V
+    if (reach && !reach[i]) return `${jt}: <b style="color:#c9333f">도달불가</b>`;
     const vp = res.pristine.V[i];
     const dv = res.mesh ? (vp - res.mesh.V[i]) * 1000 : null;
     return `${jt}: ${vp.toFixed(3)}V` + (dv !== null
@@ -1114,6 +1829,24 @@ function expReadout(res) {
     `최대전류 기액비 ≈ ${gl}:1 (출구 ε ${eo.toFixed(2)})`;
   if (res.mesh_info) {
     html += `<br>mesh: 흡착지수 ${res.mesh_info.wick} · 국소유속 ×${(+res.mesh_info.u_boost).toFixed(1)}`;
+  }
+  // dry cathode: where is the water-supply wall, and did the cell hit it?
+  const w = res.water;
+  if (w && w.j_lim_water_mAcm2 > 0) {
+    const ju = res.pristine.j_used || res.j;
+    const jTop = Math.max(...ju);                       // highest current REACHED
+    const walled = reach && reach.some(r => !r);
+    const use = 100 * jTop / w.j_lim_water_mAcm2;
+    const ew = (res.pristine.split_jmax || {}).eta_water;
+    html += `<br><span style="color:#e8734a">음극 건식: 물 공급 한계 ` +
+      `<b>${(w.j_lim_water_mAcm2 / 1000).toFixed(2)} A/cm²</b> — ` +
+      (walled
+        ? `<b style="color:#c9333f">여기서 막힘</b>: 셀이 낼 수 있는 최대전류가 ` +
+          `<b>${(jTop / 1000).toFixed(2)} A/cm²</b>까지 (요청한 ` +
+          `${(Math.max(...res.j) / 1000).toFixed(2)}는 <b>도달불가</b>)`
+        : `최대전류가 그 <b>${use.toFixed(0)}%</b>`) +
+      (ew != null ? ` · η_water = <b>${(ew * 1000).toFixed(0)} mV</b>` : "") +
+      `</span>`;
   }
   html += `<br><span style="color:var(--gold)">블라인드 예측 — 실측 mesh 곡선과 직접 비교해보세요.</span>`;
   el.innerHTML = html;
@@ -1127,14 +1860,18 @@ function expReadout(res) {
 // pushes its designer to /api3d/op (geometry keys rebuild the domain) and the
 // normal live controls stay up for further adjustment.
 let userExps = [];
+let serverActiveExp = null;   // which experiment the RUNNING sim is set to
 function renderExpTabs() {
   modeSeg.querySelectorAll("button[data-m='user']").forEach(b => b.remove());
   const addBtn = document.getElementById("expAdd");
   for (const ex of userExps) {
     const b = document.createElement("button");
     b.dataset.m = "user"; b.dataset.exp = ex.id;
-    b.textContent = "🔬 " + ex.name;
+    // ● = this experiment's condition is what the sim is running right now
+    // (server-tracked, shared with the 2-D page's picker)
+    b.textContent = (ex.id === serverActiveExp ? "● " : "") + "🔬 " + ex.name;
     b.title = (ex.note ? ex.note + " · " : "") + (ex.created || "");
+    if (ex.id === serverActiveExp) b.style.borderColor = "var(--gold)";
     if (panelMode === "user" && activeUserExp === ex.id) b.classList.add("on");
     modeSeg.insertBefore(b, addBtn);
   }
@@ -1143,6 +1880,7 @@ async function loadExperiments() {
   try {
     const r = await (await fetch("/api3d/experiments")).json();
     userExps = r.list || [];
+    if ("active" in r) serverActiveExp = r.active;
   } catch { userExps = []; }
   renderExpTabs();
 }
@@ -1155,6 +1893,7 @@ async function expApi(body) {
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
   if (r.error) throw new Error(r.error);
   userExps = r.list || userExps;
+  if ("active" in r) serverActiveExp = r.active;
   renderExpTabs();
   return r;
 }
@@ -1167,11 +1906,11 @@ function showUserExp(id) {
     " · 아래 컨트롤로 계속 조절할 수 있어요 (저장본은 덮어쓰기 전까지 그대로).";
   const stat = document.getElementById("ueStat");
   stat.style.display = ""; stat.textContent = "저장된 조건 적용 중… (격자 재구축, 몇 초)";
-  // one POST with the whole designer: geometry keys rebuild the voxel domain
-  fetch("/api3d/op", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(ex.designer) })
+  // the SERVER applies the designer and remembers this experiment as active,
+  // so the 2-D page's picker shows the same choice
+  expApi({ action: "apply", id })
     .then(() => { stat.textContent = "적용됨 ✓ — 이 탭의 조건으로 시뮬레이션이 돌고 있습니다."; })
-    .catch(e => { stat.textContent = "적용 실패: " + e; });
+    .catch(e => { stat.textContent = "적용 실패: " + e.message; });
 }
 // save form
 document.getElementById("expAdd").onclick = () => {
@@ -1232,6 +1971,9 @@ async function poll() {
     const wantFaces = mode === "live" && (pollN++ % 3) === 0;
     const st = await (await fetch("/api3d/state" + (wantFaces ? "?faces=1" : ""))).json();
     lastState = st; srvOk = true;
+    cpRecord(st);                    // ⑤ live CP/CA transient recorder (exp tab)
+    exSyncQ(st);                     // pump flow in mL/min (exp tab)
+    if (st.diag) drawEta3(st.diag.eta, st.diag.V_cell);   // ⚡ voltage breakdown
     document.getElementById("hSrv").innerHTML = `<span class="st ok"></span>:8766 (${st.phase})`;
     document.getElementById("hT").textContent = st.t.toFixed(2) + " s";
     document.getElementById("hGrid").textContent =
@@ -1492,32 +2234,53 @@ let viewMode = "orbit", slabOnly = false;
 
 function targetGroup() { return cellGroup; }
 
-function setView(v) {
+function setView(v, opts) {
+  // opts.reset === false -> keep the user's orbit camera (zoom/rotation) when
+  // this is only a PANEL/tab change. Every tab switch used to slam the camera
+  // back to camHome, which read as "휠 줌이 자꾸 풀리는" bug.
+  const reset = !(opts && opts.reset === false);
   viewMode = v;
   const grp = targetGroup();
   const bb = new THREE.Box3().setFromObject(grp);
   const c = bb.getCenter(new THREE.Vector3());
   const sz = bb.getSize(new THREE.Vector3());
+  // an empty group makes Box3 infinite -> NaN centre -> a NaN controls.target
+  // kills wheel/drag entirely; guard with the grid's own frame
+  const H = gridInfo.ny * gridInfo.h;
+  if (!isFinite(c.x + c.y + c.z)) c.set(0, H / 2, 0);
+  if (!isFinite(sz.x + sz.y + sz.z)) sz.set(H, H, H);
   const flat = v !== "orbit";
   setSolidsTransparency(flat && mode === "live");
   if (v === "orbit") {
     activeCam = camera;
     controls.object = camera;
-    camera.position.copy(camHome);
-    controls.target.copy(new THREE.Vector3(0, gridInfo.ny * gridInfo.h / 2, 0));
+    const camBad = !isFinite(camera.position.lengthSq())
+                 || camera.position.distanceTo(controls.target) < 0.01;
+    if (reset || camBad) {
+      camera.position.copy(camHome);
+      controls.target.set(0, H / 2, 0);
+    }
   } else {
-    // frame the two axes in view; place the ortho cam far along the third
-    let half, dir;
-    if (v === "front") { half = Math.max(sz.x, sz.y) * 0.55; dir = new THREE.Vector3(0, 0, 1); }   // look along -z: x-y cross-section
-    else if (v === "face") { half = Math.max(sz.z, sz.y) * 0.55; dir = new THREE.Vector3(1, 0, 0); } // look along -x: electrode face (z-y)
-    else { half = Math.max(sz.x, sz.z) * 0.55; dir = new THREE.Vector3(0, 1, 0); }                   // top: look along -y (x-z)
-    orthoHalf = Math.max(2, half);
-    resize();
     activeCam = orthoCam;
     controls.object = orthoCam;
-    orthoCam.position.copy(c.clone().addScaledVector(dir, Math.max(sz.x, sz.y, sz.z) * 2 + 20));
-    orthoCam.up.set(0, v === "top" ? 0 : 1, v === "top" ? -1 : 0);
-    controls.target.copy(c);
+    // A pure PANEL/tab change (reset === false) must leave a flat view exactly
+    // as the user left it. Re-framing here — and especially resetting
+    // orthoCam.zoom to 1 — threw away their wheel zoom, which is the same bug
+    // the orbit branch was already guarded against.
+    if (reset) {
+      // frame the two axes in view; place the ortho cam far along the third
+      let half, dir;
+      if (v === "front") { half = Math.max(sz.x, sz.y) * 0.55; dir = new THREE.Vector3(0, 0, 1); }   // look along -z: x-y cross-section
+      else if (v === "face") { half = Math.max(sz.z, sz.y) * 0.55; dir = new THREE.Vector3(1, 0, 0); } // look along -x: electrode face (z-y)
+      else { half = Math.max(sz.x, sz.z) * 0.55; dir = new THREE.Vector3(0, 1, 0); }                   // top: look along -y (x-z)
+      orthoHalf = Math.max(2, half);
+      orthoCam.zoom = 1;                     // wheel zoom from the LAST visit
+      orthoCam.updateProjectionMatrix();     // must not leak into this framing
+      resize();
+      orthoCam.position.copy(c.clone().addScaledVector(dir, Math.max(sz.x, sz.y, sz.z) * 2 + 20));
+      orthoCam.up.set(0, v === "top" ? 0 : 1, v === "top" ? -1 : 0);
+      controls.target.copy(c);
+    }
   }
   activeCam.lookAt(controls.target);
   controls.update();
@@ -1535,7 +2298,6 @@ document.getElementById("slabOnly").addEventListener("change", e => {
 // and show TRUE physical sizes (x1) — nucleation, growth and pop-off at the
 // real 10s-of-um scale (pair with 시간 배속 0.02x: the real ~10 ms cycle
 // becomes ~0.5 s of watchable slow motion).
-let zoomed = false, zoomPrev = null;
 document.getElementById("bZoom").onclick = e => {
   if (!zoomed) {
     if (!bubCur || !bubCur.grid) return;
@@ -1550,22 +2312,31 @@ document.getElementById("bZoom").onclick = e => {
     const ty = target[1] * 1000;
     const tz = target[2] * 1000 - (g.nz * g.h_mm) / 2;
     zoomPrev = { pos: camera.position.clone(), tgt: controls.target.clone(),
-                 bscale: P.bscale };
+                 bscale: P.bscale, view: viewMode };
     P.bscale = "1";                              // true size while zoomed
     activeCam = camera; controls.object = camera;
-    camera.near = 0.005; camera.updateProjectionMatrix();
+    // UNLOCK the micro range: the cell-scale limits (min ~1.5 mm) would clamp the
+    // wheel long before a 40 µm bubble fills the view. Restored on the way out.
+    zoomed = true;
+    controls.minDistance = 0.02; controls.maxDistance = camBase.maxD;
+    camera.near = 0.005; camera.far = camBase.far;
+    camera.updateProjectionMatrix();
     controls.target.set(tx, ty, tz);
     camera.position.set(tx - 3.5, ty + 1.2, tz + 3.5);   // ~5 mm away, in-channel
     camera.lookAt(controls.target); controls.update();
     e.target.textContent = "↩ 전체 보기로 복귀";
-    zoomed = true;
   } else {
     P.bscale = zoomPrev.bscale;
-    camera.near = 0.01; camera.updateProjectionMatrix();
+    zoomed = false;
+    // back to the cell-scale range (the micro range would otherwise let the
+    // wheel bury the camera again, which is how the zoom "broke")
+    controls.minDistance = camBase.minD; controls.maxDistance = camBase.maxD;
+    camera.near = camBase.near; camera.far = camBase.far;
+    camera.updateProjectionMatrix();
     camera.position.copy(zoomPrev.pos); controls.target.copy(zoomPrev.tgt);
     camera.lookAt(controls.target); controls.update();
     e.target.textContent = "🔍 국소 확대 — 실제 크기(µm)로 핵생성·이탈 보기";
-    zoomed = false;
+    if (zoomPrev.view && zoomPrev.view !== "orbit") setView(zoomPrev.view);  // was in a flat view
   }
 };
 
@@ -1577,15 +2348,178 @@ document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
   });
 });
 
+// ============================ ⚡ live electrochem panels (slice panel) ========
+// Always-visible in the right panel: voltage breakdown (every poll), LSV +
+// EIS Nyquist at the operating point (own 2.5 s cadence). Same data as the 2-D
+// dashboard; drawn with plain Canvas-2D (the 3-D view is three.js, these aren't).
+const ETA3 = [["E_rev","E_rev","#8a95a5"],["eta_act_anode","η OER","#c9333f"],
+  ["eta_act_cathode","η HER","#e8734a"],["eta_conc","η 농도","#d8a400"],
+  ["eta_ohmic","η 옴","#1f6feb"],["eta_water","η 물","#6b4fd8"]];
+function drawEta3(eta, V) {
+  const bar = document.getElementById("etaBar3"), leg = document.getElementById("etaLeg3");
+  if (!bar || !eta) return;
+  const parts = ETA3.filter(([k]) => k==="E_rev" || Math.max(0,eta[k]||0) >= 1e-3);
+  const tot = parts.reduce((a,[k])=>a+Math.max(0,eta[k]||0),0) || 1;
+  bar.innerHTML=""; leg.innerHTML="";
+  for (const [k,nm,col] of parts) {
+    const v=Math.max(0,eta[k]||0), pct=100*v/tot;
+    if (pct>0.3){ const s=document.createElement("div"); s.style.cssText=`width:${pct}%;background:${col}`;
+      s.title=`${nm} ${v.toFixed(3)} V`; bar.appendChild(s); }
+    const li=document.createElement("div");
+    li.innerHTML=`<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${col};margin-right:4px"></span>${nm} <b>${v.toFixed(2)}</b>`;
+    leg.appendChild(li);
+  }
+  const t=document.createElement("div"); t.style.gridColumn="1/3";
+  t.innerHTML=`= V<sub>cell</sub> <b>${(V||tot).toFixed(3)} V</b>`; leg.appendChild(t);
+}
+// HiDPI + fill: the mini charts track their rendered box × dpr, so they stay
+// sharp and re-fit when the slice panel is resized (was a fixed 230px bitmap).
+function _ctx2d(id){ const cv=document.getElementById(id); if(!cv) return null;
+  const dpr=Math.min(3,Math.max(1,devicePixelRatio||1));
+  const W=Math.max(60,cv.clientWidth||+cv.getAttribute("width"));
+  const H=Math.max(60,cv.clientHeight||+cv.getAttribute("height"));
+  if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){ cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); }
+  const c=cv.getContext("2d"); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H); return {c,W,H}; }
+let lsv3Res=null, eis3Res=null;
+async function loadEchem3(){
+  try{ lsv3Res=await (await fetch("/api3d/sweep",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:"{}"})).json(); }catch{}
+  try{ eis3Res=await (await fetch("/api3d/eis")).json(); }catch{}
+  drawLsv3(); drawEis3();
+}
+function drawLsv3(){
+  const g=_ctx2d("lsv3"); if(!g) return; const {c,W,H}=g;
+  if(!lsv3Res||!lsv3Res.j){ c.fillStyle="#68738a"; c.font="10px system-ui"; c.fillText("스윕 대기…",6,14); return; }
+  const pad=26,jmax=Math.max(...lsv3Res.j),vlo=1.3,vhi=3.0;
+  const X=j=>pad+j/jmax*(W-pad-6),Y=v=>H-14-(v-vlo)/(vhi-vlo)*(H-22);
+  c.strokeStyle="rgba(128,138,160,.25)";c.lineWidth=1;c.font="8px system-ui";c.fillStyle="#68738a";
+  for(let v=1.5;v<=vhi;v+=0.5){const y=Y(v);c.beginPath();c.moveTo(pad,y);c.lineTo(W-6,y);c.stroke();c.fillText(v.toFixed(1),2,y+3);}
+  const ju=lsv3Res.pristine.j_used||lsv3Res.j,rc=lsv3Res.pristine.reachable;
+  const line=(js,vs,col,reach)=>{c.strokeStyle=col;c.lineWidth=1.6;c.beginPath();let s=false;
+    for(let i=0;i<js.length;i++){if(reach&&!reach[i])break;const x=X(js[i]),y=Y(vs[i]);s?c.lineTo(x,y):c.moveTo(x,y);s=true;}c.stroke();};
+  line(ju,lsv3Res.pristine.V,"#5aa7e8",rc);
+  if(lsv3Res.mesh)line(lsv3Res.mesh.j_used||lsv3Res.j,lsv3Res.mesh.V,"#39b26a",lsv3Res.mesh.reachable);
+  if(lastState&&lastState.diag){const j=(lastState.diag.j_Acm2||0)*1000,v=lastState.diag.V_cell||0;
+    if(j<=jmax){c.fillStyle="#c9333f";c.beginPath();c.arc(X(j),Y(v),3.5,0,2*Math.PI);c.fill();}}
+  c.fillStyle="#68738a";c.fillText("mA/cm²",W-38,H-3);
+}
+function drawEis3(){
+  const g=_ctx2d("eis3"); if(!g) return; const {c,W,H}=g;
+  const rd=document.getElementById("eis3Read");
+  if(!eis3Res||eis3Res.error||!eis3Res.re){ c.fillStyle="#68738a";c.font="10px system-ui";
+    c.fillText(eis3Res&&eis3Res.error?eis3Res.error:"계산 대기…",6,14); return; }
+  const re=eis3Res.re,im=eis3Res.im,pad=24,rmax=Math.max(...re,...im,1e-6)*1.1;
+  const sc=Math.min((W-pad-6)/rmax,(H-16)/rmax),X=x=>pad+x*sc,Y=y=>H-12-y*sc;
+  c.strokeStyle="rgba(128,138,160,.25)";c.lineWidth=1;c.font="8px system-ui";c.fillStyle="#68738a";
+  c.beginPath();c.moveTo(pad,H-12);c.lineTo(W-6,H-12);c.stroke();
+  c.beginPath();c.moveTo(pad,10);c.lineTo(pad,H-12);c.stroke();
+  for(let gg=0.2;gg<rmax;gg+=0.2){const x=X(gg);if(x<W-6){c.fillText(gg.toFixed(1),x-5,H-3);}}
+  c.strokeStyle="#1f6feb";c.lineWidth=1.6;c.beginPath();
+  re.forEach((x,i)=>i?c.lineTo(X(x),Y(im[i])):c.moveTo(X(x),Y(im[i])));c.stroke();
+  if(rd) rd.innerHTML=`R<sub>s</sub> ${eis3Res.Rs.toFixed(3)} · R<sub>ct</sub> ${(eis3Res.Rct_a+eis3Res.Rct_c).toFixed(3)} Ω·cm²`;
+}
+loadEchem3(); setInterval(loadEchem3, 2500);
+
+// per-panel CSV for the slice-panel electrochem charts (shared controls.js helper)
+document.querySelectorAll(".fpanel .csvb[data-csv]").forEach(b => b.onclick = () => {
+  const d = (lastState && lastState.designer) || P, dg = lastState && lastState.diag;
+  let rows=null, title="";
+  if (b.dataset.csv === "eta" && dg && dg.eta) {
+    title="⚡ 셀 전압 분해"; rows=[["항목","전압_V"]];
+    for (const [k,nm] of ETA3) rows.push([nm, dg.eta[k]||0]);
+    rows.push(["합계 V_cell", dg.V_cell]);
+  } else if (b.dataset.csv === "lsv" && lsv3Res && lsv3Res.j) {
+    const p=lsv3Res.pristine, ju=p.j_used||lsv3Res.j, rc=p.reachable;
+    title="📈 분극곡선 (LSV)"; rows=[["j_설정_mA_cm2","j_실제_mA_cm2","도달가능","모델_pristine_V"].concat(lsv3Res.mesh?["mesh_V"]:[])];
+    lsv3Res.j.forEach((j,i)=>{ const r=[j,ju[i],rc?(rc[i]?1:0):1,p.V[i]]; if(lsv3Res.mesh)r.push(lsv3Res.mesh.V[i]); rows.push(r); });
+  } else if (b.dataset.csv === "eis" && eis3Res && eis3Res.re) {
+    title="🌀 EIS Nyquist"; rows=[["주파수_Hz","Z_re_ohm_cm2","-Z_im_ohm_cm2"]];
+    eis3Res.f.forEach((f,i)=>rows.push([f,eis3Res.re[i],eis3Res.im[i]]));
+    rows.push([],["# Rs",eis3Res.Rs],["# Rct_OER",eis3Res.Rct_a],["# Rct_HER",eis3Res.Rct_c]);
+  }
+  if (!rows) { b.textContent="데이터 없음"; setTimeout(()=>b.textContent="⬇ CSV",1200); return; }
+  csvDownload(b.dataset.csv, rows, d, title);
+});
+
+// ---- floating panels: drag anywhere to move, corner to resize (persists) ----
+// Every analysis section is its OWN window now (단면 / 구간 / 전압 / LSV / EIS),
+// so each can be moved and sized on its own. Double-click a panel to reset it.
+const ANALYSIS_PANELS = ["pSlice","pProf","pEta","pLsv","pEis"];
+if (window.dragResize) {
+  dragResize(document.getElementById("panel"), null, "panel3d");    // whole panel = grip
+  dragResize(document.getElementById("hud"), null, "hud3d");
+  for (const id of ANALYSIS_PANELS) {
+    const el = document.getElementById(id);
+    if (el) dragResize(el, null, id);                                // localStorage key = id
+  }
+}
+
+// Tidy default arrangement: a right-anchored column packer.
+//  · The compact analysis panels (구간·전압·LSV·EIS) stack in the rightmost
+//    column STARTING BELOW THE HUD so they never cover it; when the next one
+//    would run past the bottom edge it wraps to a fresh column on the LEFT, so a
+//    short screen spreads them sideways instead of off the bottom.
+//  · The tall 단면 뷰 (~400 px) can't share the space left under the HUD, so it
+//    gets its OWN fresh column that starts at the very top.
+// Panels the user has already placed (saved layout) are left alone unless
+// `force` (the 🧹 정렬 button) re-tidies everything.
+function tidyPanels(force) {
+  const w = 238, gap = 10, top0 = 12;
+  const hud = document.getElementById("hud");
+  const hb = hud ? hud.getBoundingClientRect() : null;
+  const hudBot = hb ? Math.round(hb.bottom) + gap : top0;
+  const botLimit = innerHeight - 12;
+  const colX = c => Math.max(12, innerWidth - 12 - (c + 1) * w - c * gap);
+  // force: wipe saved layout + any custom size (back to CSS 238px). Leaving the
+  // inline width UNSET matters: dragResize's mouseup treats a set width as
+  // "resized" and would persist on the first click — CSS width lets a tidied-
+  // but-untouched panel keep re-tidying on window resize instead.
+  const want = id => {
+    const el = document.getElementById(id); if (!el) return null;
+    if (force) { try { localStorage.removeItem(id); } catch (e) {}
+      el._floated = false; el.style.width = ""; el.style.height = ""; return el; }
+    return localStorage.getItem(id) ? null : el;       // saved -> user placed it
+  };
+  const place = (el, x, y) => {
+    el.style.position = "fixed"; el.style.right = "auto"; el.style.bottom = "auto";
+    el.style.margin = "0"; el.style.left = x + "px"; el.style.top = y + "px";
+    return Math.round(el.getBoundingClientRect().height) || 180;
+  };
+  let col = 0, colStartY = hudBot, y = hudBot;
+  for (const id of ["pProf", "pEta", "pLsv", "pEis"]) {
+    const el = want(id); if (!el) continue;
+    let h = place(el, colX(col), y);
+    if (y !== colStartY && y + h > botLimit) {          // overflow & not first in column
+      col++; colStartY = top0; y = top0; h = place(el, colX(col), y);
+    }
+    y += h + gap;
+  }
+  const sl = want("pSlice");                            // tall viewer -> its own column, top
+  if (sl) place(sl, colX(col + 1), top0);
+}
+// First pass at load, then one more after the charts/legend have populated (they
+// grow the echem panels a little), so the final stack has no stale-height gaps.
+tidyPanels(false);
+setTimeout(() => tidyPanels(false), 800);
+{ const bt = document.getElementById("bTidy"); if (bt) bt.onclick = () => tidyPanels(true); }
+addEventListener("resize", () => { if (!tidyPanels._t) tidyPanels._t =
+  setTimeout(() => { tidyPanels._t = null; tidyPanels(false); }, 300); });
+
 // ============================ render loop ==================================
-let last = performance.now(), fps = 0, hudT = 0;
+let last = performance.now(), fps = 0, hudT = 0, chartT = 0;
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   fps = 0.9 * fps + 0.1 / Math.max(1e-3, dt);
   if (mode === "live") renderBubbles(now);   // 60 fps interpolated bubble motion
   renderTracers(now);                        // flow-field particle trace overlay
+  // self-heal: if any path ever leaves controls steering the NON-rendered
+  // camera, the wheel silently zooms the invisible one ("휠이 죽었다")
+  if (controls.object !== activeCam) controls.object = activeCam;
   controls.update();
   renderer.render(scene, activeCam);
+  if (now - chartT > 120) {                     // ~8 fps redraw of the mini charts
+    chartT = now; drawLsv3(); drawEis3();       // cached data; re-fits on resize
+  }
   if (now - hudT > 400) {
     hudT = now;
     document.getElementById("hFps").textContent = fps.toFixed(0);
@@ -1595,10 +2529,24 @@ function loop(now) {
 document.getElementById("boot").style.display = "none";
 requestAnimationFrame(loop);
 
+// deep link from the 2-D page's picker: /?tab=exp opens the mesh-experiment tab
+if (new URLSearchParams(location.search).get("tab") === "exp") setPanel("exp");
+
 // ============================ verify handles ================================
 window.__P = P;
 window.__state = () => lastState;
 window.__rebuild = rebuildCell;
+window.__camInfo = () => ({
+  type: activeCam.isOrthographicCamera ? "ortho" : "persp",
+  dist: activeCam.position.distanceTo(controls.target),
+  zoom: activeCam.zoom,
+  ctrlObjIsActive: controls.object === activeCam,
+  pos: activeCam.position.toArray().map(v => +v.toFixed(3)),
+  tgt: controls.target.toArray().map(v => +v.toFixed(3)),
+  minD: controls.minDistance, maxD: controls.maxDistance,
+  near: camera.near, far: camera.far, zoomed,
+});
+window.__tick = () => { controls.update(); renderer.render(scene, activeCam); };
 window.__rinfo = () => ({ calls: renderer.info.render.calls,
                           tris: renderer.info.render.triangles,
                           instCount: inst.count,
