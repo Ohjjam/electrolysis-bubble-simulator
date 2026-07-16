@@ -66,3 +66,12 @@ def test_server_rejects_invalid_geometry_transactionally():
 
 def test_live_and_sweep_property_fidelity_match():
     assert operating_from_designer(DESIGNER_DEFAULTS).high_fidelity is True
+
+
+def test_non_custom_flow_clears_a_stale_drawn_mask():
+    live = LiveSim3D()
+    live.designer["mask"] = "2,2:0000"  # legacy/inconsistent state
+    result = live.update({"j": float(live.designer["j"]) + 0.01})
+    assert result["accepted"]["mask"] == ""
+    assert live.designer["ff"] != "custom"
+    assert live.designer["mask"] == ""

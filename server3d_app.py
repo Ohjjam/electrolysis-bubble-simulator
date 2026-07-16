@@ -227,6 +227,15 @@ class LiveSim3D:
                         rebuild = True
                 else:
                     rejected[k] = "unknown key"
+            # A drawn mask is authoritative only for ff="custom". Keeping a
+            # stale mask beside serp/par/inter makes the UI say "serpentine"
+            # while the solver and 3-D ribs still use an old drawing. Enforce
+            # the invariant server-side as well as in both front-ends so cached
+            # browsers and saved/legacy state cannot recreate that mismatch.
+            if candidate.get("ff") != "custom" and candidate.get("mask"):
+                candidate["mask"] = ""
+                accepted["mask"] = ""
+                rebuild = True
             if rebuild:
                 # Build first, commit second: a failed geometry never poisons the
                 # live designer or replaces the last valid simulation.
