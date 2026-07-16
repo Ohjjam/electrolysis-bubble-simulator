@@ -426,7 +426,7 @@
   "지금 화면의 조건으로 이 실험을 덮어씁니다": "Overwrite this experiment with the conditions on the screen now.",
   "직사각형 개구와 버블 발생 위치": "Rectangular opening and bubble generation location",
   "직접그림": "Direct drawing",
-  "진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 슬라이더=좌우 이동 · ±=줌": "True 3D structures — channels, electrodes and membranes in actual dimensions. Drag=rotate · Slider=move left and right · ±=zoom",
+  "진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 슬라이더=좌우 이동 · 휠/±=줌": "True 3D structures — channels, electrodes and membranes in actual dimensions. Drag=rotate · Slider=move left and right · Wheel/±=zoom",
   "질문": "question",
   "첫 번째": "first",
   "촉매 / 막": "catalyst/membrane",

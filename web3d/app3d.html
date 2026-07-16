@@ -180,7 +180,7 @@
              aria-label="3D 화면 좌우 이동">
     </div>
     <div class="cameraRow">
-      <span class="cameraLabel">휠 줌 꺼짐</span>
+      <span class="cameraLabel">휠 줌</span>
       <span class="zoomActions">
         <button class="zoomBtn" id="zoomOut" type="button" aria-label="축소" title="축소">−</button>
         <button class="zoomBtn" id="zoomIn" type="button" aria-label="확대" title="확대">+</button>
@@ -197,7 +197,7 @@
       <button type="button" data-language="en">English</button>
     </div>
   </div>
-  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 슬라이더=좌우 이동 · ±=줌</div>
+  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 슬라이더=좌우 이동 · 휠/±=줌</div>
 
   <!-- tabs: 2D / 3D / built-in mesh experiment / user-saved experiments / save -->
   <div class="seg" id="modeSeg" style="display:flex;flex-wrap:wrap;gap:4px">
@@ -770,6 +770,7 @@ const CTRL = SIM_CTRL.concat([
     { k:"jmap", nm:"전극면 전류맵", seg:[["on","켜기"],["off","끄기"]], v:"on", local:1 },
     { k:"bcol", nm:"버블 색", seg:[["gas","기체 종류"],["vel","상승속도"]], v:"gas", local:1 },
     { k:"bscale", nm:"버블 표시 크기 (물리 크기는 실제)", seg:[["1","실제 ×1"],["4","×4"],["12","×12"]], v:"4", local:1 },
+    { k:"bcount", nm:"3D 표시 버블 수 상한 (0=전체)", un:"개", min:0, max:9000, step:100, v:0, lo:0, hi:9000, local:1 },
     { k:"trace", nm:"흐름 궤적 트레이서 개수 (계산된 속도장)", seg:[["off","끄기"],["300","300"],["700","700"],["1400","1400"]], v:"700", local:1 },
   ]],
 ]);
@@ -1113,11 +1114,20 @@ const orthoCam = new THREE.OrthographicCamera(-50, 50, 50, -50, -1000, 1000);
 let activeCam = camera;                    // swapped by the view presets
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
-// Wheel/pinch zoom is intentionally disabled.  OrbitControls' wheel state was
-// fragile when switching between perspective, orthographic and local µm views.
-// Explicit +/- buttons below use the same cell-aware limits in every view.
+// OrbitControls' own zoom state is kept disabled because it was fragile when
+// switching perspective/orthographic/local-µm cameras. Wheel input is routed
+// through the same cell-aware zoomCamera() used by the explicit +/- buttons.
 controls.enableZoom = false;
-renderer.domElement.addEventListener("wheel", e => e.preventDefault(), { passive:false });
+let wheelDelta = 0, wheelFrame = 0;
+renderer.domElement.addEventListener("wheel", e => {
+  e.preventDefault();
+  wheelDelta += e.deltaY;
+  if (wheelFrame) return;
+  wheelFrame = requestAnimationFrame(() => {
+    if (Math.abs(wheelDelta) >= 1) zoomCamera(wheelDelta < 0);
+    wheelDelta = 0; wheelFrame = 0;
+  });
+}, { passive:false });
 let camBase = { near: 0.01, far: 500, minD: 1, maxD: 300 };
 let orthoHalf = 50;                        // half-extent the ortho frustum frames
 // declared HERE (not next to the 국소 확대 button) because fitCameraRange reads
@@ -1283,8 +1293,11 @@ function applyLayers() {
   if (anodeGeom) anodeGeom.visible = layers.anode;
   if (membraneMesh) membraneMesh.visible = layers.membrane;
   if (wallsGroup) wallsGroup.visible = layers.walls;
-  if (plateMeshC) plateMeshC.visible = true;
-  if (plateMeshA) plateMeshA.visible = visualPreset !== "internal";
+  // Component visibility has one source of truth: the layer checkboxes.
+  // Presets update those checkboxes instead of secretly hiding an object while
+  // its checkbox remains checked.
+  if (plateMeshC) plateMeshC.visible = layers.cathode;
+  if (plateMeshA) plateMeshA.visible = layers.anode;
   const showMap = (P.jmap ?? "on") === "on";
   if (facePlaneC) facePlaneC.visible = showMap && layers.cathode;
   if (facePlaneA) facePlaneA.visible = showMap && layers.anode;
@@ -1292,7 +1305,7 @@ function applyLayers() {
   syncRibRenderStyle();
   const showDecor = visualPreset !== "analysis" && !matchMedia("(max-width:900px)").matches;
   if (decorC) decorC.visible = showDecor && layers.cathode;
-  if (decorA) decorA.visible = showDecor && layers.anode && visualPreset !== "internal";
+  if (decorA) decorA.visible = showDecor && layers.anode;
   if (decorCore) decorCore.visible = showDecor && layers.membrane;
   // bubble layers (her/oer) are applied in updateBubbles via the side filter
 }
@@ -1716,6 +1729,7 @@ const instAttached = new THREE.InstancedMesh(
 instAttached.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
 instAttached.frustumCulled = false; instAttached.count = 0;
 scene.add(inst, instAttached);
+let displayedBubbleCount = null;
 const C_H2 = new THREE.Color(0x72c4e3), C_O2 = new THREE.Color(0xe9a15f);
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
 
@@ -1851,15 +1865,33 @@ function renderBubbles(now) {
   const Lm = [g.nx * g.h_mm, g.ny * g.h_mm, g.nz * g.h_mm].map(v => v / 1000);
   const cut = slabOnly ? slicePos * Lm[sliceAxis] : 0;
   const slabW = 0.10 * Lm[sliceAxis];
+  const requestedLimit = Math.max(0, Math.floor(+P.bcount || 0));
+  // 0 means all available Monte-Carlo markers. Local microscope mode also
+  // keeps the complete pool so its tracked focus bubble cannot be capped out.
+  const displayLimit = zoomed || requestedLimit === 0
+    ? MAXB : Math.min(MAXB, requestedLimit);
+  const eligible = v => {
+    if (v.side < 0.5 ? !layers.her : !layers.oer) return false;
+    if (!slabOnly) return true;
+    const s = _lerpNow(v, now);
+    return Math.abs([s[0], s[1], s[2]][sliceAxis] - cut) <= slabW;
+  };
+  let eligibleCount = 0;
+  for (const v of visPool) if (eligible(v)) eligibleCount++;
+  const renderTarget = Math.min(displayLimit, eligibleCount);
+  let eligibleSeen = 0;
   let freeCount = 0, attachedCount = 0;
   for (const v of visPool) {
-    if (v.side < 0.5 ? !layers.her : !layers.oer) continue;
+    if (!eligible(v)) continue;
+    // Pick exactly renderTarget bubbles at even intervals across the complete
+    // eligible pool. This avoids a cap such as 300 selecting only the first
+    // species/free-bubble block in visPool and preserves population ratios.
+    const bucketBefore = Math.floor(eligibleSeen * renderTarget / Math.max(1, eligibleCount));
+    eligibleSeen++;
+    const bucketAfter = Math.floor(eligibleSeen * renderTarget / Math.max(1, eligibleCount));
+    if (bucketAfter === bucketBefore) continue;
     const s = _lerpNow(v, now);                     // smooth pose from the pool
     const px = s[0], py = s[1], pz = s[2], pr = s[3];
-    if (slabOnly) {
-      const pa = [px, py, pz][sliceAxis];
-      if (Math.abs(pa - cut) > slabW) continue;
-    }
     let x = px * 1000 - gridLx / 2;
     const y = py * 1000;
     const z = pz * 1000 - (g.nz * g.h_mm) / 2;      // grid frame, same as the ribs
@@ -1898,10 +1930,10 @@ function renderBubbles(now) {
     const index = v.att ? attachedCount++ : freeCount++;
     target.setMatrixAt(index, _m);
     target.setColorAt(index, _col);
-    if (freeCount + attachedCount >= MAXB) break;
   }
   inst.count = freeCount;
   instAttached.count = attachedCount;
+  displayedBubbleCount = freeCount + attachedCount;
   inst.instanceMatrix.needsUpdate = true;
   instAttached.instanceMatrix.needsUpdate = true;
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
@@ -2930,8 +2962,9 @@ async function poll() {
     const hv = document.getElementById("hValid");
     hv.textContent = validity.length ? validity.join(" · ") : "범위 내 · 표면반응 모델";
     hv.style.color = validity.length ? "var(--gold)" : "var(--grn)";
+    const shownBubbles = displayedBubbleCount == null ? st.n_bub : displayedBubbleCount;
     document.getElementById("hN").textContent = dg.n_real_est != null
-      ? `${st.n_bub} / ~${dg.n_real_est.toLocaleString()}` : st.n_bub;
+      ? `${shownBubbles} / ~${dg.n_real_est.toLocaleString()}` : shownBubbles;
     if (dg.r_dep_um != null) document.getElementById("hRdep").textContent =
       `${dg.r_dep_um.toFixed(0)} µm · 1개≈${(dg.mult ?? 1).toFixed(0)}개 실제`;
     if (dg.V_cell != null) document.getElementById("hVJ").textContent =
@@ -3313,10 +3346,14 @@ function setVisualPreset(next) {
   visualPreset = next;
   document.getElementById("visualSeg").querySelectorAll("button").forEach(button =>
     button.classList.toggle("on", button.dataset.v === next));
-  // A preset starts from a complete layer set. These remain ordinary
-  // checkboxes afterwards, so the user can immediately customize the view.
+  const presetLayers = next === "internal"
+    ? { cathode:false, anode:false, membrane:true, her:true, oer:true, walls:true }
+    : { cathode:true, anode:true, membrane:true, her:true, oer:true, walls:true };
+  // Presets are now ordinary, visible checkbox operations. After applying one,
+  // the user can still customize every layer without a hidden preset override.
   document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
-    cb.checked = true; layers[cb.dataset.layer] = true;
+    const on = !!presetLayers[cb.dataset.layer];
+    cb.checked = on; layers[cb.dataset.layer] = on;
   });
   const mapValue = next === "analysis" ? "on" : "off";
   if (ctls.reg.jmap) ctls.reg.jmap(mapValue); else P.jmap = mapValue;
@@ -3639,7 +3676,9 @@ window.__renderNow = () => {
 };
 window.__bubbleStyleInfo = () => ({
   free: inst.count, attached: instAttached.count,
-  meshes: 2, maxInstances: MAXB,
+  displayed: inst.count + instAttached.count,
+  requestedLimit: Math.max(0, Math.floor(+P.bcount || 0)),
+  pool: visPool.length, meshes: 2, maxInstances: MAXB,
   attachedNormalScaleAtTheta: +(0.48 + 0.18 * (Math.max(1, Math.min(179, +P.theta || 60)) / 179)).toFixed(3),
 });
 window.__ribInfo = () => {
@@ -3691,7 +3730,9 @@ window.__camType = () => activeCam.isOrthographicCamera ? "ortho" : "persp";
 window.__zoomInfo = () => ({
   zoomed,
   hasFocus: !!(zoomFocus && !zoomFocus.dying),
-  distance: +camera.position.distanceTo(controls.target).toFixed(4),
+  cameraType: activeCam.isOrthographicCamera ? "ortho" : "persp",
+  activeZoom: +activeCam.zoom.toFixed(4),
+  distance: +activeCam.position.distanceTo(controls.target).toFixed(4),
   target: controls.target.toArray().map(v => +v.toFixed(4)),
 });
 window.__plateOp = () => ({ plate: +MAT.plate.opacity.toFixed(2), ptl: +MAT.ptl.opacity.toFixed(2) });
