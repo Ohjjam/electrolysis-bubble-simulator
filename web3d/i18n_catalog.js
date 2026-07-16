@@ -242,6 +242,7 @@
   "막 두께 (건식 음극 물수송·형상)": "Film thickness (dry cathode water transport/shape)",
   "막 함수율 분포 λ(x) 없음": "Membrane moisture content distribution λ(x) None",
   "막(membrane)": "membrane",
+  "다공층(PTL)": "Porous transport layer (PTL)",
   "막·접촉 면저항 (피팅값)": "Membrane/contact surface resistance (fitting value)",
   "만드므로 이 항은": "Since this term is",
   "먼저 🧪 실험 탭에서 ▶ 분극곡선을 계산하세요.": "First, in the 🧪 Experiment tab ▶ Calculate the polarization curve.",

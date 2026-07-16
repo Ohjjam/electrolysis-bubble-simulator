@@ -172,6 +172,7 @@
     "유로 — 템플릿 & 직접 그리기": "Flow field — templates and custom drawing",
     "유로 바꿔 비교": "Compare flow fields",
     "유로 벽(리브)": "Flow-field walls (ribs)",
+    "다공층(PTL)": "Porous transport layer (PTL)",
     "유로 위치별": "Along the flow path",
     "유로단면_mm2": "flow_field_cross_section_mm2",
     "템플릿": "Template",

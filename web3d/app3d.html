@@ -643,6 +643,7 @@
     <label class="sliceChk"><input type="checkbox" data-layer="cathode" checked> 음극(전극)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="anode" checked> 양극(전극)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="membrane" checked> 막(membrane)</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="ptl" checked> 다공층(PTL)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="walls" checked> 유로 벽(리브)</label>
   </div>
 
@@ -1279,19 +1280,21 @@ function setSolidsTransparency(flat) {
 }
 
 let gravArrow = null, camHome = new THREE.Vector3();
-let cathodeGeom = null, anodeGeom = null, membraneMesh = null, wallsGroup = null;
+let cathodeGeom = null, anodeGeom = null, membraneMesh = null, ptlGroup = null, wallsGroup = null;
+let ptlMeshC = null, ptlMeshA = null;
 let plateMeshC = null, plateMeshA = null, cellEdge = null;
 let decorC = null, decorA = null, decorCore = null;
-// component layers (on/off): electrode geometry + membrane + per-side bubbles
+// component layers (on/off): electrode geometry + membrane/PTL + per-side bubbles
 // + the channel WALLS as their own layer — they used to live inside the
 // electrode groups, so hiding an electrode silently deleted the 3-D walls and
 // only the flat dark stripes of the face TEXTURE remained ("벽 입체가 없어져").
 const layers = { cathode: true, anode: true, membrane: true, her: true, oer: true,
-                 walls: true };
+                 ptl: true, walls: true };
 function applyLayers() {
   if (cathodeGeom) cathodeGeom.visible = layers.cathode;
   if (anodeGeom) anodeGeom.visible = layers.anode;
   if (membraneMesh) membraneMesh.visible = layers.membrane;
+  if (ptlGroup) ptlGroup.visible = layers.ptl;
   if (wallsGroup) wallsGroup.visible = layers.walls;
   // Component visibility has one source of truth: the layer checkboxes.
   // Presets update those checkboxes instead of secretly hiding an object while
@@ -1600,18 +1603,24 @@ function rebuildCell() {
   // component groups so each can be toggled on/off as a layer
   cathodeGeom = new THREE.Group(); anodeGeom = new THREE.Group();
   membraneMesh = new THREE.Group();
+  ptlGroup = new THREE.Group();
   portGroup = new THREE.Group();
   wallsGroup = new THREE.Group();      // channel walls: independent of the electrodes
   decorC = new THREE.Group(); decorA = new THREE.Group(); decorCore = new THREE.Group();
-  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, portGroup, wallsGroup,
+  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, ptlGroup, portGroup, wallsGroup,
                 decorC, decorA, decorCore);
 
-  // core: thin bright membrane plane at the centre + PTL halves to the edges
+  // Core: the PTL halves bridge the centre membrane to the inner rib faces.
+  // PTL used to live inside the electrode groups, so the internal preset hid it
+  // together with the end plates and made this continuous stack look detached.
+  // Keep the exact physics-grid coordinates; only render-layer ownership changes.
   const tMemV = Math.min(0.5, coreT * 0.18);
   box(tMemV, H, W, MAT.mem, 0, H / 2, 0, membraneMesh);
   const ptlT = (coreT - tMemV) / 2;
-  box(ptlT, H, W, MAT.ptl, -(tMemV / 2 + ptlT / 2), H / 2, 0, cathodeGeom);
-  box(ptlT, H, W, MAT.ptl, +(tMemV / 2 + ptlT / 2), H / 2, 0, anodeGeom);
+  ptlMeshC = box(ptlT, H, W, MAT.ptl,
+    -(tMemV / 2 + ptlT / 2), H / 2, 0, ptlGroup);
+  ptlMeshA = box(ptlT, H, W, MAT.ptl,
+    +(tMemV / 2 + ptlT / 2), H / 2, 0, ptlGroup);
 
   // channel layers: back plate slab (electrode group) + rib subgroup (filled
   // from the land mask). The ribs go into wallsGroup — NOT the electrode
@@ -3347,8 +3356,8 @@ function setVisualPreset(next) {
   document.getElementById("visualSeg").querySelectorAll("button").forEach(button =>
     button.classList.toggle("on", button.dataset.v === next));
   const presetLayers = next === "internal"
-    ? { cathode:false, anode:false, membrane:true, her:true, oer:true, walls:true }
-    : { cathode:true, anode:true, membrane:true, her:true, oer:true, walls:true };
+    ? { cathode:false, anode:false, membrane:true, ptl:true, her:true, oer:true, walls:true }
+    : { cathode:true, anode:true, membrane:true, ptl:true, her:true, oer:true, walls:true };
   // Presets are now ordinary, visible checkbox operations. After applying one,
   // the user can still customize every layer without a hidden preset override.
   document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
@@ -3748,11 +3757,28 @@ window.__visualInfo = () => ({
   preset: visualPreset, view: viewMode, jmap: P.jmap,
   plateC: !!(plateMeshC && plateMeshC.visible),
   plateA: !!(plateMeshA && plateMeshA.visible),
+  ptl: !!(ptlGroup && ptlGroup.visible),
   decorC: !!(decorC && decorC.visible),
   decorA: !!(decorA && decorA.visible),
   decorCore: !!(decorCore && decorCore.visible),
   layers: {...layers},
 });
+window.__contactInfo = () => {
+  const bounds = object => {
+    if (!object) return null;
+    const box = new THREE.Box3().setFromObject(object);
+    return box.isEmpty() ? null : [box.min.x, box.max.x].map(v => +v.toFixed(6));
+  };
+  const ptlC = bounds(ptlMeshC), ptlA = bounds(ptlMeshA);
+  const ribC = bounds(ribSubC), ribA = bounds(ribSubA);
+  return {
+    ptlVisible: !!(ptlGroup && ptlGroup.visible),
+    cathode: { ptl: ptlC, rib: ribC,
+      gap: ptlC && ribC ? +(ptlC[0] - ribC[1]).toFixed(6) : null },
+    anode: { ptl: ptlA, rib: ribA,
+      gap: ptlA && ribA ? +(ribA[0] - ptlA[1]).toFixed(6) : null },
+  };
+};
 window.__ready = true;
 </script>
 </body>
