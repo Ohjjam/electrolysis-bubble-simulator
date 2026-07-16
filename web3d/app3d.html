@@ -842,6 +842,15 @@ const AI_PROVIDERS = {
 };
 
 function aiProvider() { return aiEl("aiProvider").value; }
+const AI_LOCAL_BROWSER = ["127.0.0.1", "localhost", "::1"].includes(location.hostname);
+
+function aiApplyAccessState() {
+  const locked = !AI_LOCAL_BROWSER;
+  for (const id of ["aiKey", "aiSaveKey", "aiClearKey", "aiPrompt", "aiPlan", "aiApply"])
+    aiEl(id).disabled = locked || (id === "aiApply" && !aiLastEval);
+  return locked;
+}
+
 function aiPopulateModels(preferred="") {
   const provider = aiProvider(), select = aiEl("aiModel");
   select.innerHTML = "";
@@ -895,6 +904,14 @@ async function aiRefreshStatus() {
   const el = aiEl("aiKeyStatus");
   const provider = aiProvider(), info = AI_PROVIDERS[provider];
   aiConfigured = false;
+  if (aiApplyAccessState()) {
+    const english = window.SimI18n && SimI18n.getLanguage() === "en";
+    el.className = "aiStatus";
+    el.textContent = english
+      ? "AI design is available only from the simulator running on localhost. Public-cloud key entry is disabled."
+      : "AI 설계는 localhost에서 실행한 시뮬레이터에서만 사용할 수 있습니다. 공개 서버의 키 입력은 차단되어 있습니다.";
+    return;
+  }
   try {
     const status = await aiJson(`/api3d/ai/status?provider=${encodeURIComponent(provider)}`);
     aiConfigured = !!status.configured;
@@ -1064,6 +1081,7 @@ aiEl("aiApply").onclick = async () => {
 };
 document.addEventListener("sim-language-change", () => {
   aiSyncProviderUi();
+  if (!AI_LOCAL_BROWSER) aiRefreshStatus();
   if (aiLastPlan) aiRenderPlan(aiLastPlan);
   if (aiLastEval) aiRenderEvaluation(aiLastEval);
 });
