@@ -253,7 +253,7 @@
         <span class="hint pe-brushn" style="flex:none;width:24px">2.0</span><span class="hint" style="flex:none">mm</span>
         <label class="pe-chk"><input class="pe-mirror" type="checkbox"> 좌우대칭</label>
       </div>
-      <canvas class="pe-cv" width="512" height="512"></canvas>
+      <canvas class="pe-cv" data-nodrag width="512" height="512"></canvas>
       <div class="pe-tools" style="margin-top:6px">
         <button class="btn pe-undo" title="Ctrl+Z">↶ 되돌리기</button>
         <button class="btn pe-redo" title="Ctrl+Y">↷ 다시</button>

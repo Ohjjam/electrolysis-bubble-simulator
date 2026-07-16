@@ -48,7 +48,9 @@ def main(g):
         extra_cols = extra_cols or []
         keys = ["V@500mV", "V@1000mV", "eff@500_%", "eff@1000_%",
                 "theta_out@jmax", "theta_mean@jmax", "eps_out@jmax",
-                "dV@500_mV", "dV@1000_mV", "mesh_wick", "mesh_u_boost", "mesh_warn"]
+                "dV@500_mV", "dV@1000_mV", "mesh_bubble_d_mm",
+                "mesh_contact_prob", "mesh_wetting_drive", "mesh_capture_eff",
+                "mesh_obstruction", "mesh_u_boost", "mesh_dp_ratio", "mesh_warn"]
         header = ["variant"] + [c[0] for c in extra_cols] + keys
         rows = []
         table = []
@@ -86,13 +88,38 @@ def main(g):
     # -- AXIS 3: opening / PORE size (hole_mm) -----------------------------
     print("[4/8] pore-size sweep ...")
     H_VALS = [0.30, 0.46, 0.70, 1.00, 1.181, 2.00, 3.00]    # mm
-    hol = [(f"hole={h:.2f}mm", run_lsv(D0, {**REF_MESH, "hole_mm": h})) for h in H_VALS]
+    hol = [(f"hole={h:.2f}mm", run_lsv(
+        D0, {**REF_MESH, "hole_mm": h, "hole_x_mm": h, "hole_y_mm": h})) for h in H_VALS]
     lsv_wide("lsv_pore.csv", [("pristine", pris)] + hol)
     summary["axes"]["pore_size"] = {
         "held": {"open": REF_MESH["open"], "t_mm": REF_MESH["t_mm"],
-                 "cover": 1.0, "pos": "outlet", "L_REF_mm": 2.0},
+                 "cover": 1.0, "pos": "outlet",
+                 "electrode_angle_deg": D0["theta"], "mesh_angle_deg": D0["mesh_theta"]},
         "table": metrics_table("metrics_pore.csv", hol,
                                [("hole_mm", lambda r: r["mesh"]["hole_mm"])])}
+
+    # Same pore sweep for an activated/hydrophilic electrode scenario.  This is
+    # where opening size can matter because PP now has a positive wetting drive.
+    d_active = {**D0, "theta": 60.0}
+    pris_active = run_lsv(d_active, None)
+    hol_active = [(f"hole={h:.2f}mm", run_lsv(
+        d_active, {**REF_MESH, "hole_mm": h, "hole_x_mm": h,
+                   "hole_y_mm": h, "mesh_theta": D0["mesh_theta"]})) for h in H_VALS]
+    active_rows = []
+    for lab, res in hol_active:
+        m = metrics(res, pris_active)
+        active_rows.append({"variant": lab, "hole_mm": res["mesh"]["hole_mm"], **m})
+    _csv("metrics_pore_theta60.csv",
+         ["variant", "hole_mm", "V@1000mV", "dV@1000_mV", "mesh_bubble_d_mm",
+          "mesh_contact_prob", "mesh_wetting_drive", "mesh_capture_eff"],
+         [[r.get(k, "") for k in ("variant", "hole_mm", "V@1000mV", "dV@1000_mV",
+                                   "mesh_bubble_d_mm", "mesh_contact_prob",
+                                   "mesh_wetting_drive", "mesh_capture_eff")]
+          for r in active_rows])
+    summary["axes"]["pore_size_theta60"] = {
+        "held": {"electrode_angle_deg": 60.0, "mesh_angle_deg": D0["mesh_theta"],
+                 "open": REF_MESH["open"], "t_mm": REF_MESH["t_mm"]},
+        "table": active_rows}
 
     # -- AXIS 4: COVERED fraction x POSITION (the "가린 면적" question) ------
     print("[5/8] coverage x position sweep ...")
@@ -167,7 +194,10 @@ def main(g):
     cat_table = []
     for ms in MESH_CATALOG:
         fits = ms["t_mm"] < d_ch
-        mesh = {"hole_mm": ms["hole_mm"], "open": ms["open"], "t_mm": ms["t_mm"],
+        mesh = {"hole_mm": ms["hole_mm"],
+                "hole_x_mm": ms.get("hole_x_mm", ms["hole_mm"]),
+                "hole_y_mm": ms.get("hole_y_mm", ms["hole_mm"]),
+                "open": ms["open"], "t_mm": ms["t_mm"],
                 "cover": 1.0, "pos": "outlet"}
         res = run_lsv(D0, mesh)
         m = metrics(res, pris)
@@ -177,19 +207,72 @@ def main(g):
                           "V@500mV": m["V@500mV"], "V@1000mV": m["V@1000mV"],
                           "dV@500_mV": m.get("dV@500_mV"), "dV@1000_mV": m.get("dV@1000_mV"),
                           "theta_out@jmax": m["theta_out@jmax"], "mesh_warn": m["mesh_warn"],
-                          "mesh_wick": m["mesh_wick"], "mesh_u_boost": m["mesh_u_boost"]})
+                          "mesh_bubble_d_mm": m["mesh_bubble_d_mm"],
+                          "mesh_contact_prob": m["mesh_contact_prob"],
+                          "mesh_wetting_drive": m["mesh_wetting_drive"],
+                          "mesh_capture_eff": m["mesh_capture_eff"],
+                          "mesh_obstruction": m["mesh_obstruction"],
+                          "mesh_u_boost": m["mesh_u_boost"], "mesh_dp_ratio": m["mesh_dp_ratio"]})
     lsv_wide("lsv_catalog.csv", [("pristine", pris)] + cat_variants)
     _csv("metrics_catalog.csv",
          ["id", "name", "fits", "hole_mm", "open", "t_mm", "V@500mV", "V@1000mV",
-          "dV@500_mV", "dV@1000_mV", "theta_out@jmax", "mesh_wick", "mesh_u_boost", "mesh_warn"],
+          "dV@500_mV", "dV@1000_mV", "theta_out@jmax", "mesh_bubble_d_mm",
+          "mesh_contact_prob", "mesh_wetting_drive", "mesh_capture_eff",
+          "mesh_obstruction", "mesh_u_boost", "mesh_dp_ratio", "mesh_warn"],
          [[r["id"], r["name"], r["fits"], r["hole_mm"], r["open"], r["t_mm"],
            r["V@500mV"], r["V@1000mV"], r["dV@500_mV"], r["dV@1000_mV"],
-           r["theta_out@jmax"], r["mesh_wick"], r["mesh_u_boost"], r["mesh_warn"]]
+           r["theta_out@jmax"], r["mesh_bubble_d_mm"], r["mesh_contact_prob"],
+           r["mesh_wetting_drive"], r["mesh_capture_eff"], r["mesh_obstruction"],
+           r["mesh_u_boost"], r["mesh_dp_ratio"], r["mesh_warn"]]
           for r in cat_table])
     summary["axes"]["catalog"] = {"d_ch_mm": d_ch, "table": cat_table}
 
+    cat_active = []
+    for ms in MESH_CATALOG:
+        if ms["t_mm"] >= d_ch:
+            continue
+        mesh = {"hole_mm": ms["hole_mm"],
+                "hole_x_mm": ms.get("hole_x_mm", ms["hole_mm"]),
+                "hole_y_mm": ms.get("hole_y_mm", ms["hole_mm"]),
+                "open": ms["open"], "t_mm": ms["t_mm"], "cover": 1.0,
+                "pos": "outlet", "mesh_theta": D0["mesh_theta"]}
+        m = metrics(run_lsv(d_active, mesh), pris_active)
+        cat_active.append({"id": ms["id"], "hole_mm": ms["hole_mm"],
+                           "open": ms["open"], "t_mm": ms["t_mm"], **m})
+    _csv("metrics_catalog_theta60.csv",
+         ["id", "hole_mm", "open", "t_mm", "V@1000mV", "dV@1000_mV",
+          "mesh_contact_prob", "mesh_capture_eff", "mesh_dp_ratio"],
+         [[r.get(k, "") for k in ("id", "hole_mm", "open", "t_mm", "V@1000mV",
+                                   "dV@1000_mV", "mesh_contact_prob",
+                                   "mesh_capture_eff", "mesh_dp_ratio")]
+          for r in cat_active])
+    summary["axes"]["catalog_theta60"] = {"table": cat_active}
+
+    # -- contact-angle sensitivity: the dominant unmeasured surface state --
+    print("[8/9] electrode × PP contact-angle sensitivity ...")
+    angle_table = []
+    for te in (40.0, 60.0, 80.0, 100.0, 110.0, 120.0):
+        for tm in (90.0, 105.8, 120.0, 140.0):
+            da = {**D0, "theta": te, "mesh_theta": tm}
+            ra = run_lsv(da, {**REF_MESH, "mesh_theta": tm})
+            ma = metrics(ra, pris)
+            angle_table.append({"electrode_angle_deg": te, "mesh_angle_deg": tm,
+                                "V@1000mV": ma["V@1000mV"],
+                                "dV@1000_mV": ma.get("dV@1000_mV"),
+                                "bubble_d_mm": ma["mesh_bubble_d_mm"],
+                                "contact_prob": ma["mesh_contact_prob"],
+                                "wetting_drive": ma["mesh_wetting_drive"],
+                                "capture_eff": ma["mesh_capture_eff"]})
+    _csv("metrics_contact_angles.csv",
+         ["electrode_angle_deg", "mesh_angle_deg", "V@1000mV", "dV@1000_mV",
+          "bubble_d_mm", "contact_prob", "wetting_drive", "capture_eff"],
+         [[r[k] for k in ("electrode_angle_deg", "mesh_angle_deg", "V@1000mV",
+                          "dV@1000_mV", "bubble_d_mm", "contact_prob",
+                          "wetting_drive", "capture_eff")] for r in angle_table])
+    summary["axes"]["contact_angles"] = {"table": angle_table}
+
     # -- AXIS 7: EIS comparison --------------------------------------------
-    print("[8/8] EIS comparison ...")
+    print("[9/9] EIS comparison ...")
     fitting = [r for r in cat_table if r["fits"]]
     best = min(fitting, key=lambda r: r["V@1000mV"]) if fitting else None
     worst = max(fitting, key=lambda r: r["V@1000mV"]) if fitting else None
@@ -198,7 +281,10 @@ def main(g):
     if best:
         bm = next(m for m in MESH_CATALOG if m["id"] == best["id"])
         eis_cases.append((f"best ({best['id']})",
-                          {"hole_mm": bm["hole_mm"], "open": bm["open"], "t_mm": bm["t_mm"],
+                          {"hole_mm": bm["hole_mm"],
+                           "hole_x_mm": bm.get("hole_x_mm", bm["hole_mm"]),
+                           "hole_y_mm": bm.get("hole_y_mm", bm["hole_mm"]),
+                           "open": bm["open"], "t_mm": bm["t_mm"],
                            "cover": 1.0, "pos": "outlet"}))
     eis_specs = []
     for lab, mesh in eis_cases:

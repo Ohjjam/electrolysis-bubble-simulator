@@ -23,7 +23,8 @@ import numpy as np
 from .base import ElectroState
 from .zerod import ZeroDTwoElectrodeSolver
 from ..constants import F, R_GAS
-from ..kernel.meshlayer import mesh_factors, path_mask
+from ..properties import GAS
+from ..kernel.meshlayer import operating_mesh_factors, path_mask
 
 D_CHAN = 1.0e-3        # legacy channel depth [m] (op.chan_depth_mm overrides)
 EPS_FILM = 0.70        # slug/annular flow transition void: below this a wall
@@ -76,8 +77,12 @@ class ChannelSolver:
         n_pass = max(1, int(getattr(op, "n_pass", 4)))
         W = max(0.01, getattr(op, "cell_width_cm", 5.0) * 1e-2)
         H = max(0.01, getattr(op, "face_height_cm", 10.0) * 1e-2)
-        u = max(0.01, op.u_flow)                          # flow speed [m/s], floored
-        T, z = op.T, context["z_primary"]
+        # This channel/mesh path represents the ANODE interlayer. Use OER's z=4
+        # explicitly; context.z_primary defaults to HER in the full-cell object
+        # and previously doubled the anode gas source. A tiny numerical floor is
+        # used only to evaluate the zero-flow limiting state (holdup saturates).
+        u = max(1.0e-6, op.u_flow)
+        T, z = op.T, GAS["OER"]["z"]
 
         custom = getattr(op, "custom_path", None)
         if custom and len(custom) >= 2:                  # user-drawn flow path (design tool)
@@ -95,19 +100,19 @@ class ChannelSolver:
             polys = channel_polylines(ctype, n_pass)
         ds = Lscale / (m - 1)
         d_ch = max(0.05, float(getattr(op, "chan_depth_mm", 1.0))) * 1e-3
-        KA = (R_GAS * T / op.P) / (z * F * u * d_ch)     # Vgas/Q per (A/m) of cumulative j
+        # High-fidelity gas is reported wet, so the evolved dry gas expands
+        # against its partial pressure rather than the total pressure.
+        p_gas = max(0.05 * op.P, op.P - float(context.get("p_water", 0.0)))
+        KA = (R_GAS * T / p_gas) / (z * F * u * d_ch)    # Vgas/Q per (A/m) of cumulative j
 
         # --- bubble-management mesh interlayer (kernel.meshlayer) --------------
-        # A hydrophobic mesh over part of the path wicks gas off the catalyst
-        # (theta relief), sheds it downstream faster (retention cut, helped by
-        # the encroachment velocity boost), but blocks some liquid access
-        # (theta_add floor). Defaults (t=0 / cover=0) are bit-identical legacy.
+        # Mesh physics is evaluated from the calculated departure-bubble size,
+        # opening geometry, electrode/mesh water contact angles, and the solid
+        # volume occupying the channel.  No L_ref or empirical wick multiplier.
         mesh_cover = min(1.0, max(0.0, float(getattr(op, "mesh_cover", 0.0))))
-        mf = mesh_factors(float(getattr(op, "mesh_hole_mm", 0.0)),
-                          float(getattr(op, "mesh_open", 1.0)),
-                          float(getattr(op, "mesh_t_mm", 0.0)),
-                          d_ch * 1e3)
-        mesh_on = mf["fits"] and mf["theta_factor"] < 1.0 and mesh_cover > 0.0
+        mf = operating_mesh_factors(op, context, max(1e-9, float(getattr(op, "j_set", 0.0))))
+        mesh_on = (mf["fits"] and float(getattr(op, "mesh_hole_mm", 0.0)) > 0.0
+                   and float(getattr(op, "mesh_t_mm", 0.0)) > 0.0 and mesh_cover > 0.0)
         mmask = (np.array(path_mask(m, mesh_cover, getattr(op, "mesh_pos", "outlet")))
                  if mesh_on else np.zeros(m, dtype=bool))
         # mesh acts LOCALLY: gas volume is conserved along the channel (it all
@@ -115,10 +120,6 @@ class ChannelSolver:
         # core flow (slip up, slugs broken) -> the local HOLDUP that blankets
         # the wall drops. So the factor multiplies eps in covered segments,
         # never the production integral (that would delete gas downstream).
-        hold_mesh = np.where(mmask, mf["retention_factor"], 1.0)
-        th_amp = 0.9 * np.where(mmask, mf["theta_factor"], 1.0)
-        th_add = np.where(mmask, mf["theta_add"], 0.0)
-
         # --- channel ORIENTATION vs gravity -----------------------------------
         # The cell stands in a vertical plane (y = height, gravity points down).
         # Where the drawn path runs UP, bubbles rise out of the channel WITH the
@@ -147,6 +148,12 @@ class ChannelSolver:
         st = None
         for _ in range(5):                               # theta <-> reaction <-> scalar
             st = base.solve(op, context, [_Stub(float(theta.mean()), eps_mean)])
+            if mesh_on:
+                # CP water limitation or CA operation can make delivered j differ
+                # from the request; use the current that was actually solved.
+                mf = operating_mesh_factors(op, context, st.j)
+            hold_mesh = np.where(mmask, mf["retention_factor"], 1.0)
+            th_amp = 0.9 * np.where(mmask, mf["theta_factor"], 1.0)
             omt = 1.0 - theta
             jprof = st.j * omt / max(1e-6, float(omt.mean()))     # redistribute at common eta
             cumj = np.cumsum(jprof * ret) * ds           # integral j ds [A/m], weighted by path orientation
@@ -156,7 +163,11 @@ class ChannelSolver:
             # bulk void, not theta=eps (bulk gas fraction != electrode blanketing).
             # theta = theta_max (1 - exp(-k eps)) keeps the downstream monotonicity
             # while decoupling coverage magnitude from void (Vogt & Balzer 2005).
-            theta = np.minimum(0.92, th_amp * (1.0 - np.exp(-3.0 * eps)) + th_add)
+            theta_bubble = th_amp * (1.0 - np.exp(-3.0 * eps))
+            # Do not infer catalyst-area blockage from mesh solid volume.  That
+            # needs spacing/compression/contact data that the geometry tab does
+            # not contain.  Obstruction remains a hydraulic diagnostic.
+            theta = np.minimum(0.92, theta_bubble)
             if void_ohmic:
                 # threshold-excess void: the wall film survives to ~EPS_FILM,
                 # beyond it the two-phase flow goes slug/annular and the liquid
@@ -202,8 +213,17 @@ class ChannelSolver:
             fields.update({
                 "mesh_on": True, "mesh_cover": mesh_cover,
                 "mesh_pos": getattr(op, "mesh_pos", "outlet"),
-                "mesh_wick": round(mf["wick"], 3),
+                "mesh_bubble_d_mm": round(mf["bubble_d_mm"], 4),
+                "mesh_contact_prob": round(mf["contact_prob"], 4),
+                "mesh_wetting_drive": round(mf["wetting_drive"], 4),
+                "mesh_capture_eff": round(mf["capture_eff"], 4),
+                "mesh_obstruction": round(mf["obstruction"], 4),
                 "mesh_u_boost": round(mf["u_boost"], 2),
+                "mesh_dp_ratio": round(mf["dp_ratio"], 2),
+                "mesh_blocking_fraction": round(mf["blocking_fraction"], 4),
+                "mesh_active_area_blocking_mode": mf["active_area_blocking_mode"],
+                "mesh_electrode_angle": round(mf["electrode_angle_deg"], 1),
+                "mesh_contact_angle": round(mf["mesh_angle_deg"], 1),
                 "mesh_warn": mf["warn"],
                 "mesh_mask_frac": float(mmask.mean()),
             })

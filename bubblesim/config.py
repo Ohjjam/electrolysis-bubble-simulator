@@ -19,7 +19,7 @@ class Operating:
     c_electrolyte: float = 6.0   # electrolyte concentration [mol/L]
     T: float = 333.15            # temperature [K]  (~60 degC)
     P: float = 1.0e5             # pressure [Pa]
-    contact_angle: float = 60.0  # wettability: gas-side contact angle [deg]
+    contact_angle: float = 60.0  # apparent water contact angle through liquid [deg]
     u_flow: float = 0.0          # tangential cross-flow velocity [m/s]
     B_field: float = 0.0         # magnetic flux density [T]  (MHD convection)
     E_ext: float = 0.0           # near-surface field magnitude for DEP [V/m]
@@ -69,8 +69,11 @@ class Operating:
     # A hydrophobic (aerophilic) mesh laid on the electrode inside the channel.
     # t=0 disables everything (legacy behaviour, bit-identical).
     mesh_hole_mm: float = 0.0         # mesh opening size [mm] (0 = no mesh)
+    mesh_hole_x_mm: float = 0.0       # rectangular opening x [mm] (0 -> mean)
+    mesh_hole_y_mm: float = 0.0       # rectangular opening y [mm] (0 -> mean)
     mesh_open: float = 1.0            # open-area fraction phi [0..1]
     mesh_t_mm: float = 0.0            # mesh thickness [mm] (0 = no mesh)
+    mesh_contact_angle: float = 105.8 # untreated PP apparent water angle [deg]
     mesh_cover: float = 0.0           # fraction of the flow path covered [0..1] (1 = full)
     mesh_pos: str = "outlet"          # partial-cover anchor: "inlet" | "middle" | "outlet"
 
@@ -159,6 +162,8 @@ class Params:
     # --- detachment force coefficients ---
     Cd_flow: float = 1.2         # drag coefficient for flow-assisted detachment [-]
     k_mhd: float = 2.0e-5        # MHD convection velocity per (j*B) [m/s / (A/m^2 * T)]
+    dep_gradient_length: float = 1.0e-4  # DEP field-gradient proxy length [m]
+                                          # MODEL input; uniform E alone has no DEP
     r_min_detach: float = 8.0e-6 # floor on departure radius [m]
     detach_spread: float = 0.3   # +/- fractional spread of per-bubble departure size [-]
 

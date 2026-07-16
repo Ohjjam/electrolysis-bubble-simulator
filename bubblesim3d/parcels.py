@@ -107,11 +107,11 @@ class Parcels:
     detached lifecycle — NOT a fixed-volume computational parcel.
     """
 
-    R_NUC = 2.0e-6          # nucleation seed radius [m] (~2 um). Must stay well
+    R_NUC = 5.0e-6          # fallback only; instance value comes from Params.r_nuc
                             # BELOW the departure radius at every flow rate, or
                             # the 2*R_NUC detachment floor binds and every bubble
                             # leaves at the seed size (r_dep -> ~16 um at 1 m/s).
-    DETACH_SPREAD = 0.35    # +/- per-bubble spread on the departure radius
+    DETACH_SPREAD = 0.30    # fallback only; instance value comes from Params
     N_SITES = 140           # TRACKED attached slots per face (each represents
                             # `mult` real nucleation sites — see module docstring)
     FREE_TARGET = 1400      # tracked free risers to keep (adaptively thinned)
@@ -141,7 +141,7 @@ class Parcels:
                             # diameter: beyond that it bridges the channel (slug
                             # flow) rather than growing as a free sphere
 
-    def __init__(self, grid: Grid3D, op, rng, cap=6000, gas_factor_anode=0.5,
+    def __init__(self, grid: Grid3D, op, rng, cap=6000,
                  face_masks=None, elec_planes=None, params=None,
                  channel_depth=None, vent_face="top", vent_line=None):
         self.g = grid
@@ -149,7 +149,12 @@ class Parcels:
         self.params = params           # kernel Params (site density for mult)
         self.rng = rng
         self.cap = int(cap)
-        self.gas_factor_anode = float(gas_factor_anode)
+        # One authoritative parameter source.  The old Track-A constants differed
+        # from Params and OER was additionally multiplied by 0.5 even though the
+        # Faraday source already uses z=4.
+        if params is not None:
+            self.R_NUC = float(params.r_nuc)
+            self.DETACH_SPREAD = float(params.detach_spread)
         # PHYSICAL channel depth [m]: the opposite plate confines the bubble.
         # None -> unconfined (plain box tests).
         self.channel_depth = channel_depth
@@ -328,7 +333,14 @@ class Parcels:
         return ns.solid[ci[:, 0], ci[:, 1], ci[:, 2]]
 
     # ------------------------------------------------------------ lifecycle
-    def _wall_substeps(self, j_A_m2, dt, r_dep):
+    def _faradaic_rate(self, j_A_m2, electrode, area, ctx):
+        return faradaic_gas_rate(
+            max(0.0, j_A_m2), electrode, self.op.T, self.op.P, area,
+            eta_F=(self.params.eta_faraday if self.params is not None else 1.0),
+            wet=bool(getattr(self.op, "high_fidelity", False)),
+            water_activity=ctx.get("water_activity", 1.0))
+
+    def _wall_substeps(self, j_A_m2, dt, r_dep, ctx):
         """Substeps needed to resolve the growth-to-departure cycle.
 
         At a real site density a bubble goes seed -> departure in ~1 ms, which
@@ -339,8 +351,8 @@ class Parcels:
         the (tiny) wall arrays are touched per substep — the flow solve is not.
         """
         A = self._face_area()
-        q = sum(faradaic_gas_rate(max(0.0, j_A_m2), el, self.op.T, self.op.P, A) * gf
-                for el, gf in (("HER", 1.0), ("OER", self.gas_factor_anode)))
+        q = sum(self._faradaic_rate(j_A_m2, el, A, ctx)
+                for el in ("HER", "OER"))
         budget = q * dt
         w_cycle = self._vol(r_dep) * self.N_SITES * (self.site_mult(0)
                                                      + self.site_mult(1))
@@ -354,7 +366,7 @@ class Parcels:
         self._t += dt
         r_dep0 = max(2 * self.R_NUC,
                      self.departure_radius(ctx, max(1e-6, j_A_m2)))
-        n_sub = self._wall_substeps(j_A_m2, dt, r_dep0)
+        n_sub = self._wall_substeps(j_A_m2, dt, r_dep0, ctx)
         sdt = dt / n_sub
         for _ in range(n_sub):
             self._nucleate_and_grow(j_A_m2, sdt, ctx, r_dep0)
@@ -411,10 +423,8 @@ class Parcels:
         if r_dep0 is None:
             r_dep0 = self.departure_radius(ctx, max(1e-6, j_A_m2))
         r_cap = self.r_conf()
-        for side, (electrode, gf) in enumerate([("HER", 1.0),
-                                                ("OER", self.gas_factor_anode)]):
-            Qdot = faradaic_gas_rate(max(0.0, j_A_m2), electrode, self.op.T,
-                                     self.op.P, self._face_area()) * gf
+        for side, electrode in enumerate(("HER", "OER")):
+            Qdot = self._faradaic_rate(j_A_m2, electrode, self._face_area(), ctx)
             budget = Qdot * dt
             self.produced_cum += budget
             # gas that had nowhere to go last pass (no attached bubble, no room

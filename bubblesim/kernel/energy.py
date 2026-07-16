@@ -20,9 +20,12 @@ DELTA_H_VAP = 42.0e3      # latent heat of water vaporization [J/mol] (~25-100 C
 
 
 def heat_flux(j, V_cell, V_tn=V_THERMONEUTRAL):
-    """Areal heat generation rate [W/m^2] = j (V_cell - V_tn), clamped at 0
-    (this lumped model does not draw heat in below the thermoneutral voltage)."""
-    return max(0.0, j * (V_cell - V_tn))
+    """Signed areal heat rate [W/m^2] = j (V_cell - V_tn).
+
+    Positive means heat generation; negative means the electrolysis process draws
+    heat from the cell below the thermoneutral voltage.
+    """
+    return j * (V_cell - V_tn)
 
 
 def cooling_rate(T, T_amb, hA):

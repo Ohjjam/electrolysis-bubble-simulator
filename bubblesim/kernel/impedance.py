@@ -40,7 +40,10 @@ def warburg_finite(omega, R_d, tau_d):
 
     -> R_d as w -> 0 (the dc mass-transport resistance), ~ w^-1/2 at high w.
     """
-    if omega <= 0.0:
+    if omega <= 0.0 or tau_d <= 0.0:
+        # tau_d = 0 -> no diffusion layer, so Z_W collapses to the pure dc
+        # resistance R_d (the w->0 limit). Guarding it also avoids the 0/0
+        # (tanh(0)/0) that a zero tau_d would otherwise raise.
         return complex(R_d, 0.0)
     s = cmath.sqrt(1j * omega * tau_d)
     return R_d * cmath.tanh(s) / s

@@ -1,4 +1,4 @@
-"""Track B pore-scale physics tests (current + gas + growth).
+"""Track B surface-only current + pore gas growth tests.
 
   * surface current integrates to the imposed total (charge conservation)
   * gas is conserved: produced == resident + vented at every step
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bubblesim3d.params3d import Pore3DConfig
 from bubblesim3d.microstructure import generate
-from bubblesim3d.current3d import Current3D, penetration_cells, _surface_faces_mask
+from bubblesim3d.current3d import SurfaceCurrent3D, _surface_faces_mask
 from bubblesim3d.poregrowth import PoreGrowth
 from bubblesim3d.pore3d import PoreSim3D
 from bubblesim3d import snapshots, runner
@@ -46,16 +46,20 @@ def test_current_redistributes_when_blocked():
     blocked = np.zeros_like(solid)
     for p in idx[: len(idx) // 3]:              # block a third of the surface
         blocked[tuple(p)] = True
-    sim.cur.solve(blocked=blocked, iters=80)
     sc = sim.cur.surface_current(sim.total_current, blocked=blocked)
     assert abs(sc.sum() - sim.total_current) < 1e-6 * sim.total_current
     assert not (sc[blocked] > 0).any()          # blocked surface carries no current
 
 
-def test_penetration_depth_positive():
-    sim, cfg, solid, meta = _sim()
-    lam = penetration_cells(sim.op, sim.params, sim.eff, sim.h)
-    assert lam > 0 and np.isfinite(lam)
+def test_reaction_is_external_surface_only():
+    """A second solid interface behind the first must never receive current."""
+    solid = np.zeros((8, 8, 8), dtype=bool)
+    solid[:, 3, :] = True
+    solid[:, 6, :] = True
+    cur = SurfaceCurrent3D(solid, access_axis=1)
+    assert cur.surf[:, 2, :].all()
+    assert not cur.surf[:, 5, :].any()
+    assert not cur.surf[:, 6:, :].any()
 
 
 # -------------------------------------------------------- gas conservation
@@ -104,6 +108,8 @@ def test_surface_mask_is_pore_touching_solid():
     surf = _surface_faces_mask(solid)
     assert not (surf & solid).any()                # surface voxels are pores...
     assert surf.sum() > 0                           # ...that touch solid
+    # only one externally visible interface is selected along each access ray
+    assert (surf.sum(axis=1) <= 1).all()
 
 
 # ------------------------------------------------------------ runner

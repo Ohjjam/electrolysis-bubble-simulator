@@ -50,6 +50,9 @@ class CellSim3D:
         self.n_lay = 0
         self.cfg = cfg
         self.inlet_area = 0.0
+        self.inlet_area_voxel = 0.0
+        self.channel_area_per_circuit = 0.0
+        self.liquid_circuits = 0
         self.port_in = self.port_out = None
         self.in_face = self.out_face = None
         self.flow_connected = True
@@ -59,6 +62,7 @@ class CellSim3D:
             solid, self.face_c, self.face_a = voxelize(cfg, self.grid)
             self.ns.set_solid(solid)
             nx, ny, nz = self.grid.shape
+            self.n_lay = max(1, min(cfg.layer_counts()[0], (self.grid.nx - 1) // 2))
             # each port lives on the edge the designer picked; the pump feeds
             # only its cells (channel velocity == u_flow, no gap jets) and the
             # rest of every boundary face is plate.
@@ -75,6 +79,12 @@ class CellSim3D:
                 outlet[:] = port_out[None, :]
             else:
                 outlet_z[0 if self.out_face == "left" else 1] = port_out[None, :]
+            # An anolyte-only cell has no liquid feed on the cathode (x-low)
+            # channel. Close that part of both hydraulic boundaries instead of
+            # merely applying a scalar water penalty while still pumping it.
+            if bool(getattr(op, "dry_cathode", False)):
+                inlet[:self.n_lay] = 0.0; outlet[:self.n_lay] = 0.0
+                inlet_z[:, :self.n_lay] = 0.0; outlet_z[:, :self.n_lay] = 0.0
             self.ns.set_ports(inlet=inlet, outlet=outlet,
                               inlet_z=inlet_z, outlet_z=outlet_z)
             # a plate with no inlet->outlet channel cannot conserve mass; say so
@@ -83,7 +93,6 @@ class CellSim3D:
                                                 port_out, self.out_face)
             # electrode (catalyst) planes = the core boundaries: in a zero-gap
             # cell the gas emerges on the MEMBRANE side of each channel
-            self.n_lay = max(1, min(cfg.layer_counts()[0], (self.grid.nx - 1) // 2))
             elec_planes = (self.n_lay * h, self.grid.Lx - self.n_lay * h)
             # open inlet cross-section [m^2] -> pumped liquid flow rate, so the
             # UI can show the gas/liquid ratio (an under-pumped cell chokes)
@@ -94,11 +103,19 @@ class CellSim3D:
                 k = 0 if self.in_face == "left" else -1
                 open_face = ~solid[:, :, k]
                 n_open = int((open_face & (self.ns.inlet_z[0 if k == 0 else 1] > 0)).sum())
-            self.inlet_area = float(n_open) * h * h
+            self.inlet_area_voxel = float(n_open) * h * h
+            self.liquid_circuits = 1 if bool(getattr(op, "dry_cathode", False)) else 2
+            self.channel_area_per_circuit = cfg.channel_area_m2()
+            self.inlet_area = self.channel_area_per_circuit * self.liquid_circuits
+            self._sync_inlet_velocity()
         rng = np.random.default_rng(seed)
         # PHYSICAL channel depth (mm -> m): the opposite plate confines the
         # bubble, so a 0.2 mm channel must not let a 450 um sphere grow.
-        self.channel_depth = max(1e-5, float(cfg.d_ch_mm) * 1e-3)
+        # box mode (cfg=None) has no flow channel; Parcels accepts channel_depth
+        # =None (no gap confinement). The rest of __init__ already brackets cfg
+        # use with `if cfg is not None`, and diagnostics() guards cfg is None too.
+        self.channel_depth = (max(1e-5, float(cfg.d_ch_mm) * 1e-3)
+                              if cfg is not None else None)
         self.parcels = Parcels(self.grid, op, rng, cap=cap,
                                face_masks=(self.face_c, self.face_a),
                                elec_planes=elec_planes, params=params,
@@ -122,6 +139,7 @@ class CellSim3D:
         # old `damp = 3 /s` was an artificial momentum sink with no physical
         # counterpart; with nu present it goes.
         self.ns.nu = float(self.ctx["mu"]) / float(self.ctx["rho_l"])
+        self.ns.buoy = float(self.ctx["d_rho"]) / max(float(self.ctx["rho_l"]), 1e-12)
         self.ns.damp = 0.0
         self._resolve()
 
@@ -132,6 +150,7 @@ class CellSim3D:
         blanketing raises the voltage (CP) / cuts the current (CA)."""
         self.ctx = build_context(self.op, self.params)
         self.ns.nu = float(self.ctx["mu"]) / float(self.ctx["rho_l"])  # T, c dependent
+        self.ns.buoy = float(self.ctx["d_rho"]) / max(float(self.ctx["rho_l"]), 1e-12)
         p = self.parcels
         if len(p.r):
             stubs = [_Stub(p.coverage(0), p.void_near_wall(0)),
@@ -156,11 +175,17 @@ class CellSim3D:
         """Live parameter change (no domain rebuild)."""
         self.op = op
         self.parcels.op = op
-        self.ns.u_in = max(0.0, op.u_flow)
+        self._sync_inlet_velocity()
         if tilt is not None:
             self.tilt = tilt
             self.ns.set_tilt(tilt)
         self._resolve()
+
+    def _sync_inlet_velocity(self):
+        """Map physical circuit flow onto the coarse voxel inlet conservatively."""
+        q_target = max(0.0, self.op.u_flow) * self.inlet_area
+        self.ns.u_in = (q_target / self.inlet_area_voxel
+                        if self.inlet_area_voxel > 0.0 else 0.0)
 
     # ----------------------------------------------------------------- step
     # Relative divergence (div*h/v_max) the pressure solve must reach before it
@@ -194,8 +219,11 @@ class CellSim3D:
         from bubblesim.kernel.sources import faradaic_gas_rate as _fgr
         j = self.cell_current_A_m2()
         A = self.grid.Ly * self.grid.Lz
-        q_gas = (_fgr(j, "HER", self.op.T, self.op.P, A)
-                 + _fgr(j, "OER", self.op.T, self.op.P, A) * 0.5)
+        kw = {"eta_F": self.params.eta_faraday,
+              "wet": bool(getattr(self.op, "high_fidelity", False)),
+              "water_activity": self.ctx.get("water_activity", 1.0)}
+        q_gas = (_fgr(j, "HER", self.op.T, self.op.P, A, **kw)
+                 + _fgr(j, "OER", self.op.T, self.op.P, A, **kw))
         q_liq = max(0.0, self.op.u_flow) * self.inlet_area
         return q_gas, q_liq, (q_gas / q_liq if q_liq > 0 else float("inf"))
 
@@ -241,13 +269,21 @@ class CellSim3D:
         A_face = self.grid.Ly * self.grid.Lz
         sites_m2 = self.params.site_density * (0.5 + self.op.contact_angle / 90.0)
         n_sites = max(1.0, sites_m2 * A_face)
-        q_her = _fgr(self.cell_current_A_m2(), "HER", self.op.T, self.op.P, A_face)
+        q_her = _fgr(self.cell_current_A_m2(), "HER", self.op.T, self.op.P, A_face,
+                     eta_F=self.params.eta_faraday,
+                     wet=bool(getattr(self.op, "high_fidelity", False)),
+                     water_activity=self.ctx.get("water_activity", 1.0))
         rate_m3_s = q_her / n_sites                  # gas fed to ONE real site
         v_term = float(_vt(np.array([r_dep]), self.ctx["d_rho"],
                            self.ctx["mu"], self.ctx["rho_l"])[0])
         return {
             "q_gas_mLs": round(q_gas * 1e6, 3),
             "q_liq_mLs": round(q_liq * 1e6, 3),
+            "q_liq_per_circuit_mLs": round(
+                max(0.0, self.op.u_flow) * self.channel_area_per_circuit * 1e6, 3),
+            "liquid_circuits": self.liquid_circuits,
+            "inlet_area_physical_mm2": round(self.inlet_area * 1e6, 4),
+            "inlet_area_voxel_mm2": round(self.inlet_area_voxel * 1e6, 4),
             "gas_liq": round(gl, 2) if np.isfinite(gl) else 999.0,
             "sites_per_mm2": round(sites_m2 * 1e-6, 3),
             "rate_um3_ms": round(rate_m3_s * 1e15, 4),   # um^3 per ms per site
@@ -259,7 +295,7 @@ class CellSim3D:
             "n_free": int(len(p.r)) - n_att,
             "r_dep_um": round(r_dep * 1e6, 1),       # real departure radius
             "r_conf_um": round(p.r_conf() * 1e6, 1), # channel-gap size limit
-            "d_ch_um": round(self.channel_depth * 1e6, 1),
+            "d_ch_um": round(self.channel_depth * 1e6, 1) if self.channel_depth else 0.0,
             "p_merge": round(p.p_merge(), 3),        # coalescence on contact
             "n_merge": int(p.n_merge),               # on the wall
             "n_merge_free": int(p.n_merge_free),     # in the rising swarm
@@ -270,6 +306,13 @@ class CellSim3D:
             # The pass pitch is H/n_ch; w_ch_mm and w_land_mm only set the ratio,
             # and both get quantised to whole cells.
             **self._geom_widths(),
+            "h_requested_mm": round((self.cfg.h_requested or self.grid.h) * 1e3, 3)
+                              if self.cfg is not None else round(self.grid.h * 1e3, 3),
+            "H_requested_mm": round(self.cfg.H_cm * 10.0, 3) if self.cfg else round(self.grid.Ly * 1e3, 3),
+            "W_requested_mm": round(self.cfg.W_cm * 10.0, 3) if self.cfg else round(self.grid.Lz * 1e3, 3),
+            "H_achieved_mm": round(self.grid.Ly * 1e3, 3),
+            "W_achieved_mm": round(self.grid.Lz * 1e3, 3),
+            "grid_coarsened": bool(self.cfg and self.grid.h > (self.cfg.h_requested or self.grid.h) * 1.000001),
             "nu": float(self.ns.nu),
             "mult": round(float(p.site_mult(0)), 1), # 1 tracked = N real (attached)
             "n_real_est": int(n_real),               # real bubbles represented

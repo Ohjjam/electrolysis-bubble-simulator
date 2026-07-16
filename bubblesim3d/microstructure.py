@@ -78,7 +78,9 @@ def generate(cfg):
 
     if sub == "flat_plate":                          # planar reference (a slab)
         solid = np.zeros((n, n, n), dtype=bool)
-        solid[:, :n // 2, :] = True
+        # access/escape face is y=0; put liquid first and solid behind it so the
+        # external liquid|solid interface is representable inside the volume.
+        solid[:, n // 2:, :] = True
     else:
         solid_frac = 1.0 - eps_p
         solid_frac = float(np.clip(solid_frac, _min_solid_frac(n), 0.6))

@@ -1,0 +1,36 @@
+{
+  "operating_mean_current_mA_cm2": 1000.0,
+  "common_cell_voltage_mV": {
+    "pristine": 2033.3,
+    "mesh": 1962.7
+  },
+  "local_current_mA_cm2": {
+    "pristine": {
+      "inlet": 3426.78,
+      "outlet": 787.37,
+      "min": 787.37,
+      "max": 3426.78
+    },
+    "mesh": {
+      "inlet": 2776.63,
+      "outlet": 798.7,
+      "min": 798.7,
+      "max": 2776.63
+    }
+  },
+  "hypothetical_Vreq_at_local_1000_mV": {
+    "pristine": {
+      "inlet": 1917.6372875454529,
+      "outlet": 2172.1270479818536,
+      "min": 1917.6372875454529,
+      "max": 2172.1270479818536
+    },
+    "mesh": {
+      "inlet": 1912.6180386890205,
+      "outlet": 1975.0969994655725,
+      "min": 1912.6180386890205,
+      "max": 1975.0969994655725
+    }
+  },
+  "note": "Vreq is a diagnostic at forced local 1000 mA/cm2, not a physical local cell-voltage measurement."
+}

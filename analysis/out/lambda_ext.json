@@ -1,0 +1,184 @@
+{
+  "params": {
+    "q": 0.55,
+    "s_crit": 0.5,
+    "s_dry": 0.1,
+    "lam_min": 0.3
+  },
+  "V0_1000": 2033.3,
+  "rows": [
+    {
+      "pos": "inlet",
+      "cover": 0.0,
+      "base_dV": 0.0,
+      "foam_dV": 0.0,
+      "total_dV": 0.0
+    },
+    {
+      "pos": "inlet",
+      "cover": 0.25,
+      "base_dV": -1.4,
+      "foam_dV": -5.6,
+      "total_dV": -7.0
+    },
+    {
+      "pos": "inlet",
+      "cover": 0.5,
+      "base_dV": 28.3,
+      "foam_dV": -3.2,
+      "total_dV": 25.1
+    },
+    {
+      "pos": "inlet",
+      "cover": 0.75,
+      "base_dV": 65.8,
+      "foam_dV": -0.7,
+      "total_dV": 65.1
+    },
+    {
+      "pos": "inlet",
+      "cover": 1.0,
+      "base_dV": 99.2,
+      "foam_dV": 1.8,
+      "total_dV": 101.0
+    },
+    {
+      "pos": "middle",
+      "cover": 0.0,
+      "base_dV": 0.0,
+      "foam_dV": 0.0,
+      "total_dV": 0.0
+    },
+    {
+      "pos": "middle",
+      "cover": 0.25,
+      "base_dV": 33.7,
+      "foam_dV": 7.2,
+      "total_dV": 40.9
+    },
+    {
+      "pos": "middle",
+      "cover": 0.5,
+      "base_dV": 59.0,
+      "foam_dV": 10.0,
+      "total_dV": 69.0
+    },
+    {
+      "pos": "middle",
+      "cover": 0.75,
+      "base_dV": 80.7,
+      "foam_dV": 8.7,
+      "total_dV": 89.4
+    },
+    {
+      "pos": "middle",
+      "cover": 1.0,
+      "base_dV": 99.2,
+      "foam_dV": 1.8,
+      "total_dV": 101.0
+    },
+    {
+      "pos": "outlet",
+      "cover": 0.0,
+      "base_dV": 0.0,
+      "foam_dV": 0.0,
+      "total_dV": 0.0
+    },
+    {
+      "pos": "outlet",
+      "cover": 0.25,
+      "base_dV": 62.1,
+      "foam_dV": 10.3,
+      "total_dV": 72.4
+    },
+    {
+      "pos": "outlet",
+      "cover": 0.5,
+      "base_dV": 84.8,
+      "foam_dV": 16.0,
+      "total_dV": 100.8
+    },
+    {
+      "pos": "outlet",
+      "cover": 0.75,
+      "base_dV": 93.9,
+      "foam_dV": 14.6,
+      "total_dV": 108.5
+    },
+    {
+      "pos": "outlet",
+      "cover": 1.0,
+      "base_dV": 99.2,
+      "foam_dV": 1.8,
+      "total_dV": 101.0
+    }
+  ],
+  "summary": {
+    "inlet": {
+      "base_best_cover": 1.0,
+      "base_best_dV": 99.2,
+      "total_best_cover": 1.0,
+      "total_best_dV": 101.0
+    },
+    "middle": {
+      "base_best_cover": 1.0,
+      "base_best_dV": 99.2,
+      "total_best_cover": 1.0,
+      "total_best_dV": 101.0
+    },
+    "outlet": {
+      "base_best_cover": 1.0,
+      "base_best_dV": 99.2,
+      "total_best_cover": 0.75,
+      "total_best_dV": 108.5
+    }
+  },
+  "sensitivity_kblock": {
+    "0.2": {
+      "outlet_best_cover": 1.0,
+      "outlet_total_dV": {
+        "0.25": 72.7,
+        "0.5": 102.4,
+        "0.75": 113.0,
+        "1.0": 115.1
+      }
+    },
+    "0.4": {
+      "outlet_best_cover": 0.75,
+      "outlet_total_dV": {
+        "0.25": 72.5,
+        "0.5": 101.5,
+        "0.75": 110.6,
+        "1.0": 108.0
+      }
+    },
+    "0.55": {
+      "outlet_best_cover": 0.75,
+      "outlet_total_dV": {
+        "0.25": 72.4,
+        "0.5": 100.8,
+        "0.75": 108.5,
+        "1.0": 101.0
+      }
+    },
+    "0.7": {
+      "outlet_best_cover": 0.75,
+      "outlet_total_dV": {
+        "0.25": 72.2,
+        "0.5": 100.0,
+        "0.75": 106.1,
+        "1.0": 91.1
+      }
+    },
+    "0.9": {
+      "outlet_best_cover": 0.75,
+      "outlet_total_dV": {
+        "0.25": 72.0,
+        "0.5": 98.8,
+        "0.75": 102.1,
+        "1.0": 91.1
+      }
+    }
+  },
+  "note": "base_dV = 기존 채널 모델(피복 단조, 100% 최적). total_dV = + 니켈폼 lambda(x) 재젖음 항. outlet에서 total 최적이 100% 미만이면 실측의 부분피복 최적을 재현한 것."
+}

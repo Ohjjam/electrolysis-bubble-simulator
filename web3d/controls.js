@@ -27,22 +27,22 @@
     ]],
     ["유동 · 기포", [
       { k:"u_flow", nm:"유량 (펌프)", un:"m/s", min:0, max:2, step:0.01, v:0.35, lo:0, hi:5 },
-      { k:"theta", nm:"접촉각 (이탈 크기)", un:"°", min:10, max:160, step:1, v:60, lo:5, hi:179 },
-      { k:"drag_K", nm:"기포 유동차단 세기", un:"/s", min:0, max:200, step:5, v:60, lo:0, hi:1000 },
+      { k:"theta", nm:"전극 물 접촉각 (기포 이탈)", un:"°", min:10, max:160, step:1, v:60, lo:5, hi:179 },
+      { k:"drag_K", nm:"기포 유동차단 계수 (모델)", un:"/s", min:0, max:200, step:5, v:60, lo:0, hi:1000 },
       { k:"tilt", nm:"셀 기울기", un:"°", min:0, max:90, step:1, v:0, lo:0, hi:90 },
       { k:"speed", nm:"시간 배속 (0.02=초고속카메라)", un:"×", min:0.02, max:3, step:0.02, v:1, lo:0.01, hi:5 },
     ]],
     ["촉매 / 막", [
       { k:"j0_cathode", nm:"음극 j₀ (HER)", un:"A/m²", num:1, v:130, lo:1e-6, hi:1e5 },
-      { k:"j0_anode", nm:"양극 j₀ (OER)", un:"A/m²", num:1, v:1.3e-7, lo:1e-12, hi:1e2 },
+      { k:"j0_anode", nm:"양극 겉보기 j₀ (피팅값)", un:"A/m²", num:1, v:1.3e-7, lo:1e-12, hi:1e2 },
       { k:"alpha_a", nm:"양극 α (Tafel 기울기)", un:"–", min:0.3, max:1.6, step:0.01, v:1, lo:0.1, hi:2 },
-      { k:"r_mem", nm:"막 면저항", un:"Ω·m²", num:1, v:3.2e-6, lo:0, hi:1e-3 },
+      { k:"r_mem", nm:"막·접촉 면저항 (피팅값)", un:"Ω·m²", num:1, v:3.2e-6, lo:0, hi:1e-3 },
+      { k:"fritz_scale", nm:"기포 이탈크기 보정 (모델)", un:"–", min:0.02, max:0.3, step:0.01, v:0.08, lo:0.005, hi:2 },
       { k:"gap_mm", nm:"전해질 갭 (모델 관례, r_mem과 짝)", un:"mm", min:0.1, max:3, step:0.05, v:2, lo:0.05, hi:10 },
-      { k:"C_dl_anode", nm:"양극 이중층 C_dl (EIS·CP 시상수)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
-      { k:"C_dl_cathode", nm:"음극 이중층 C_dl", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
-      { k:"t_mem_um", nm:"막 두께", un:"µm", min:10, max:200, step:5, v:50, lo:1, hi:1000 },
-      { k:"t_ptl_um", nm:"PTL 두께", un:"µm", min:50, max:600, step:10, v:200, lo:5, hi:3000 },
-      { k:"eps_ptl", nm:"PTL 공극률", un:"–", min:0.3, max:0.9, step:0.01, v:0.7, lo:0.05, hi:0.95 },
+      { k:"C_dl_anode", nm:"양극 이중층 C_dl (EIS 전용)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
+      { k:"C_dl_cathode", nm:"음극 이중층 C_dl (EIS 전용)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
+      { k:"t_mem_um", nm:"막 두께 (건식 음극 물수송·형상)", un:"µm", min:10, max:200, step:5, v:50, lo:1, hi:1000 },
+      { k:"t_ptl_um", nm:"PTL 두께 (3D 형상만)", un:"µm", min:50, max:600, step:10, v:200, lo:5, hi:3000 },
     ]],
     // Dry cathode (anolyte-only AEM): the cathode gets NO liquid feed, so every
     // electron's water must cross the membrane — back-diffusion supplies it while
@@ -54,9 +54,10 @@
       { k:"D_w_mem", nm:"막 내 물 확산계수", un:"m²/s", num:1, v:1e-9, lo:1e-12, hi:1e-7 },
     ]],
     ["환경", [
-      { k:"B", nm:"자기장 B", un:"T", min:0, max:3, step:0.05, v:0, lo:0, hi:20 },
-      { k:"E", nm:"전기장 E", un:"MV/m", min:0, max:3, step:0.02, v:0, lo:0, hi:50 },
-      { k:"T", nm:"온도", un:"°C", min:20, max:90, step:1, v:60, lo:0, hi:250 },
+      { k:"B", nm:"자기장 B (MHD 경험식)", un:"T", min:0, max:3, step:0.05, v:0, lo:0, hi:20 },
+      { k:"E", nm:"DEP 기준 전기장 E", un:"MV/m", min:0, max:3, step:0.02, v:0, lo:0, hi:50 },
+      { k:"dep_grad_um", nm:"전기장 구배 길이 (모델)", un:"µm", min:10, max:1000, step:10, v:100, lo:1, hi:1e6 },
+      { k:"T", nm:"온도", un:"°C", min:20, max:90, step:1, v:60, lo:0, hi:100 },
       { k:"Pbar", nm:"압력", un:"bar", min:1, max:30, step:0.5, v:1, lo:0.1, hi:200 },
     ]],
     ["셀 형상 (격자 재생성)", [
@@ -78,7 +79,7 @@
       { k:"in_w", nm:"입구 폭 (0 = 형식 기본값)", un:"–", min:0, max:1, step:0.02, v:0, lo:0, hi:1 },
       { k:"in_z", nm:"입구 위치 (그 변을 따라)", un:"–", min:0, max:1, step:0.01, v:0.94, lo:0, hi:1 },
       { k:"out_face", nm:"출구 면", seg:[["top","위"],["left","왼쪽"],["right","오른쪽"]], v:"top" },
-      { k:"out_w", nm:"출구 폭 (1 = 그 면 전체)", un:"–", min:0.02, max:1, step:0.02, v:1, lo:0.01, hi:1 },
+      { k:"out_w", nm:"출구 폭 (0=자동, 1=면 전체)", un:"–", min:0, max:1, step:0.02, v:0, lo:0, hi:1 },
       { k:"out_z", nm:"출구 위치 (그 변을 따라)", un:"–", min:0, max:1, step:0.01, v:0.06, lo:0, hi:1 },
     ]],
   ];
@@ -88,6 +89,46 @@
   /** Build one group list into `host`. Returns { sync } to pull server state. */
   g.buildControls = function (host, groups, P, send) {
     const reg = {};                     // key -> setter used by sync()
+    const rows = {};
+    // Polling runs faster than the debounced POST.  Without a short acknowledgement
+    // window, the next poll can overwrite a value the user has just selected with
+    // the server's previous value, making segmented buttons appear unresponsive.
+    const pendingAck = {};               // key -> { value, until }
+    const sameValue = (a, b) => {
+      const an = +a, bn = +b;
+      return Number.isFinite(an) && Number.isFinite(bn)
+        ? near(an, bn) : String(a) === String(b);
+    };
+    const publish = (c, value) => {
+      P[c.k] = value;
+      if (c.local) return;
+      // Leaving the directly drawn plate must also release its authoritative
+      // mask. Otherwise the UI says "serpentine/parallel/interdigitated" while
+      // the solver and 3-D ribs keep rendering the previous custom drawing.
+      // send() is debounced, so mask + ff travel in one /api3d/op rebuild.
+      if (c.k === "ff" && value !== "custom") {
+        P.mask = "";
+        pendingAck.mask = { value: "", until: Date.now() + 1500 };
+        send("mask", "");
+      }
+      pendingAck[c.k] = { value, until: Date.now() + 1500 };
+      send(c.k, value);
+    };
+
+    const refreshDependencies = () => {
+      const disabled = {
+        j: String(P.mode) === "CA",
+        V_cell: String(P.mode) !== "CA",
+        n_drag: ![1, "1", true].includes(P.dry_cathode),
+        D_w_mem: ![1, "1", true].includes(P.dry_cathode),
+      };
+      for (const [k, off] of Object.entries(disabled)) {
+        const row = rows[k]; if (!row) continue;
+        row.style.opacity = off ? ".42" : "";
+        row.querySelectorAll("input,button,select").forEach(x => x.disabled = off);
+        row.setAttribute("aria-disabled", off ? "true" : "false");
+      }
+    };
 
     for (const [title, items] of groups) {
       const box = document.createElement("div"); box.className = "box";
@@ -96,19 +137,25 @@
       for (const c of items) {
         P[c.k] = c.v;
         const row = document.createElement("div"); row.className = "ctl";
+        row.dataset.key = c.k; rows[c.k] = row;
 
         if (c.seg) {
           row.insertAdjacentHTML("beforeend",
             `<div class="lab"><span class="nm">${c.nm}</span></div>`);
           const seg = document.createElement("div"); seg.className = "seg mini";
+          seg.setAttribute("role", "group"); seg.setAttribute("aria-label", c.nm);
           for (const [val, label] of c.seg) {
             const b = document.createElement("button");
             b.textContent = label; b.dataset.v = val;
+            b.setAttribute("aria-pressed", val === c.v ? "true" : "false");
             if (val === c.v) b.classList.add("on");
             b.onclick = () => {
-              seg.querySelectorAll("button").forEach(x => x.classList.remove("on"));
-              b.classList.add("on"); P[c.k] = val;
-              if (!c.local) send(c.k, val);
+              seg.querySelectorAll("button").forEach(x => {
+                x.classList.remove("on"); x.setAttribute("aria-pressed", "false");
+              });
+              b.setAttribute("aria-pressed", "true");
+              b.classList.add("on"); publish(c, val);
+              refreshDependencies();
             };
             seg.appendChild(b);
           }
@@ -116,8 +163,11 @@
           reg[c.k] = v => {
             if (P[c.k] === v) return;
             P[c.k] = v;
-            seg.querySelectorAll("button").forEach(
-              x => x.classList.toggle("on", x.dataset.v === String(v)));
+            seg.querySelectorAll("button").forEach(x => {
+              const on = x.dataset.v === String(v); x.classList.toggle("on", on);
+              x.setAttribute("aria-pressed", on ? "true" : "false");
+            });
+            refreshDependencies();
           };
           continue;
         }
@@ -127,10 +177,11 @@
             `<div class="lab"><span class="nm">${c.nm}</span><span class="un hint">${c.un}</span></div>
              <div class="ri"><input type="number" step="any" value="${c.v}" style="width:100%"></div>`;
           const nu = row.querySelector("input[type=number]");
+          nu.setAttribute("aria-label", `${c.nm} (${c.un || ""})`);
           nu.addEventListener("change", () => {
             let x = Math.max(c.lo, Math.min(c.hi, +nu.value));
             if (!isFinite(x)) x = c.v;
-            nu.value = x; P[c.k] = x; if (!c.local) send(c.k, x);
+            nu.value = x; publish(c, x);
           });
           box.appendChild(row);
           reg[c.k] = v => {
@@ -148,7 +199,9 @@
            <input type="number" step="${c.step}" value="${c.v}"></div>`;
         const sl = row.querySelector("input[type=range]");
         const nu = row.querySelector("input[type=number]");
-        const apply = x => { P[c.k] = x; if (!c.local) send(c.k, x); };
+        sl.setAttribute("aria-label", `${c.nm} 슬라이더`);
+        nu.setAttribute("aria-label", `${c.nm} (${c.un || ""})`);
+        const apply = x => { publish(c, x); refreshDependencies(); };
         sl.addEventListener("input", () => { nu.value = sl.value; apply(+sl.value); });
         nu.addEventListener("change", () => {
           let x = Math.max(c.lo, Math.min(c.hi, +nu.value)); if (!isFinite(x)) x = c.v;
@@ -170,9 +223,18 @@
       if (!designer) return;
       for (const k in reg) {
         const v = (k === "speed") ? speed : designer[k];
-        if (v !== undefined && v !== null) reg[k](v);
+        if (v === undefined || v === null) continue;
+        const pending = pendingAck[k];
+        if (pending) {
+          if (sameValue(pending.value, v)) delete pendingAck[k];
+          else if (Date.now() < pending.until) continue;
+          else delete pendingAck[k];
+        }
+        reg[k](v);
       }
+      refreshDependencies();
     }
+    refreshDependencies();
     return { sync, reg };
   };
 
@@ -202,8 +264,9 @@
    * self-describing and comparable. */
   g.CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
     "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt","drag_K",
+    "fritz_scale","dep_grad_um",
     "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","C_dl_anode","C_dl_cathode",
-    "t_ptl_um","eps_ptl","void_frac","mesh_id","mesh_cover","mesh_pos",
+    "t_ptl_um","void_frac","mesh_id","mesh_cover","mesh_pos","mesh_theta",
     "dry_cathode","n_drag","D_w_mem","in_face","in_z","in_w","out_face","out_z","out_w"];
   function csvCell(v){ if(v==null) return ""; const s=String(v);
     return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
@@ -243,9 +306,14 @@
   g.dragResize = function (el, handle, key) {
     if (!el) return;
     handle = handle || el;                     // default: the whole panel is the grip
-    el.style.resize = "both";
+    const mobileLayout = matchMedia("(max-width:900px)");
+    const syncInputMode = () => {
+      el.style.resize = mobileLayout.matches ? "none" : "both";
+      handle.style.touchAction = mobileLayout.matches ? "pan-y" : "none";
+    };
+    syncInputMode();
+    mobileLayout.addEventListener("change", syncInputMode);
     if (getComputedStyle(el).overflow === "visible") el.style.overflow = "auto";
-    handle.style.touchAction = "none";
     let saveT = null;
     const save = () => {
       clearTimeout(saveT);
@@ -273,18 +341,26 @@
       if (s && (s.l || s.t)) {
         el.style.position = "fixed"; el.style.right = "auto"; el.style.bottom = "auto";
         el.style.margin = "0"; el._floated = true;
-        if (s.l) el.style.left = s.l; if (s.t) el.style.top = s.t;
+        // clamp the saved position into the CURRENT viewport — a layout saved on
+        // a wide screen (or before the window shrank) could otherwise restore the
+        // panel fully off-screen with no way to drag it back.
+        const L = parseFloat(s.l), T = parseFloat(s.t);
+        if (isFinite(L)) el.style.left = Math.max(0, Math.min(innerWidth - 40, L)) + "px";
+        if (isFinite(T)) el.style.top = Math.max(0, Math.min(innerHeight - 30, T)) + "px";
         if (s.w) el.style.width = s.w; if (s.h) el.style.height = s.h;
         el.style.zIndex = s.z || (g._zTop += 1);
       }
     } catch (e) {}
     // ANY pointerdown on the panel brings it to the front (so clicking a chart —
     // not just the box border — raises it above overlapping panels)
-    el.addEventListener("pointerdown", () => { if (el._floated) toFront(); }, true);
+    el.addEventListener("pointerdown", () => {
+      if (!mobileLayout.matches && el._floated) toFront();
+    }, true);
     // drag with a 4 px threshold so a plain click never floats the panel
     const NODRAG = "input,button,select,textarea,a,label,[data-nodrag]";
     let sx, sy, ox, oy, armed = false, dragging = false, pid = null;
     handle.addEventListener("pointerdown", e => {
+      if (mobileLayout.matches) return;
       if (e.target.closest(NODRAG)) return;
       // the bottom-right ~20 px is the native CSS resize grip — leave it to
       // resize, don't also start a MOVE (that double-action felt broken)
@@ -316,6 +392,7 @@
     // ResizeObserver (absent in some embedded viewers); RO, when present, just
     // keeps the saved size live during the drag.
     const endResize = () => {
+      if (mobileLayout.matches) return;
       if (el.style.width || el.style.height || el._floated) {
         if (!el._floated) lift(); save();
       }
@@ -325,6 +402,7 @@
     if (window.ResizeObserver) new ResizeObserver(() => { if (el._floated) save(); }).observe(el);
     // double-click the header: reset to default layout
     handle.addEventListener("dblclick", () => {
+      if (mobileLayout.matches) return;
       try { localStorage.removeItem(key); } catch (e) {}
       el._floated = false;
       for (const p of ["position","left","top","right","bottom","width","height","zIndex","margin"])

@@ -14,12 +14,15 @@ import numpy as np
 
 
 class PoreGrowth:
-    def __init__(self, solid, escape_axis=1, escape_factor=1.0):
+    def __init__(self, solid, escape_axis=1, escape_factor=1.0,
+                 reactive_surface=None):
         self.solid = solid
         self.pore = ~solid
         self.gas = np.zeros(solid.shape, dtype=bool)
         self.axis = escape_axis                 # gas escapes toward this axis' far face
         self.escape_factor = float(escape_factor)
+        self.reactive_surface = (self._surface() if reactive_surface is None
+                                 else np.asarray(reactive_surface, dtype=bool))
         self.produced_cum = 0.0                 # total gas volume evolved [m^3]
         self.vented_cum = 0.0
         self._rng = np.random.default_rng(0)
@@ -66,7 +69,14 @@ class PoreGrowth:
         cur = int(self.gas.sum())
         n_add = target_voxels - cur
         if n_add > 0:
-            self._add_voxels(n_add, nuc_weight)
+            placed = self._add_voxels(n_add, nuc_weight)
+            # The reduced volume-filling model has no pressure state. Gas that
+            # cannot be represented after the accessible surface and all existing
+            # bubble frontiers are exhausted is treated as immediate outflow,
+            # preserving the explicit volume balance without nucleating it at an
+            # arbitrary internal pore.
+            if placed < n_add:
+                self.vented_cum += (n_add - placed) * v_voxel
         # vent gas that has grown to the escape face
         escaping = self._cluster_touching_escape()
         n_vent = int(escaping.sum())
@@ -93,45 +103,43 @@ class PoreGrowth:
         if not open_pore.any():
             return
         added = 0
-        # 1) growth: dilate current gas into pore first (existing bubbles grow)
-        if self.gas.any():
-            frontier = self._dilate_into_pore(self.gas) & (~self.gas)
-            fidx = np.argwhere(frontier)
-            if len(fidx):
-                take = min(n_add, len(fidx))
-                # prefer frontier voxels near high nucleation weight
-                order = np.argsort([-nuc_weight[tuple(p)] for p in fidx])
-                for q in order[:take]:
-                    self.gas[tuple(fidx[q])] = True
-                added += take
-        # 2) nucleation: seed remaining at the highest-weight surface voxels
-        if added < n_add:
-            w = nuc_weight * (open_pore & (~self.gas))
-            if w.sum() > 0:
-                order = np.argsort(w.ravel())[::-1]
-                need = n_add - added
-                picked = order[:need]
-                coords = np.unravel_index(picked, self.gas.shape)
-                # only keep those with positive weight
-                keep = w.ravel()[picked] > 0
-                self.gas[coords[0][keep], coords[1][keep], coords[2][keep]] = True
-                added += int(keep.sum())
-        # 3) fallback: if still short (weights exhausted), fill any open pore
-        if added < n_add:
-            rem = np.argwhere(self.pore & (~self.gas))
-            if len(rem):
-                take = min(n_add - added, len(rem))
-                sel = self._rng.choice(len(rem), size=take, replace=False)
-                for q in sel:
-                    self.gas[tuple(rem[q])] = True
+        while added < n_add:
+            progressed = 0
+            # Existing surface-born bubbles may grow through connected pore
+            # space; this is gas motion, not electrochemical reaction penetration.
+            if self.gas.any():
+                frontier = self._dilate_into_pore(self.gas) & (~self.gas)
+                fidx = np.argwhere(frontier)
+                if len(fidx):
+                    take = min(n_add - added, len(fidx))
+                    order = np.argsort([-nuc_weight[tuple(p)] for p in fidx])
+                    for q in order[:take]:
+                        self.gas[tuple(fidx[q])] = True
+                    added += take; progressed += take
+            if added < n_add:
+                # New nuclei are allowed ONLY on the declared external reacting
+                # surface. Never fall back to a random internal pore.
+                w = nuc_weight * self.reactive_surface * (~self.gas)
+                if w.sum() > 0:
+                    order = np.argsort(w.ravel())[::-1]
+                    need = n_add - added
+                    picked = order[:need]
+                    keep = w.ravel()[picked] > 0
+                    coords = np.unravel_index(picked[keep], self.gas.shape)
+                    self.gas[coords] = True
+                    n_seed = int(keep.sum())
+                    added += n_seed; progressed += n_seed
+            if progressed == 0:
+                break
+        return added
 
     # ------------------------------------------------------------ diagnostics
     def coverage(self):
         """Fraction of reacting-surface pore voxels that are gas-covered."""
-        surf = self.pore & self._surface()
+        surf = self.pore & self.reactive_surface
         if not surf.any():
             return 0.0
-        return float((self.gas & self._surface()).sum() / max(1, surf.sum()))
+        return float((self.gas & surf).sum() / max(1, surf.sum()))
 
     def _surface(self):
         s = self.solid

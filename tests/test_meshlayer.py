@@ -1,14 +1,4 @@
-"""Mesh-interlayer mapping (kernel.meshlayer) + channel-solver integration.
-
-The mesh model is a GEOMETRY -> bubble-knob mapping fixed a priori (blind
-prediction protocol); these tests pin its structure and the no-mesh identity:
-
-  * neutral factors when there is no mesh (t=0) -- legacy bit-identical path
-  * physical trends: denser/finer mesh wicks more, thicker mesh boosts local
-    velocity and blocking penalty, mesh thicker than the channel cannot mount
-  * channel integration: mesh lowers the CP cell voltage at gas-choked high j,
-    and covering the OUTLET half (where gas accumulates) beats the inlet half
-"""
+"""Contact-angle/geometry mesh model + channel-solver integration tests."""
 import os
 import sys
 
@@ -22,7 +12,9 @@ from bubblesim.solvers.channel import ChannelSolver                    # noqa: E
 _SOLVER = ChannelSolver()
 
 # the measured PP mesh (hole 1.016x1.346 mm -> 1.18 mean, 50% open, 0.483 mm)
-MESH = dict(mesh_hole_mm=1.18, mesh_open=0.5, mesh_t_mm=0.483)
+MESH = dict(mesh_hole_mm=1.181, mesh_hole_x_mm=1.016,
+            mesh_hole_y_mm=1.346, mesh_open=0.5, mesh_t_mm=0.483,
+            mesh_contact_angle=105.8)
 
 
 def _channel_op(j_macm2, **kw):
@@ -35,7 +27,7 @@ def _channel_op(j_macm2, **kw):
 
 
 def _solve(op):
-    sim = Simulator(op=op, params=Params(
+    sim = Simulator(op=op, params=Params(fritz_scale=0.08,
         anode=ElectrodeParams("OER", j0_ref=7.94e-4, alpha_a=1.14, Ea_j0=50.0e3),
         cathode=ElectrodeParams("HER", j0_ref=3000.0, Ea_j0=30.0e3),
         r_membrane_area=9.6e-6))
@@ -45,30 +37,45 @@ def _solve(op):
 def test_no_mesh_is_neutral():
     f = mesh_factors(0.0, 1.0, 0.0, 0.9)
     assert f["fits"] and f["u_boost"] == 1.0 and f["theta_factor"] == 1.0
-    assert f["retention_factor"] == 1.0 and f["theta_add"] == 0.0
+    assert f["retention_factor"] == 1.0 and f["blocking_fraction"] == 0.0
 
 
 def test_mesh_thicker_than_channel_cannot_mount():
     f = mesh_factors(2.4, 0.45, 2.03, 0.9)          # 0.094" mesh in a 0.9 mm channel
-    assert not f["fits"] and "cannot mount" in f["warn"]
+    assert not f["fits"] and f["warn"]
 
 
-def test_wick_trends():
-    base = mesh_factors(1.18, 0.5, 0.483, 0.9)
-    denser = mesh_factors(1.18, 0.3, 0.483, 0.9)     # more strand -> more wick
-    coarser = mesh_factors(4.0, 0.5, 0.483, 0.9)     # bigger holes -> less wick
-    assert denser["wick"] > base["wick"] > coarser["wick"]
-    assert base["theta_factor"] < 1.0 and base["retention_factor"] < 1.0
-    assert base["theta_add"] > 0.0
+def test_contact_probability_is_smooth_and_finer_is_higher():
+    kw = dict(open_frac=0.5, t_mm=0.483, d_ch_mm=0.9,
+              bubble_d_mm=0.23, electrode_angle_deg=60, mesh_angle_deg=105.8)
+    fine = mesh_factors(0.5, **kw)
+    base = mesh_factors(1.18, **kw)
+    coarse = mesh_factors(4.0, **kw)
+    assert 0.0 < coarse["contact_prob"] < base["contact_prob"] < fine["contact_prob"] < 1.0
+    assert fine["capture_eff"] > base["capture_eff"] > coarse["capture_eff"]
+    dense = mesh_factors(1.18, 0.3, 0.483, 0.9, bubble_d_mm=0.23)
+    sparse = mesh_factors(1.18, 0.7, 0.483, 0.9, bubble_d_mm=0.23)
+    assert dense["contact_prob"] > sparse["contact_prob"]
 
 
-def test_encroachment_boost_and_cap():
-    thin = mesh_factors(1.18, 0.5, 0.2, 0.9)
-    thick = mesh_factors(1.18, 0.5, 0.7, 0.9)
+def test_wetting_transfer_requires_mesh_to_be_more_hydrophobic():
+    no_drive = mesh_factors(1.18, 0.5, 0.483, 0.9, bubble_d_mm=0.23,
+                            electrode_angle_deg=110, mesh_angle_deg=105.8)
+    driven = mesh_factors(1.18, 0.5, 0.483, 0.9, bubble_d_mm=0.23,
+                          electrode_angle_deg=60, mesh_angle_deg=105.8)
+    assert no_drive["wetting_drive"] == 0.0 and no_drive["capture_eff"] == 0.0
+    assert driven["wetting_drive"] > 0.0 and driven["theta_factor"] < 1.0
+
+
+def test_solid_volume_boost_and_pressure_ratio():
+    thin = mesh_factors(1.18, 0.5, 0.2, 0.9, bubble_d_mm=0.23)
+    thick = mesh_factors(1.18, 0.5, 0.7, 0.9, bubble_d_mm=0.23)
     assert 1.0 < thin["u_boost"] < thick["u_boost"]
-    near = mesh_factors(1.18, 0.5, 0.88, 0.9)        # nearly fills the channel
-    assert near["u_boost"] <= 4.0 and near["warn"]
-    assert thick["theta_add"] > thin["theta_add"]    # thicker blocks more liquid
+    near = mesh_factors(1.18, 0.1, 0.88, 0.9, bubble_d_mm=0.23)
+    assert near["dp_ratio"] > thick["dp_ratio"] > thin["dp_ratio"]
+    assert near["warn"]
+    assert thick["blocking_fraction"] == thin["blocking_fraction"] == 0.0
+    assert thick["active_area_blocking_mode"] == "not_modelled"
 
 
 def test_path_mask_placement():

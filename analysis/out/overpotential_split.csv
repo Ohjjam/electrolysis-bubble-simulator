@@ -1,12 +1,12 @@
 ﻿항목,pristine_mV,mesh_mV,차이_mV(+절감)
 E_rev,1187.3,1187.3,0.0
 eta_act_anode,384.0,384.0,0.0
-eta_act_cathode,118.8,72.2,46.6
+eta_act_cathode,118.8,100.7,18.1
 eta_ohmic,333.2,280.6,52.6
 eta_conc,0.3,0.3,0.0
 eta_water,9.7,9.7,0.0
 
-# 하위성분(위 항목에 이미 포함),pristine,mesh,
+# 하위성분,pristine,mesh,
 eta_bub_cov_anode,0.0,0.0,
-eta_bub_cov_cathode,89.4,38.7,
+eta_bub_cov_cathode,89.4,70.4,
 eta_bub_void,52.6,0.0,

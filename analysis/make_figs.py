@@ -155,12 +155,10 @@ def fig_thickness():
     ax.set_ylabel("ΔV @ 1000 mA/cm$^2$  [mV]", color=GRN)
     ax.tick_params(axis="y", labelcolor=GRN)
     ax2 = ax.twinx()
-    ax2.plot(ts, [r["mesh_u_boost"] for r in t], "-s", color=RED, lw=1.8, ms=5, mfc="white", label="u_boost (dP∝u²)")
-    ax2.set_ylabel("velocity boost u_boost  (pressure-drop proxy)", color=RED)
+    ax2.plot(ts, [r["mesh_dp_ratio"] for r in t], "-s", color=RED, lw=1.8, ms=5, mfc="white", label="laminar ΔP ratio")
+    ax2.set_ylabel("estimated laminar ΔP / ΔP₀", color=RED)
     ax2.tick_params(axis="y", labelcolor=RED); ax2.grid(False)
-    ax.axvspan(0.54, 0.9, color="#fdecec", zorder=0)
-    ax.text(0.6, ax.get_ylim()[0] + 1, "high-dP zone\n(t > 0.6 d_ch)", fontsize=8, color=RED)
-    ax.set_title("Thickness: small electrical gain, steep dP cost")
+    ax.set_title("Thickness: voltage effect vs laminar pressure cost")
     save(fig, "fig_thickness.svg")
 
 
@@ -172,12 +170,11 @@ def fig_open_pore():
     a1.plot([r["open_frac"] * 100 for r in to], [(r["dV@1000_mV"] or 0) for r in to],
             "-o", color=PUR, lw=2, ms=6, mfc="white")
     a1.set_xlabel("open-area fraction φ  [%]  (lower = denser)")
-    a1.set_ylabel("ΔV @1000  [mV]"); a1.set_title("Denser mesh wicks more")
+    a1.set_ylabel("ΔV @1000  [mV]"); a1.set_title("Open area changes blockage")
     a2.plot([r["hole_mm"] for r in tp], [(r["dV@1000_mV"] or 0) for r in tp],
             "-o", color=GLD, lw=2, ms=6, mfc="white")
-    a2.axvline(2.0, color=MUT, lw=0.9, ls="--"); a2.text(2.05, a2.get_ylim()[0] + 2, " L_ref = 2 mm", fontsize=8, color=MUT)
     a2.set_xlabel("opening size  [mm]"); a2.set_ylabel("ΔV @1000  [mV]")
-    a2.set_title("Openings < 2 mm are equivalent")
+    a2.set_title("Bubble contact changes continuously")
     save(fig, "fig_open_pore.svg")
 
 
@@ -209,12 +206,11 @@ def fig_mechanism():
     d = DEC["decomp"]["1000"]
     v0 = d["V_pristine"]
     st = d["steps_mV"]
-    peel = st["떼어냄 (촉매 피복 완화)"]
-    drain = st["밀어냄 · 그물 배수"]
-    flow = st["밀어냄 · 유속 부스트"]
-    block = st["차단 (액 접근 막힘, 손해)"]   # negative
-    labels = ["Pristine", "Peel-off", "Sweep·drain", "Sweep·flow", "Blocking", "+ Mesh"]
-    deltas = [peel, drain, flow, block]
+    capture = st["접촉·젖음성 포획"]
+    flow = st["유로 폐색에 따른 체류시간 감소"]
+    block = st["촉매 접촉·압착 차단 (미모델링)"]
+    labels = ["Pristine", "Transfer", "Flow residence", "Unmodelled contact", "+ Mesh"]
+    deltas = [capture, flow, block]
     fig, ax = plt.subplots(figsize=(6.6, 4.1))
     running = v0
     ax.bar(0, v0, color="#c7cdd8", edgecolor="#5b6472", width=0.62)
@@ -227,12 +223,12 @@ def fig_mechanism():
         ax.text(i, bottom + abs(dv) + 6, f"{'−' if dv>0 else '+'}{abs(dv):.0f}",
                 ha="center", fontsize=9.5, color=color, fontweight="bold")
         running -= dv
-    ax.bar(5, running, color=ACC, edgecolor="#5b6472", width=0.62)
-    ax.text(5, running + 6, f"{running:.0f}", ha="center", fontsize=9.5, fontweight="bold", color=ACC)
-    ax.set_xticks(range(6)); ax.set_xticklabels(labels, fontsize=8.5)
+    ax.bar(4, running, color=ACC, edgecolor="#5b6472", width=0.62)
+    ax.text(4, running + 6, f"{running:.0f}", ha="center", fontsize=9.5, fontweight="bold", color=ACC)
+    ax.set_xticks(range(5)); ax.set_xticklabels(labels, fontsize=8.5)
     ax.set_ylabel("cell voltage  V @ 1000 mA/cm$^2$  [mV]")
     ax.set_ylim(v0 - max(deltas) * 4.5, v0 + 40)
-    ax.set_title("WHY it improves — voltage waterfall (green=saves, red=costs)")
+    ax.set_title("Revised mesh model — voltage waterfall")
     ax.grid(axis="x", visible=False)
     save(fig, "fig_mechanism.svg")
 
@@ -242,15 +238,15 @@ def fig_mechanism_j():
     if not DEC:
         return
     js = ["500", "1000", "2000"]
-    cats = ["떼어냄 (촉매 피복 완화)", "밀어냄 · 그물 배수", "밀어냄 · 유속 부스트", "차단 (액 접근 막힘, 손해)"]
-    names = ["Peel-off", "Sweep·drain", "Sweep·flow", "Blocking"]
-    cols = [GRN, "#3aa981", "#8fd3bd", RED]
+    cats = ["접촉·젖음성 포획", "유로 폐색에 따른 체류시간 감소", "촉매 접촉·압착 차단 (미모델링)"]
+    names = ["Contact × wetting", "Flow residence", "Contact blocking (unmodelled)"]
+    cols = [GRN, "#3aa981", RED]
     fig, ax = plt.subplots(figsize=(6.4, 4.0))
     import numpy as _np
-    x = _np.arange(len(js)); w = 0.19
+    x = _np.arange(len(js)); w = 0.24
     for k, (cat, nm, c) in enumerate(zip(cats, names, cols)):
         vals = [DEC["decomp"][j]["steps_mV"][cat] for j in js]
-        ax.bar(x + (k - 1.5) * w, vals, w, label=nm, color=c, edgecolor="#5b6472", linewidth=0.5)
+        ax.bar(x + (k - 1) * w, vals, w, label=nm, color=c, edgecolor="#5b6472", linewidth=0.5)
     ax.axhline(0, color="#98a2b3", lw=0.8)
     ax.set_xticks(x); ax.set_xticklabels([f"{j} mA/cm$^2$" for j in js])
     ax.set_ylabel("contribution to ΔV  [mV]  (＋=saves)")
@@ -315,9 +311,131 @@ def fig_profile():
     save(fig, "fig_profile.svg")
 
 
+M2D = _json.loads((OUT / "mesh_2d.json").read_text(encoding="utf-8")) if (OUT / "mesh_2d.json").exists() else None
+LEXT = _json.loads((OUT / "lambda_ext.json").read_text(encoding="utf-8")) if (OUT / "lambda_ext.json").exists() else None
+
+
+# --- FIG 13: blocking reverses only at low current ---------------------------
+def fig_reversal():
+    if not M2D:
+        return
+    js = M2D["js"]; cross = M2D["cross_j"]
+    labs = {"기준(fine·얇음)": ("fine·thin (ref)", ACC, "o"),
+            "coarse·촘촘·두꺼움": ("coarse·dense·thick", GLD, "s"),
+            "극단 차단": ("extreme blocking", RED, "^")}
+    fig, ax = plt.subplots(figsize=(6.4, 4.1))
+    for tag, d in cross.items():
+        nm, c, mk = labs.get(tag, (tag, MUT, "o"))
+        ys = [d["dV_by_j"][str(j)] for j in js]
+        ax.plot(js, ys, "-" + mk, color=c, lw=1.9, ms=5, mfc="white", label=nm)
+    ax.axhline(0, color="#5b6472", lw=1.0)
+    ax.axhspan(ax.get_ylim()[0], 0, color="#fdecec", alpha=0.5, zorder=0)
+    ax.text(24, ax.get_ylim()[0] * 0.5 if ax.get_ylim()[0] < 0 else -2,
+            "mesh HURTS", fontsize=9, color=RED)
+    ax.set_xscale("log")
+    ax.set_xlabel("current density  j  [mA/cm$^2$]  (log)")
+    ax.set_ylabel("net ΔV  [mV]  (＋saves / −hurts)")
+    ax.set_title("Blocking reverses the benefit only at LOW current")
+    ax.legend(frameon=False, fontsize=9, loc="upper left")
+    save(fig, "fig_reversal.svg")
+
+
+# --- FIG 14: blocking cost grows (coarse+dense+thick) ------------------------
+def fig_block_growth():
+    if not M2D:
+        return
+    ex = M2D["extremes"]
+    labels = [f"h{e['hole']:.0f}·φ{int(e['phi']*100)}·t{e['t']:.2f}" for e in ex]
+    import numpy as _np
+    x = _np.arange(len(ex)); w = 0.26
+    fig, ax = plt.subplots(figsize=(6.8, 4.0))
+    ax.bar(x - w, [e["peel"] for e in ex], w, label="Contact-angle transfer", color=GRN, edgecolor="#5b6472", linewidth=0.5)
+    ax.bar(x, [e["push"] for e in ex], w, label="Residence reduction", color="#3aa981", edgecolor="#5b6472", linewidth=0.5)
+    ax.bar(x + w, [e["block"] for e in ex], w, label="Contact blocking (unmodelled)", color=RED, edgecolor="#5b6472", linewidth=0.5)
+    for i, e in enumerate(ex):
+        ax.text(i + w, e["block"] - 3, f"{e['block']:.0f}", ha="center", va="top", fontsize=8, color=RED)
+        ax.text(i, e["net"] + 4, f"net {e['net']:.0f}", ha="center", fontsize=8, color=ACC, fontweight="bold")
+    ax.axhline(0, color="#5b6472", lw=0.9)
+    ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=8)
+    ax.set_ylabel("contribution @ 1000 mA/cm$^2$  [mV]")
+    ax.set_title("Mesh effects at 1000 mA/cm$^2$ (contact blocking excluded)")
+    ax.legend(frameon=False, fontsize=8.5, ncol=3, loc="lower left")
+    save(fig, "fig_block_growth.svg")
+
+
+# --- FIG 15: lambda(x) foam extension reproduces outlet-partial optimum ------
+def fig_lambda():
+    if not LEXT:
+        return
+    rows = LEXT["rows"]
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+    sty = {"inlet": (RED, "o"), "middle": (GLD, "s"), "outlet": (GRN, "^")}
+    # left: base model (no foam) — monotone, 100% best
+    for pos in ("inlet", "middle", "outlet"):
+        rr = sorted([r for r in rows if r["pos"] == pos], key=lambda r: r["cover"])
+        a1.plot([r["cover"] * 100 for r in rr], [r["base_dV"] for r in rr],
+                "-" + sty[pos][1], color=sty[pos][0], lw=1.8, ms=5, mfc="white", label=pos)
+    a1.set_title("Base model — 100% always best"); a1.set_ylim(-12, 125)
+    a1.set_xlabel("mesh cover [%]"); a1.set_ylabel("ΔV @1000 [mV]")
+    a1.legend(frameon=False, fontsize=8.5)
+    # right: + foam lambda(x) — outlet peaks at partial cover
+    for pos in ("inlet", "middle", "outlet"):
+        rr = sorted([r for r in rows if r["pos"] == pos], key=lambda r: r["cover"])
+        xs = [r["cover"] * 100 for r in rr]; ys = [r["total_dV"] for r in rr]
+        a2.plot(xs, ys, "-" + sty[pos][1], color=sty[pos][0], lw=1.9, ms=5, mfc="white", label=pos)
+        if pos == "outlet":
+            k = max(range(len(ys)), key=lambda i: ys[i])
+            a2.scatter([xs[k]], [ys[k]], s=140, facecolor="none", edgecolor=GRN, lw=2, zorder=5)
+            a2.annotate(f"optimum {int(xs[k])}%", (xs[k], ys[k]), xytext=(xs[k] - 34, ys[k] + 6),
+                        fontsize=9, color=GRN, fontweight="bold")
+    a2.axhline(0, color="#98a2b3", lw=0.7, ls=":")
+    a2.set_title("+ Ni-foam λ(x) — outlet-PARTIAL wins"); a2.set_ylim(-12, 125)
+    a2.set_xlabel("mesh cover [%]"); a2.set_ylabel("ΔV @1000 [mV]")
+    a2.legend(frameon=False, fontsize=8.5)
+    save(fig, "fig_lambda.svg")
+
+
+FOAM = _json.loads((OUT / "foam_model.json").read_text(encoding="utf-8")) if (OUT / "foam_model.json").exists() else None
+
+
+# --- FIG 16: grounded foam model refutes the flip ---------------------------
+def fig_foam():
+    if not FOAM or not LEXT:
+        return
+    # §13 post-proc outlet totals (the fragile flip) vs grounded model
+    lo = sorted([r for r in LEXT["rows"] if r["pos"] == "outlet" and r["cover"] > 0], key=lambda r: r["cover"])
+    go = sorted([r for r in FOAM["ref_case"]["rows"] if r["pos"] == "outlet"], key=lambda r: r["cover"])
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(9.4, 4.0))
+    # left: outlet total dV vs cover — two models
+    a1.plot([r["cover"] * 100 for r in lo], [r["total_dV"] for r in lo], "-o", color=GLD, lw=1.9, ms=6,
+            mfc="white", label="§13 post-proc (assumed feed)")
+    a1.plot([r["cover"] * 100 for r in go], [r["total_dV"] for r in go], "-^", color=ACC, lw=2, ms=7,
+            mfc="white", label="grounded foam model")
+    # mark the fragile flip peak
+    kk = max(range(len(lo)), key=lambda i: lo[i]["total_dV"])
+    a1.scatter([lo[kk]["cover"] * 100], [lo[kk]["total_dV"]], s=150, facecolor="none", edgecolor=GLD, lw=2, zorder=5)
+    a1.annotate("fragile flip\n(assumption)", (lo[kk]["cover"] * 100, lo[kk]["total_dV"]),
+                xytext=(38, lo[kk]["total_dV"] - 22), fontsize=8.5, color=GLD)
+    a1.annotate("grounded → 100% wins", (100, go[-1]["total_dV"]), xytext=(40, go[-1]["total_dV"] + 4),
+                fontsize=8.5, color=ACC, fontweight="bold")
+    a1.set_xlabel("outlet mesh cover [%]"); a1.set_ylabel("ΔV @1000 [mV]")
+    a1.set_title("Does outlet-partial beat full?"); a1.legend(frameon=False, fontsize=8.5, loc="lower right")
+    # right: flip threshold — no flip at any entry-blocking
+    qt = FOAM.get("q_threshold", [])
+    a2.bar([f'{q["q_eff"]:.2f}' for q in qt], [q["outlet_best_cover"] * 100 for q in qt],
+           color=[GRN if q["flip"] else "#c7cdd8" for q in qt], edgecolor="#5b6472", linewidth=0.6)
+    a2.axvspan(-0.5, 1.5, color="#eef2f8", zorder=0)
+    a2.text(0.5, 50, "geometric\nmax (≤0.5)", ha="center", fontsize=8, color=MUT)
+    a2.set_ylim(0, 112); a2.axhline(100, color=MUT, lw=0.8, ls=":")
+    a2.set_xlabel("foam water-entry blocking  q_eff"); a2.set_ylabel("optimal outlet cover [%]")
+    a2.set_title("No flip at ANY blocking (even hydrophobic)")
+    save(fig, "fig_foam.svg")
+
+
 if __name__ == "__main__":
     print("rendering figures ...")
     fig_calib(); fig_catalog_lsv(); fig_catalog_bar(); fig_coverage()
     fig_flow(); fig_thickness(); fig_open_pore(); fig_eis()
     fig_mechanism(); fig_mechanism_j(); fig_overpot(); fig_profile()
+    fig_reversal(); fig_block_growth(); fig_lambda(); fig_foam()
     print("figs ->", FIG)

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>3D 전기화학 셀 시뮬레이터</title>
+<link rel="icon" href="data:,">
 <style>
   /* light "lab notebook" palette — same tokens as the 2-D panel view */
   :root{--bg:#eef1f6;--card:#ffffff;--line:#d6dce6;--tx:#1a2331;--dim:#68738a;
@@ -11,15 +12,21 @@
         --surf:#f3f6fb;--surf2:#e3edfd;--glass:rgba(255,255,255,.88);}
   *{box-sizing:border-box} html,body{margin:0;height:100%}
   body{color:var(--tx);font:13px/1.45 "Segoe UI",system-ui,sans-serif;overflow:hidden;
-    background:radial-gradient(130% 100% at 50% 10%, #ffffff 0%, #e9eef6 55%, #d8e0ec 100%);}
-  #stage{position:fixed;inset:0;display:block;width:100%;height:100%}
+    background:radial-gradient(125% 96% at 54% 8%, #fbfdff 0%, #e8eef6 58%, #cfd9e7 100%);}
+  #stageWrap{position:fixed;inset:0}
+  #stage{position:absolute;inset:0;display:block;width:100%;height:100%}
+  #mobileViewBar,#mobilePanelActions,.mobileFold{display:none}
   #panel{position:fixed;top:12px;left:12px;width:300px;background:var(--glass);
     border:1px solid var(--line);border-radius:14px;padding:12px 13px;backdrop-filter:blur(9px);
     box-shadow:0 8px 30px rgba(20,32,52,.10);max-height:calc(100vh - 24px);overflow:auto;
-    resize:horizontal;min-width:210px;max-width:640px}
-  /* drag the ⤡ bottom-right corner of any floating panel to resize it */
-  #panel::-webkit-resizer,.fpanel::-webkit-resizer{background:var(--line)}
+    min-width:210px;max-width:640px;z-index:10}
   h1{font-size:15px;margin:0 0 2px} .sub{color:var(--dim);font-size:11px;margin-bottom:10px}
+  .titleRow{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .langSwitch{display:flex;flex:none;gap:2px;padding:2px;border:1px solid var(--line);
+    border-radius:8px;background:var(--surf)}
+  .langSwitch button{border:0;border-radius:5px;padding:3px 6px;background:transparent;
+    color:var(--dim);font-size:9.5px;cursor:pointer}
+  .langSwitch button.on{background:var(--accent);color:#fff;font-weight:700}
   .seg{display:flex;gap:6px;margin:2px 0 10px} .seg button{flex:1;background:var(--surf);color:var(--dim);
     border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:11.5px;cursor:pointer}
   .seg button.on{color:var(--accent);border-color:var(--accent);background:var(--surf2);font-weight:600}
@@ -37,10 +44,51 @@
   .btn{flex:1;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:9px;
     padding:7px 4px;font-size:12px;cursor:pointer}
   .btn:hover{border-color:var(--accent);background:var(--surf2)}
-  #hud{position:fixed;top:12px;right:12px;background:var(--glass);border:1px solid var(--line);
+  .aiField{display:block;margin-top:8px;font-size:10.5px;color:var(--dim)}
+  .aiInput,.aiSelect,.aiPrompt{width:100%;margin-top:3px;background:var(--surf);color:var(--tx);
+    border:1px solid var(--line);border-radius:8px;padding:7px;font:12px/1.4 "Segoe UI",system-ui,sans-serif}
+  .aiPrompt{min-height:116px;resize:vertical}
+  .aiStatus{display:flex;align-items:center;gap:6px;min-height:24px;padding:5px 7px;
+    border:1px solid var(--line);border-radius:8px;background:var(--surf);font-size:10.5px;color:var(--dim)}
+  .aiStatus.ok{border-color:rgba(15,138,99,.45);color:var(--grn)}
+  .aiStatus.bad{border-color:rgba(201,51,63,.45);color:var(--warn)}
+  .aiChange{padding:7px 0;border-bottom:1px solid var(--line)}
+  .aiChange:last-child{border-bottom:0}
+  .aiChangeTop{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11.5px}
+  .aiKey{font:600 11px/1.3 ui-monospace,Consolas,monospace;color:var(--accent)}
+  .aiBadge{flex:none;border:1px solid var(--line);border-radius:999px;padding:1px 6px;
+    font-size:9px;color:var(--dim);background:var(--surf)}
+  .aiBadge.model{border-color:rgba(168,115,10,.45);color:var(--gold)}
+  .aiReason{font-size:10.5px;color:var(--dim);margin-top:3px;overflow-wrap:anywhere}
+  .aiFlowGrid{max-height:190px;overflow:auto;margin:7px 0 0;padding:7px;border:1px solid var(--line);
+    border-radius:7px;background:#17212f;color:#b9d9ff;font:9px/1.05 ui-monospace,Consolas,monospace;
+    letter-spacing:.4px;white-space:pre}
+  .aiMetricGrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:7px}
+  .aiMetric{padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--surf)}
+  .aiMetric .k{font-size:9px;color:var(--dim)} .aiMetric .v{font-size:11.5px;font-weight:650}
+  .aiCandidate{margin-top:7px;padding:7px;border:1px solid var(--line);border-radius:8px}
+  .aiCandidate.primary{border-color:rgba(31,111,235,.45);background:rgba(31,111,235,.035)}
+  .aiWarnings{margin:6px 0 0;padding-left:18px;color:var(--gold);font-size:10.5px}
+  .aiWarnings li+li{margin-top:3px}
+  #cameraDock{position:absolute;z-index:12;left:50%;bottom:12px;transform:translateX(-50%);
+    width:min(260px,calc(100% - 24px));padding:7px 9px;border:1px solid rgba(180,190,205,.9);
+    border-radius:11px;background:rgba(255,255,255,.93);box-shadow:0 4px 18px rgba(20,32,52,.14);
+    backdrop-filter:blur(7px);font-variant-numeric:tabular-nums}
+  .cameraRow{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px;align-items:center}
+  .cameraRow+.cameraRow{margin-top:5px}
+  .cameraLabel{font-size:10.5px;color:var(--dim);white-space:nowrap}
+  #cameraDock input{width:100%;min-width:0;accent-color:var(--accent);cursor:ew-resize}
+  .zoomActions{display:flex;justify-content:flex-end;gap:5px}
+  .zoomBtn{width:38px;height:28px;border:1px solid var(--line);border-radius:8px;
+    background:var(--surf);color:var(--tx);font-size:19px;line-height:1;cursor:pointer}
+  .zoomBtn:hover{border-color:var(--accent);background:var(--surf2);color:var(--accent)}
+  .zoomBtn:active{transform:translateY(1px)}
+  #rightRail{position:fixed;z-index:10;top:12px;right:12px;width:248px;
+    max-height:calc(100vh - 24px);overflow-y:auto;overflow-x:hidden;
+    display:flex;flex-direction:column;gap:8px;padding-right:2px;scrollbar-gutter:stable}
+  #hud{position:relative;width:100%;flex:none;background:var(--glass);border:1px solid var(--line);
     border-radius:14px;padding:10px 13px;font-variant-numeric:tabular-nums;min-width:168px;
-    backdrop-filter:blur(9px);box-shadow:0 8px 30px rgba(20,32,52,.10);
-    resize:horizontal;overflow:auto;max-width:420px}
+    backdrop-filter:blur(9px);box-shadow:0 8px 30px rgba(20,32,52,.10)}
   #hud .k{color:var(--dim);font-size:11px} #hud .v{font-size:13.5px;font-weight:600;margin-bottom:5px}
   #hud .v.small{font-size:12px;font-weight:500}
   .st{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
@@ -50,12 +98,11 @@
   .note{color:var(--dim);font-size:10.5px;margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
   .empty{color:var(--dim);font-size:11.5px;padding:6px 2px}
   #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);z-index:50}
-  .fpanel{position:fixed;width:238px;background:var(--glass);
+  .fpanel{position:relative;width:100%;flex:none;background:var(--glass);
     border:1px solid var(--line);border-radius:14px;padding:10px 11px;backdrop-filter:blur(9px);
-    box-shadow:0 8px 30px rgba(20,32,52,.10);max-height:calc(100vh - 24px);overflow:auto;
-    resize:both;min-width:184px;min-height:118px}
+    box-shadow:0 8px 30px rgba(20,32,52,.10);overflow:visible;min-width:0;min-height:118px}
   .fhead{display:flex;align-items:center;justify-content:space-between;gap:6px;
-    font-size:12px;color:var(--tx);font-weight:600;margin-bottom:7px;cursor:move;user-select:none}
+    font-size:12px;color:var(--tx);font-weight:600;margin-bottom:7px;cursor:default;user-select:none}
   .fhead .csvb{flex:none}
   .sliceHdr{font-size:12px;color:var(--tx);font-weight:600;margin-bottom:8px}
   #sliceCanvas{width:100%;height:auto;display:block;background:#f7f9fc;border:1px solid var(--line);
@@ -77,21 +124,87 @@
   .eq-n{font-size:11px;color:var(--dim);line-height:1.6;margin:3px 0 2px}
   .eq-n b{color:var(--tx)}
   .src{display:block;margin-top:3px;font-size:10px;color:var(--gold);font-family:ui-monospace,monospace}
+  .foldb{flex:none;border:1px solid var(--line);background:var(--surf);color:var(--dim);
+    border-radius:6px;padding:1px 6px;cursor:pointer;font-size:10px}
+  .fpanel.collapsed{min-height:0!important;height:auto!important;overflow:hidden}
+  .fpanel.collapsed>:not(.fhead){display:none!important}
+  @media (max-width:900px){
+    html,body{height:auto;min-height:100%;overflow-x:hidden;overflow-y:auto}
+    body{display:flex;flex-direction:column;padding-bottom:10px;background:#edf1f6}
+    #stageWrap{position:relative;inset:auto;order:0;width:100%;height:42vh;height:42svh;
+      min-height:300px;max-height:440px;overflow:hidden;background:#e8eef7;
+      border-bottom:1px solid var(--line);box-shadow:0 8px 24px rgba(20,32,52,.10)}
+    #stage{position:absolute}
+    #mobileViewBar{display:flex;position:absolute;z-index:5;top:10px;left:10px;right:10px;
+      align-items:center;justify-content:space-between;pointer-events:none;color:#43506a;
+      font-size:10.5px;font-weight:650;text-shadow:0 1px 2px #fff}
+    #mobileViewBar .mhint{font-weight:400;color:#6f7b91}
+    #cameraDock{bottom:9px;width:min(240px,calc(100% - 20px));padding:6px 8px}
+    #rightRail{display:contents}
+    #panel,#hud,.fpanel{position:relative!important;left:auto!important;right:auto!important;
+      top:auto!important;bottom:auto!important;width:calc(100% - 16px)!important;max-width:none!important;
+      min-width:0!important;height:auto!important;max-height:none!important;margin:8px!important;
+      transform:none!important;backdrop-filter:none}
+    #hud{order:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+      gap:2px 10px;padding:10px 12px;background:#fff}
+    #hud .v{margin-bottom:3px;min-width:0;overflow-wrap:anywhere}
+    #panel{order:2;overflow:visible!important;padding:11px 10px;background:#fff}
+    .fpanel{order:3;min-height:0;background:#fff;overflow:visible!important}
+    .fhead{min-height:32px;margin-bottom:0;cursor:pointer}
+    .fpanel:not(.collapsed) .fhead{margin-bottom:7px}
+    .mobileFold{display:inline-flex;flex:none;align-items:center;justify-content:center;
+      width:25px;height:25px;border:1px solid var(--line);border-radius:7px;
+      background:var(--surf);color:var(--dim);font-size:13px}
+    #liveCtls>.box,#plateEd{position:relative}
+    #liveCtls>.box>h3,#plateEd>h3{display:flex;align-items:center;justify-content:space-between;
+      min-height:28px;margin-bottom:5px}
+    #liveCtls>.box.mobile-collapsed>h3,#plateEd.mobile-collapsed>h3{margin-bottom:0}
+    #liveCtls>.box.mobile-collapsed>:not(h3),#plateEd.mobile-collapsed>:not(h3){display:none!important}
+    .aiPrompt{min-height:104px}
+    #mobilePanelActions{display:flex;gap:6px;margin:7px 0}
+    #mobilePanelActions button{flex:1;border:1px solid var(--line);border-radius:8px;
+      background:var(--surf);color:var(--dim);padding:6px 4px;font-size:10.5px}
+    #velLegend{display:none!important}
+  }
 </style>
 </head>
 <body>
 <div id="boot">3D 앱 로딩 중…</div>
-<canvas id="stage"></canvas>
+<div id="stageWrap">
+  <canvas id="stage"></canvas>
+  <div id="mobileViewBar"><span>3D 보기</span><span class="mhint">드래그 회전</span></div>
+  <div id="cameraDock" aria-label="3D 카메라 이동과 확대">
+    <div class="cameraRow">
+      <label class="cameraLabel" for="camPan">좌우 이동</label>
+      <input id="camPan" type="range" min="-100" max="100" step="1" value="0"
+             aria-label="3D 화면 좌우 이동">
+    </div>
+    <div class="cameraRow">
+      <span class="cameraLabel">휠 줌 꺼짐</span>
+      <span class="zoomActions">
+        <button class="zoomBtn" id="zoomOut" type="button" aria-label="축소" title="축소">−</button>
+        <button class="zoomBtn" id="zoomIn" type="button" aria-label="확대" title="확대">+</button>
+      </span>
+    </div>
+  </div>
+</div>
 
 <div id="panel">
-  <h1>3D 셀 시뮬레이터 <span style="font-size:10px;color:var(--gold)">P0 셸</span></h1>
-  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 휠=줌</div>
+  <div class="titleRow">
+    <h1>3D 셀 시뮬레이터 <span style="font-size:10px;color:var(--gold)">축약모델</span></h1>
+    <div class="langSwitch" data-i18n-skip role="group" aria-label="Language / 언어">
+      <button type="button" data-language="ko">한국어</button>
+      <button type="button" data-language="en">English</button>
+    </div>
+  </div>
+  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 슬라이더=좌우 이동 · ±=줌</div>
 
   <!-- tabs: 2D / 3D / built-in mesh experiment / user-saved experiments / save -->
   <div class="seg" id="modeSeg" style="display:flex;flex-wrap:wrap;gap:4px">
     <button data-m="2d" title="2D 패널 뷰(app.html 스타일)로 이동">📊 2D</button>
     <button data-m="live" class="on">🧊 3D</button>
     <button data-m="exp">🧪 mesh 실험</button>
+    <button data-m="ai">🤖 AI 설계</button>
     <button data-m="eq" title="이 프로그램이 실제로 푸는 식과 그 근거">📐 수식</button>
     <button data-m="csv" title="LSV·프로파일·CP·기포 데이터를 Excel로 내보내기">📊 데이터</button>
     <button id="expAdd" title="지금 조건(유로·운전 전부)을 실험 탭으로 저장">＋ 실험 저장</button>
@@ -133,8 +246,9 @@
         1M KOH 65°C · 13ch 서펜타인 2.2×2.2cm (채널 0.88/깊이 0.9mm) · 4mL/min.<br>
         <b>질문</b>: 소수성 PP mesh를 양극 위에 올리면 기포 배출이 좋아져 고전류 전압이
         내려가는가? 어떤 mesh를, 어디에 덮는 게 최적인가?<br>
-        <b>방법</b>: pristine 실측 곡선으로만 캘리브레이션(점선 대비 ●) →
-        mesh 효과는 기하(구멍·개구율·두께)에서 <b>순수 예측</b>(실측 mesh 데이터 미사용).</div>
+        <b>방법</b>: pristine 실측 곡선으로만 캘리브레이션(점선 대비 ●) → 전극 접촉각으로
+        이탈기포 크기를 계산하고, 그물코 접촉확률·전극/PP 젖음성 차이·유로 폐색으로
+        <b>순수 예측</b>(실측 mesh 분극 데이터 미사용).</div>
     </div>
     <div class="box" style="border-color:#4a5f2c"><h3>✓ dry cathode(물 투과) — 이 프리셋은 켜서 캘리브레이션됨</h3>
       <div class="note" style="border:none;margin:0;padding:0;font-size:11px;line-height:1.55">
@@ -174,6 +288,14 @@
         <select id="exMesh" style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
           <option value="">— mesh 없음 (pristine) —</option>
         </select></div>
+      <div style="margin:7px 0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--surf)">
+        <div style="font-size:11px;font-weight:700;margin-bottom:5px">직사각형 개구와 버블 발생 위치</div>
+        <canvas id="exMeshGeom" width="272" height="176"
+          style="width:100%;height:176px;border-radius:7px;background:var(--bg)"></canvas>
+        <div id="exMeshGeomRead" class="note" style="margin:5px 0 0;border:none;padding:0">
+          mesh를 선택하면 Lx·Ly 직사각형 개구가 표시됩니다.
+        </div>
+      </div>
       <div class="ctl">
         <div class="lab"><span class="nm">덮는 비율 (유로 경로 기준)</span><span class="un" id="exCovLbl">100%</span></div>
         <input id="exCover" type="range" min="0" max="100" step="5" value="100" style="width:100%;accent-color:var(--accent)">
@@ -184,6 +306,30 @@
           <button data-v="middle">중간</button>
           <button data-v="outlet" class="on">출구쪽</button>
         </div></div>
+      <div style="margin-top:8px;padding:8px;border:1px solid #3d5a80;border-radius:8px;background:rgba(61,90,128,.10)">
+        <div style="font-size:11px;font-weight:700;margin-bottom:6px">표면 접촉각 — 서로 독립적으로 입력</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+          <label style="display:block;font-size:10px;color:var(--dim)">
+            전극 Ni foam θ<sub>e</sub>
+            <span style="display:flex;align-items:center;gap:4px;margin-top:3px">
+              <input id="exElecTheta" type="number" value="110" min="1" max="179" step="0.1"
+                style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
+              <span>°</span>
+            </span>
+          </label>
+          <label style="display:block;font-size:10px;color:var(--dim)">
+            PP mesh θ<sub>m</sub>
+            <span style="display:flex;align-items:center;gap:4px;margin-top:3px">
+              <input id="exMeshTheta" type="number" value="105.8" min="1" max="179" step="0.1"
+                style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
+              <span>°</span>
+            </span>
+          </label>
+        </div>
+        <div id="exAngleRead" class="note" style="margin:6px 0 0;border:none;padding:0"></div>
+      </div>
+      <div class="note" style="margin-top:5px">문헌 기본값: 미처리 bare Ni foam 110° · 미처리 PP mesh 105.8°.
+        두 값은 별도 입력이며, PP 각도가 전극보다 크지 않으면 접촉각만으로는 기포가 PP로 옮겨갈 구동력이 없습니다.</div>
       <div class="row"><button class="btn" id="exGo" style="border-color:var(--grn);color:var(--grn)">▶ 분극곡선 예측 계산</button></div>
       <div id="exWarn" class="note" style="display:none"></div>
     </div>
@@ -313,7 +459,7 @@
     </div>
 
     <div class="box"><h3>④ 유동 — 3-D Navier–Stokes</h3>
-      <div class="eq">∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u + <b>g(1 − ε)</b>
+      <div class="eq">∂u/∂t + (u·∇)u = −∇p/ρ + ν∇²u + <b>g·ε·(ρ<sub>l</sub>−ρ<sub>g</sub>)/ρ<sub>l</sub></b>
         − <b>K<sub>drag</sub>·ε·u</b> &nbsp;,&nbsp; ∇·u = 0</div>
       <div class="eq-n"><b>MAC 엇갈림 격자 + Chorin 투영</b>(반-Lagrangian 이류, red-black SOR).
         비엇갈림(collocated) 격자는 체커보드 모드가 남아서 MAC이 <b>필수</b>였습니다.<br>
@@ -334,16 +480,20 @@
         <span class="src">solvers/channel.py</span></div>
     </div>
 
-    <div class="box"><h3>⑥ PP mesh — 기하 → 기포 물리</h3>
-      <div class="eq">wick = (1 − φ)·min(1, L<sub>ref</sub>/L<sub>h</sub>)
-        &nbsp;·&nbsp; u<sub>boost</sub> = d<sub>ch</sub>/(d<sub>ch</sub> − t<sub>m</sub>)</div>
-      <div class="eq">θ<sub>factor</sub> = 1 − 0.6·wick &nbsp;·&nbsp;
-        retention = (1 − 0.5·wick)/√u<sub>boost</sub> &nbsp;·&nbsp;
-        θ<sub>add</sub> = 0.3·(1 − φ)·(t<sub>m</sub>/d<sub>ch</sub>)</div>
-      <div class="eq-n">세 메커니즘이 <b>경쟁</b>: ① 소수성 PP가 기포를 <b>빨아내고</b>(wick)
-        ② 두께가 유로를 좁혀 <b>유속을 올리고</b>(u_boost) ③ 대신 가닥이 촉매면을 <b>가립니다</b>(θ_add).<br>
-        <b style="color:var(--gold)">상수는 mesh 실측을 보기 전에 고정</b>했습니다 — 그래야 예측이
-        <b>블라인드</b>로 성립합니다. mesh 분극곡선 데이터는 모델에 <b>절대 안 들어갑니다</b>.
+    <div class="box"><h3>⑥ PP mesh — 기포 크기·접촉각·유로 폐색</h3>
+      <div class="eq">P<sub>contact,UB</sub> = 1 − φ·max(1−d<sub>b</sub>/L<sub>x</sub>,0)·max(1−d<sub>b</sub>/L<sub>y</sub>,0)</div>
+      <div class="eq">P<sub>wet</sub> = max[0, (cosθ<sub>e</sub>−cosθ<sub>m</sub>)/(1+cosθ<sub>e</sub>)]
+        &nbsp;·&nbsp; P<sub>transfer,UB</sub> = P<sub>contact,UB</sub>P<sub>wet</sub></div>
+      <div class="eq">χ = (1−φ)t<sub>m</sub>/d<sub>ch</sub> &nbsp;·&nbsp;
+        u<sub>boost</sub> = 1/(1−χ) &nbsp;·&nbsp; ΔP/ΔP₀ ≈ u<sub>boost</sub><sup>3</sup></div>
+      <div class="eq-n">d<sub>b</sub>는 전극 접촉각과 국소 벽면 유속으로 계산한 이탈기포 직경입니다.
+        <b>버블 중심은 직사각형 단위 셀 전체 어디서든 균일하게 생길 수 있으며, 구멍 중앙에 고정하지 않습니다.</b>
+        메시가 전극에 거의 붙어 있다는 상한 가정에서, 버블 전체가 L<sub>x</sub>×L<sub>y</sub> 개구 안에 들어가는 중심 영역만
+        비접촉으로 빼므로 그물코가 작고 가닥 면적이 많을수록 접촉확률은 증가하지만 2 mm 문턱은 없습니다. PP가 전극보다 더 소수성일 때만
+        Young 식 기반 전달 구동력이 생깁니다. χ는 메시 고체가 차지한 채널 체적비라 유속·압력강하 추정에만 씁니다.
+        촉매 차단 손실은 메시-전극 간격·압착·측면 액 접근 데이터가 없어 전압식에 임의로 넣지 않습니다.<br>
+        <b style="color:var(--gold)">L<sub>ref</sub>, 0.6, 0.5, 0.3 상수는 제거</b>했습니다. 접촉각 이력·거칠기·실제
+        woven mesh 압력손실은 아직 실측이 필요합니다.
         <span class="src">kernel/meshlayer.py</span></div>
     </div>
 
@@ -416,6 +566,73 @@
     </div>
   </div>
 
+  <div id="aiCtls" style="display:none">
+    <div class="box" style="border-color:rgba(107,79,216,.55)">
+      <h3>🤖 자연어 설계 연결</h3>
+      <div id="aiKeyStatus" class="aiStatus">API 키 상태 확인 중…</div>
+      <label class="aiField">AI 공급자
+        <select id="aiProvider" class="aiSelect">
+          <option value="openai">OpenAI</option>
+          <option value="google">Google Gemini</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="openrouter">OpenRouter · 무료/다중 모델</option>
+        </select>
+      </label>
+      <label class="aiField">모델
+        <select id="aiModel" class="aiSelect"></select>
+      </label>
+      <label class="aiField" id="aiCustomModelWrap" style="display:none">OpenRouter 모델 ID
+        <input id="aiCustomModel" class="aiInput" type="text" spellcheck="false"
+          placeholder="예: qwen/qwen3.5-flash-02-23">
+      </label>
+      <label class="aiField"><span id="aiKeyLabel">OpenAI API 키 · 이 서버 세션에만 보관</span>
+        <input id="aiKey" class="aiInput" type="password" autocomplete="new-password"
+          spellcheck="false" placeholder="sk-… (환경변수 OPENAI_API_KEY 권장)">
+      </label>
+      <div class="row">
+        <button class="btn" id="aiSaveKey" type="button">세션 키 등록</button>
+        <button class="btn" id="aiClearKey" type="button">세션 키 지우기</button>
+      </div>
+      <div class="note">키는 HTML·localStorage·파일·응답에 저장하지 않습니다. 로컬 브라우저에서만
+        AI 호출이 허용되며 서버를 끄면 세션 키가 사라집니다.</div>
+    </div>
+
+    <div class="box" style="border-color:rgba(31,111,235,.45)">
+      <h3>자연어로 유로·설정 수정</h3>
+      <textarea id="aiPrompt" class="aiPrompt" maxlength="5000"
+        placeholder="예: 하단 입구에서 상단 출구까지 연결되는 지그재그 유로를 만들고, 1 A/cm²에서 기포 홀드업을 줄일 후보 2개도 비교해줘. 모델/피팅값은 건드리지 마."></textarea>
+      <div class="row">
+        <button class="btn" id="aiPlan" type="button"
+          style="border-color:var(--vio);color:var(--vio)">계획 만들고 자동 시험</button>
+      </div>
+      <div id="aiWorkStatus" class="note">AI는 허용된 설정과 유로 마스크만 제안합니다. 임의 코드는 실행하지 않습니다.</div>
+    </div>
+
+    <div id="aiPreview" style="display:none">
+      <div class="box">
+        <h3>변경 미리보기</h3>
+        <div id="aiSummary" class="eq-n"></div>
+        <div id="aiChanges"></div>
+        <div id="aiFlow"></div>
+        <ul id="aiWarnings" class="aiWarnings"></ul>
+      </div>
+      <div class="box">
+        <h3>자동 시험 결과</h3>
+        <div id="aiEval"></div>
+        <div class="note">분극 비교는 1-D 축약 채널 모델입니다. 임의 유로 형상은 연결성과 3D 격자
+          빌드만 검사하며, 세부 형상별 성능은 직접 해석한 것으로 간주하지 않습니다.</div>
+      </div>
+      <div class="row">
+        <button class="btn" id="aiApply" type="button"
+          style="border-color:var(--grn);color:var(--grn)">검증된 변경 적용</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mobilePanelActions">
+    <button id="mobileCollapseAll" type="button">설정 모두 접기</button>
+    <button id="mobileExpandAll" type="button">설정 모두 펼치기</button>
+  </div>
   <div id="liveCtls"><!-- controls injected --></div>
 <div id="plateEd"></div>
 
@@ -427,6 +644,13 @@
     <label class="sliceChk"><input type="checkbox" data-layer="anode" checked> 양극(전극)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="membrane" checked> 막(membrane)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="walls" checked> 유로 벽(리브)</label>
+  </div>
+
+  <div style="font-size:11.5px;color:var(--dim);margin:7px 0 3px">시각 프리셋</div>
+  <div class="seg mini" id="visualSeg">
+    <button data-v="assembly">실물 전체</button>
+    <button data-v="internal" class="on">내부 보기</button>
+    <button data-v="analysis">분석 보기</button>
   </div>
 
   <div style="font-size:11.5px;color:var(--dim);margin:4px 0 3px">시점 (정면=직교, 판/막 반투명)</div>
@@ -447,9 +671,6 @@
     <button class="btn" id="bReset">↺ 리셋</button>
     <button class="btn" id="bCam">⌖ 시점</button>
   </div>
-  <div class="row" style="margin-top:6px">
-    <button class="btn" id="bTidy" title="분석 패널(단면·구간·전압·LSV·EIS)을 오른쪽에 깔끔히 재배치">🧹 패널 정렬</button>
-  </div>
   <div class="leg">
     <span><span class="dot" style="background:#2f9fd4"></span>H₂ (음극)</span>
     <span><span class="dot" style="background:#d98420"></span>O₂ (양극)</span>
@@ -460,11 +681,13 @@
   </div>
 </div>
 
+<div id="rightRail">
 <div id="hud">
   <div class="k">서버</div><div class="v small" id="hSrv"><span class="st bad"></span>연결 중…</div>
   <div class="k">작동점 V · j</div><div class="v small" id="hVJ">–</div>
   <div class="k">sim 시간</div><div class="v" id="hT">–</div>
   <div class="k">격자</div><div class="v small" id="hGrid">–</div>
+  <div class="k">모델 유효성</div><div class="v small" id="hValid">확인 중…</div>
   <div class="k">버블 수 (표시/실제)</div><div class="v" id="hN">–</div>
   <div class="k">이탈 반경 r_dep</div><div class="v small" id="hRdep">–</div>
   <div class="k">전류 불균일 (음/양극)</div><div class="v small" id="hSpread">–</div>
@@ -472,7 +695,7 @@
   <div class="k">fps</div><div class="v small" id="hFps">–</div>
 </div>
 
-<!-- ===== 개별 이동·크기조절 가능한 분석 패널들 (기본 배치는 tidyPanels()가 정렬) ===== -->
+<!-- ===== 오른쪽 고정 레일의 접이식 분석 패널 ===== -->
 <div id="pSlice" class="fpanel">
   <div class="fhead">✂ 단면 뷰 (2D)</div>
   <div class="seg mini" id="sliceMode" style="margin-bottom:5px">
@@ -511,6 +734,7 @@
   <canvas id="eis3" width="230" height="150" data-nodrag></canvas>
   <div class="sliceLbl" id="eis3Read">–</div>
 </div>
+</div>
 
 <div id="velLegend" style="display:none;position:fixed;bottom:12px;left:12px;background:var(--glass);
   border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:11px;color:var(--dim)">
@@ -518,6 +742,8 @@
   vertical-align:middle;border-radius:3px;margin:0 5px"></span> 0.25 m/s
 </div>
 
+<script src="/web3d/i18n_catalog.js"></script>
+<script src="/web3d/i18n.js"></script>
 <script src="/web3d/controls.js"></script>
 <script src="/web3d/plate_editor.js"></script>
 <script type="importmap">
@@ -531,6 +757,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { roundedBoxGeometry, disposeObjectGeometry } from '/web3d/visuals3d.js';
 
 "use strict";
 // ================= parameter model (mirror of the P1 designer defaults) ====
@@ -566,12 +793,296 @@ const ctls = buildControls(document.getElementById("liveCtls"), CTRL, P, send);
 const plateEd = mountPlateEditor(document.getElementById("plateEd"),
                                  { P, send, reg: ctls.reg });
 
+// ======================== natural-language AI designer ====================
+// The key is POSTed to the local Python process only. It is never stored in
+// localStorage, a saved experiment, or this page. Plans are data-only and pass
+// server validation again before they may reach /api3d/op.
+let aiLastPlan = null, aiLastEval = null, aiConfigured = false;
+const aiEl = id => document.getElementById(id);
+const aiT = text => window.SimI18n ? SimI18n.translate(text) : text;
+const aiEsc = value => String(value == null ? "" : value)
+  .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+const AI_PROVIDERS = {
+  openai:{
+    name:"OpenAI", env:"OPENAI_API_KEY", placeholder:"sk-…",
+    models:[
+      ["gpt-5.6-luna","gpt-5.6-luna · 빠름/저비용"],
+      ["gpt-5.6-terra","gpt-5.6-terra · 균형"],
+      ["gpt-5.6-sol","gpt-5.6-sol · 정밀"],
+    ],
+  },
+  google:{
+    name:"Google Gemini", env:"GEMINI_API_KEY", placeholder:"AIza…",
+    models:[
+      ["gemini-3.1-flash-lite","Gemini 3.1 Flash-Lite · 최저비용"],
+      ["gemini-3.5-flash","Gemini 3.5 Flash · 균형"],
+      ["gemini-3.1-pro-preview","Gemini 3.1 Pro Preview · 정밀"],
+    ],
+  },
+  anthropic:{
+    name:"Anthropic Claude", env:"ANTHROPIC_API_KEY", placeholder:"sk-ant-…",
+    models:[
+      ["claude-haiku-4-5","Claude Haiku 4.5 · 저비용"],
+      ["claude-sonnet-5","Claude Sonnet 5 · 균형"],
+      ["claude-opus-4-8","Claude Opus 4.8 · 정밀"],
+      ["claude-fable-5","Claude Fable 5 · 최고성능"],
+    ],
+  },
+  openrouter:{
+    name:"OpenRouter", env:"OPENROUTER_API_KEY", placeholder:"sk-or-v1-…",
+    models:[
+      ["openrouter/free","OpenRouter Free Router · 무료"],
+      ["google/gemini-3.1-flash-lite","Gemini 3.1 Flash-Lite"],
+      ["openai/gpt-5.4-nano","GPT-5.4 Nano"],
+      ["anthropic/claude-sonnet-5","Claude Sonnet 5"],
+      ["__custom__","직접 모델 ID 입력"],
+    ],
+  },
+};
+
+function aiProvider() { return aiEl("aiProvider").value; }
+function aiPopulateModels(preferred="") {
+  const provider = aiProvider(), select = aiEl("aiModel");
+  select.innerHTML = "";
+  for (const [value, label] of AI_PROVIDERS[provider].models) {
+    const option = document.createElement("option");
+    option.value = value; option.textContent = label; select.appendChild(option);
+  }
+  const known = [...select.options].some(option => option.value === preferred);
+  if (known) select.value = preferred;
+  else if (provider === "openrouter" && preferred) {
+    select.value = "__custom__"; aiEl("aiCustomModel").value = preferred;
+  }
+  aiEl("aiCustomModelWrap").style.display =
+    provider === "openrouter" && select.value === "__custom__" ? "" : "none";
+}
+function aiCurrentModel() {
+  if (aiProvider() === "openrouter" && aiEl("aiModel").value === "__custom__")
+    return aiEl("aiCustomModel").value.trim();
+  return aiEl("aiModel").value;
+}
+function aiSyncProviderUi() {
+  const info = AI_PROVIDERS[aiProvider()];
+  const english = window.SimI18n && SimI18n.getLanguage() === "en";
+  aiEl("aiKeyLabel").textContent = english
+    ? `${info.name} API key · kept for this server session only`
+    : `${info.name} API 키 · 이 서버 세션에만 보관`;
+  aiEl("aiKey").placeholder = english
+    ? `${info.placeholder} (environment variable ${info.env} recommended)`
+    : `${info.placeholder} (환경변수 ${info.env} 권장)`;
+}
+
+async function aiJson(url, body) {
+  const options = body === undefined ? {} : {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body),
+  };
+  const response = await fetch(url, options);
+  let data = {};
+  try { data = await response.json(); } catch (_) {}
+  if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+function aiWork(message, tone="") {
+  const el = aiEl("aiWorkStatus");
+  el.textContent = aiT(message);
+  el.style.color = tone === "bad" ? "var(--warn)" : tone === "ok" ? "var(--grn)" : "";
+}
+
+async function aiRefreshStatus() {
+  const el = aiEl("aiKeyStatus");
+  const provider = aiProvider(), info = AI_PROVIDERS[provider];
+  aiConfigured = false;
+  try {
+    const status = await aiJson(`/api3d/ai/status?provider=${encodeURIComponent(provider)}`);
+    aiConfigured = !!status.configured;
+    aiPopulateModels(status.model || "");
+    el.className = "aiStatus " + (status.configured ? "ok" : "bad");
+    const source = status.source === "environment"
+      ? (status.environment_name || "환경변수")
+      : status.source === "session" ? "서버 세션" : "없음";
+    el.textContent = status.configured
+      ? `${aiT("API 키 준비됨")} · ${info.name} · ${aiT(source)} · ${status.model}`
+      : `${info.name} · ${aiT("API 키가 없습니다. 환경변수 또는 세션 키를 등록하세요.")}`;
+  } catch (error) {
+    aiConfigured = false;
+    el.className = "aiStatus bad";
+    el.textContent = error.message;
+  }
+}
+
+aiEl("aiSaveKey").onclick = async () => {
+  const key = aiEl("aiKey").value.trim();
+  if (!key) { aiWork("등록할 API 키를 입력하세요.", "bad"); return; }
+  const model = aiCurrentModel();
+  if (!model) { aiWork("사용할 모델 ID를 입력하세요.", "bad"); return; }
+  try {
+    await aiJson("/api3d/ai/key", { key, provider:aiProvider(), model });
+    aiEl("aiKey").value = "";
+    aiWork("세션 키를 등록했습니다. 서버를 끄면 사라집니다.", "ok");
+    await aiRefreshStatus();
+  } catch (error) { aiWork(error.message, "bad"); }
+};
+aiEl("aiClearKey").onclick = async () => {
+  try {
+    const model = aiCurrentModel() || AI_PROVIDERS[aiProvider()].models[0][0];
+    await aiJson("/api3d/ai/key", { clear:true, provider:aiProvider(), model });
+    aiEl("aiKey").value = "";
+    aiWork("세션 키를 지웠습니다.", "ok");
+    await aiRefreshStatus();
+  } catch (error) { aiWork(error.message, "bad"); }
+};
+
+function aiRenderPlan(plan) {
+  aiEl("aiPreview").style.display = "";
+  aiEl("aiSummary").textContent = plan.summary || aiT("요약 없음");
+  const changes = aiEl("aiChanges");
+  changes.innerHTML = "";
+  for (const item of plan.changes || []) {
+    const div = document.createElement("div"); div.className = "aiChange";
+    const model = item.classification === "model_or_fitted";
+    div.innerHTML =
+      `<div class="aiChangeTop"><span class="aiKey">${aiEsc(item.key)}</span>` +
+      `<span><b>${aiEsc(item.value)}</b> ` +
+      `<span class="aiBadge ${model ? "model" : ""}">${aiEsc(aiT(model ? "모델/피팅값" : "운전/형상값"))}</span></span></div>` +
+      `<div class="aiReason">${aiEsc(item.reason || "")}</div>`;
+    changes.appendChild(div);
+  }
+  if (!(plan.changes || []).length) {
+    changes.innerHTML = `<div class="empty">${aiEsc(aiT("스칼라 설정 변경 없음"))}</div>`;
+  }
+
+  const flowHost = aiEl("aiFlow"), flow = plan.flow || {};
+  flowHost.innerHTML = "";
+  if (flow.action === "custom") {
+    const title = document.createElement("div"); title.className = "aiChange";
+    title.innerHTML =
+      `<div class="aiChangeTop"><span class="aiKey">${aiEsc(aiT("임의 유로"))}</span>` +
+      `<span class="aiBadge">${flow.ny}×${flow.nz} · ${aiEsc(flow.in_face)}→${aiEsc(flow.out_face)}</span></div>` +
+      `<div class="aiReason">${aiEsc(flow.reason || "")}</div>`;
+    const pre = document.createElement("pre"); pre.className = "aiFlowGrid";
+    // rows[0] is the physical bottom/inlet; reverse only for screen display.
+    pre.textContent = (flow.rows || []).slice().reverse().join("\n");
+    title.appendChild(pre); flowHost.appendChild(title);
+  } else if (flow.action === "template") {
+    flowHost.innerHTML =
+      `<div class="aiChange"><div class="aiChangeTop"><span class="aiKey">${aiEsc(aiT("유로 템플릿"))}</span>` +
+      `<b>${aiEsc(flow.template)} · ${aiEsc(flow.in_face)}→${aiEsc(flow.out_face)}</b></div>` +
+      `<div class="aiReason">${aiEsc(flow.reason || "")}</div></div>`;
+  } else {
+    flowHost.innerHTML = `<div class="empty">${aiEsc(aiT("현재 유로 유지"))}</div>`;
+  }
+
+  const warnings = aiEl("aiWarnings"); warnings.innerHTML = "";
+  for (const warning of plan.warnings || []) {
+    const li = document.createElement("li"); li.textContent = warning; warnings.appendChild(li);
+  }
+  aiEl("aiApply").disabled = !Object.keys(plan.apply || {}).length;
+}
+
+const aiPoint = point => {
+  if (!point || !point.reachable) return aiT("도달 불가");
+  return `${Number(point.V).toFixed(3)} V · ε ${Number(point.eps_out).toFixed(3)}`;
+};
+function aiRenderEvaluation(result) {
+  aiLastEval = result;
+  const host = aiEl("aiEval"); host.innerHTML = "";
+  for (let index = 0; index < (result.candidates || []).length; index++) {
+    const candidate = result.candidates[index], metrics = candidate.metrics || {};
+    const box = document.createElement("div");
+    box.className = "aiCandidate " + (index === 1 ? "primary" : "");
+    const geometry = candidate.geometry;
+    box.innerHTML =
+      `<div class="aiChangeTop"><b>${aiEsc(candidate.name)}</b>` +
+      (geometry ? `<span class="aiBadge ${geometry.ok ? "" : "model"}">${aiEsc(aiT(geometry.ok ? "3D 빌드 통과" : "3D 빌드 실패"))}</span>` : "") +
+      `</div><div class="aiReason">${aiEsc(candidate.objective || "")}</div>` +
+      `<div class="aiMetricGrid">` +
+      `<div class="aiMetric"><div class="k">${aiEsc(aiT("1 A/cm²"))}</div><div class="v">${aiEsc(aiPoint(metrics.at_1Acm2))}</div></div>` +
+      `<div class="aiMetric"><div class="k">${aiEsc(aiT("2 A/cm²"))}</div><div class="v">${aiEsc(aiPoint(metrics.at_2Acm2))}</div></div>` +
+      `<div class="aiMetric"><div class="k">${aiEsc(aiT("최대 도달 전류"))}</div><div class="v">${aiEsc(metrics.max_reachable_mAcm2 || 0)} mA/cm²</div></div>` +
+      `<div class="aiMetric"><div class="k">${aiEsc(aiT("물 공급 한계"))}</div><div class="v">${aiEsc(metrics.water_limit_mAcm2 || 0)} mA/cm²</div></div>` +
+      `</div>`;
+    if (geometry && !geometry.ok) {
+      const error = document.createElement("div"); error.className = "aiReason";
+      error.style.color = "var(--warn)"; error.textContent = geometry.error || aiT("3D 빌드 실패");
+      box.appendChild(error);
+      aiEl("aiApply").disabled = true;
+    }
+    host.appendChild(box);
+  }
+  if (result.delta_V_at_1Acm2 != null) {
+    const delta = document.createElement("div"); delta.className = "note";
+    delta.textContent = `${aiT("현재 대비 AI 계획의 1 A/cm² 전압 차이")}: ` +
+      `${result.delta_V_at_1Acm2 > 0 ? "+" : ""}${result.delta_V_at_1Acm2.toFixed(4)} V`;
+    host.appendChild(delta);
+  }
+  const warnings = aiEl("aiWarnings");
+  for (const warning of result.warnings || []) {
+    const li = document.createElement("li"); li.textContent = warning; warnings.appendChild(li);
+  }
+}
+
+aiEl("aiPlan").onclick = async () => {
+  const prompt = aiEl("aiPrompt").value.trim();
+  if (!prompt) { aiWork("자연어 요청을 입력하세요.", "bad"); return; }
+  if (!aiConfigured) {
+    aiWork("먼저 환경변수 또는 세션 API 키를 등록하세요.", "bad");
+    return;
+  }
+  const model = aiCurrentModel();
+  if (!model) { aiWork("사용할 모델 ID를 입력하세요.", "bad"); return; }
+  const button = aiEl("aiPlan"); button.disabled = true;
+  aiEl("aiApply").disabled = true; aiLastPlan = null; aiLastEval = null;
+  aiWork("AI 계획을 만들고 있습니다…");
+  try {
+    const response = await aiJson("/api3d/ai/plan", {
+      prompt, provider:aiProvider(), model,
+      language:window.SimI18n ? SimI18n.getLanguage() : "ko",
+    });
+    aiLastPlan = response.plan; aiRenderPlan(aiLastPlan);
+    aiWork("계획 생성 완료 · 로컬 모델 시험 중…");
+    const evaluation = await aiJson("/api3d/ai/evaluate", { plan:aiLastPlan });
+    aiRenderEvaluation(evaluation);
+    aiWork(`계획과 시험이 완료됐습니다. (${response.elapsed_s}s)`, "ok");
+  } catch (error) {
+    aiWork(error.message, "bad");
+  } finally { button.disabled = false; }
+};
+
+aiEl("aiApply").onclick = async () => {
+  if (!aiLastPlan) return;
+  const button = aiEl("aiApply"); button.disabled = true;
+  aiWork("검증된 변경을 적용하고 있습니다…");
+  try {
+    await aiJson("/api3d/ai/apply", { apply:aiLastPlan.apply });
+    aiWork("변경을 적용했습니다. 3D와 설정 패널이 새 상태로 동기화됩니다.", "ok");
+  } catch (error) {
+    aiWork(error.message, "bad"); button.disabled = false;
+  }
+};
+document.addEventListener("sim-language-change", () => {
+  aiSyncProviderUi();
+  if (aiLastPlan) aiRenderPlan(aiLastPlan);
+  if (aiLastEval) aiRenderEvaluation(aiLastEval);
+});
+aiEl("aiProvider").addEventListener("change", () => {
+  aiConfigured = false; aiPopulateModels(); aiSyncProviderUi(); aiRefreshStatus();
+});
+aiEl("aiModel").addEventListener("change", () => {
+  aiEl("aiCustomModelWrap").style.display =
+    aiProvider() === "openrouter" && aiEl("aiModel").value === "__custom__" ? "" : "none";
+});
+aiPopulateModels("gpt-5.6-terra");
+aiSyncProviderUi();
+
 // ============================ renderer =====================================
 const canvas = document.getElementById("stage");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.98;
+renderer.toneMappingExposure = 1.03;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0x000000, 0);
 
@@ -584,28 +1095,26 @@ const orthoCam = new THREE.OrthographicCamera(-50, 50, 50, -50, -1000, 1000);
 let activeCam = camera;                    // swapped by the view presets
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
-// Zoom limits + clip planes are SET FROM THE CELL SIZE in rebuildCell (see
-// fitCameraRange). They used to be fixed constants — minDistance 0.05 and
-// maxDistance 1500 against a camera.far of 500 — on a cell only ~48 mm across.
-// Zooming out therefore pushed the whole cell PAST the far plane (screen goes
-// blank) and zooming in buried the camera ~1000x too close (crawling back out
-// took ~100 wheel ticks). Both read as "휠 줌이 고장났다", and it changed with
-// the grid, which is why it only showed up "가끔 수정하다".
+// Wheel/pinch zoom is intentionally disabled.  OrbitControls' wheel state was
+// fragile when switching between perspective, orthographic and local µm views.
+// Explicit +/- buttons below use the same cell-aware limits in every view.
+controls.enableZoom = false;
+renderer.domElement.addEventListener("wheel", e => e.preventDefault(), { passive:false });
 let camBase = { near: 0.01, far: 500, minD: 1, maxD: 300 };
 let orthoHalf = 50;                        // half-extent the ortho frustum frames
 // declared HERE (not next to the 국소 확대 button) because fitCameraRange reads
 // `zoomed`, and rebuildCell() -> fitCameraRange() runs at module load — a later
 // `let` would sit in the temporal dead zone and throw.
 let zoomed = false, zoomPrev = null;
+let zoomFocus = null;
 
 function fitCameraRange(cellR) {
   const R = Math.max(1, cellR);            // cell bounding size [mm]
   // R is the cell's LARGEST dimension (full extent, ~50 mm default), so its
   // half-extent — centre to a face — is ~0.5R. minD 0.6R keeps the closest
-  // orbit just OUTSIDE that face: the cell fills the frame but the camera never
-  // tunnels inside the ribs. The old 0.22R (11 mm on a 50 mm cell) let the wheel
-  // dive well inside the half-extent -> the "너무 크게 확대" runaway. Getting
-  // truly close to one bubble is the 국소 확대 button's job (it unlocks 0.02R).
+  // button zoom just OUTSIDE that face: the cell fills the frame but the camera
+  // never tunnels inside the ribs. Getting truly close to one bubble is the
+  // 국소 확대 button's job (it unlocks 0.02R).
   camBase = { near: Math.max(0.01, 0.01 * R), far: 20 * R,
               minD: 0.6 * R, maxD: 6 * R };
   if (!zoomed) {                           // 국소 확대 owns the range while active
@@ -614,15 +1123,18 @@ function fitCameraRange(cellR) {
     camera.near = camBase.near; camera.far = camBase.far;
     camera.updateProjectionMatrix();
   }
-  controls.zoomSpeed = 0.6;                             // gentler wheel steps
-  controls.minZoom = 0.35; controls.maxZoom = 8;        // ortho (flat views)
+  controls.minZoom = 0.35; controls.maxZoom = 8;        // +/- buttons in flat views
   orthoCam.near = -20 * R; orthoCam.far = 20 * R;
   orthoCam.updateProjectionMatrix();
 }
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0xc3cede, 0.85));   // sky/ground for a light stage
-const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(1.2, 2.2, 1.6); scene.add(key);
-const rim = new THREE.DirectionalLight(0x9fc4ff, 0.45); rim.position.set(-1.5, 0.4, -1.2); scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xaebdca, 0.98));   // soft laboratory sky/bench fill
+const key = new THREE.DirectionalLight(0xfffbf4, 1.28);
+key.position.set(1.35, 2.35, 1.75); scene.add(key);
+const rim = new THREE.DirectionalLight(0xabcaff, 0.66);
+rim.position.set(-1.7, 0.55, -1.35); scene.add(rim);
+const fill = new THREE.DirectionalLight(0xffdfc7, 0.24);
+fill.position.set(-0.85, 1.05, 1.55); scene.add(fill);
 
 function resize() {
   const w = canvas.clientWidth || innerWidth || 1280;
@@ -634,6 +1146,11 @@ function resize() {
   orthoCam.left = -orthoHalf * asp; orthoCam.right = orthoHalf * asp;
   orthoCam.top = orthoHalf; orthoCam.bottom = -orthoHalf;
   orthoCam.updateProjectionMatrix();
+  // Decoration visibility depends on the responsive breakpoint. A desktop ->
+  // mobile resize used to keep the already-created bolts/gaskets alive until a
+  // later preset change. __ready avoids touching layer variables during the
+  // module's initial resize before the cell has been built.
+  if (window.__ready) applyLayers();
 }
 addEventListener("resize", resize); resize();
 
@@ -644,6 +1161,36 @@ addEventListener("resize", resize); resize();
 // designer's cross-section ("두께는 가독 위해 과장").
 const cellGroup = new THREE.Group();
 scene.add(cellGroup);
+let visualPreset = "internal";          // default: readable cutaway, not a black front plate
+
+function makePorousTexture() {
+  // Deterministic, light-weight micro-roughness. It is a render texture only:
+  // PTL porosity, permeability and all calculation voxels remain untouched.
+  const size = 64;
+  const data = new Uint8Array(size * size * 4);
+  let seed = 0x73a91f2d;
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4;
+      const grain = 142 + Math.round(92 * rand());
+      const fibre = ((x * 7 + y * 3) % 19 < 3) ? 24 : 0;
+      const v = Math.max(96, Math.min(255, grain + fibre));
+      data[i] = data[i + 1] = data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(6, 6);
+  texture.colorSpace = THREE.NoColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+const PTL_POROUS_TEXTURE = makePorousTexture();
 
 const MAT = {
   // OPAQUE by default. Materials that were permanently `transparent:true` (even
@@ -652,29 +1199,37 @@ const MAT = {
   // walls" read. `transparent` is now toggled dynamically by
   // setSolidsTransparency, so in 3-D orbit the walls are true depth-tested
   // solids and occlusion is exact.
-  plate: new THREE.MeshStandardMaterial({ color:0x60707f, metalness:0.75, roughness:0.45 }),
+  plate: new THREE.MeshStandardMaterial({ color:0x536b80, metalness:0.46, roughness:0.52,
+                                          envMapIntensity:0.92 }),
   // ribs: TWO-TONE box faces (bright crest facing the membrane/camera, dark
   // flanks) + edge outlines, added in buildMaskRibs — a flat single material at
   // metalness 0.8 shaded every face the same and the walls read as painted
   // stripes, not 3-D structure.
-  ribC:  new THREE.MeshStandardMaterial({ color:0x7d9cbe, metalness:0.25, roughness:0.5 }),
-  ribCside: new THREE.MeshStandardMaterial({ color:0x33475e, metalness:0.3, roughness:0.62 }),
-  ribA:  new THREE.MeshStandardMaterial({ color:0xc39a7e, metalness:0.25, roughness:0.5 }),
-  ribAside: new THREE.MeshStandardMaterial({ color:0x64483a, metalness:0.3, roughness:0.62 }),
-  ptl:   new THREE.MeshPhysicalMaterial({ color:0x38678a, transparent:true, opacity:0.42,
-                                          roughness:0.7, metalness:0.1 }),
-  mem:   new THREE.MeshPhysicalMaterial({ color:0x9fb6d8, transparent:true, opacity:0.45,
-                                          roughness:0.4, side:THREE.DoubleSide }),
+  ribC:  new THREE.MeshStandardMaterial({ color:0x7894ad, metalness:0.22, roughness:0.56 }),
+  ribCside: new THREE.MeshStandardMaterial({ color:0x3d5064, metalness:0.24, roughness:0.68 }),
+  ribA:  new THREE.MeshStandardMaterial({ color:0xb28d75, metalness:0.22, roughness:0.56 }),
+  ribAside: new THREE.MeshStandardMaterial({ color:0x604a3f, metalness:0.24, roughness:0.68 }),
+  ptl:   new THREE.MeshPhysicalMaterial({ color:0x557d98, transparent:true, opacity:0.48,
+                                          roughness:0.92, roughnessMap:PTL_POROUS_TEXTURE,
+                                          bumpMap:PTL_POROUS_TEXTURE, bumpScale:0.07,
+                                          metalness:0.04 }),
+  mem:   new THREE.MeshPhysicalMaterial({ color:0xc4d7ee, transparent:true, opacity:0.38,
+                                          roughness:0.3, side:THREE.DoubleSide }),
   // inlet / outlet: the actual boundary cells of the projection, so the ports
   // are unmistakable (and move when the user moves them)
-  inlet: new THREE.MeshStandardMaterial({ color:0x0f8a63, emissive:0x0a4a36,
-                                          emissiveIntensity:0.6, roughness:0.5 }),
-  outlet:new THREE.MeshStandardMaterial({ color:0xc9333f, emissive:0x6d1a21,
-                                          emissiveIntensity:0.6, roughness:0.5 }),
+  inlet: new THREE.MeshStandardMaterial({ color:0x2c8b70, emissive:0x123c31,
+                                          emissiveIntensity:0.12, roughness:0.42 }),
+  outlet:new THREE.MeshStandardMaterial({ color:0xb94c55, emissive:0x4d2025,
+                                          emissiveIntensity:0.12, roughness:0.42 }),
+  portBody: new THREE.MeshStandardMaterial({ color:0x5d6975, metalness:0.72, roughness:0.34 }),
+  gasket: new THREE.MeshStandardMaterial({ color:0x29333c, metalness:0.05, roughness:0.88 }),
+  bolt: new THREE.MeshStandardMaterial({ color:0x8c98a3, metalness:0.9, roughness:0.26 }),
+  memEdge: new THREE.MeshStandardMaterial({ color:0xd5e7ff, metalness:0.0, roughness:0.32 }),
 };
-const RIB_EDGE = new THREE.LineBasicMaterial({ color:0x101820, transparent:true, opacity:0.85 });
+const RIB_EDGE = new THREE.LineBasicMaterial({ color:0x17222d, transparent:true, opacity:0.42 });
+const SHARED_RENDER_MATERIALS = new Set([...Object.values(MAT), RIB_EDGE]);
 // base opacities to restore when leaving a flat view
-MAT.plate._op = 1; MAT.ribC._op = 1; MAT.ribA._op = 1; MAT.ptl._op = 0.42; MAT.mem._op = 0.35;
+MAT.plate._op = 1; MAT.ribC._op = 1; MAT.ribA._op = 1; MAT.ptl._op = 0.48; MAT.mem._op = 0.38;
 MAT.ribCside._op = 1; MAT.ribAside._op = 1;
 
 function setSolidsTransparency(flat) {
@@ -690,11 +1245,15 @@ function setSolidsTransparency(flat) {
     m.transparent = op < 1;
     m.needsUpdate = true;
   }
-  RIB_EDGE.opacity = flat ? 0.35 : 0.85;
+  // Exact voxel outlines belong to analysis mode; realistic modes use bevel,
+  // light and roughness instead of black wireframe.
+  RIB_EDGE.opacity = flat ? 0.42 : 0.12;
 }
 
 let gravArrow = null, camHome = new THREE.Vector3();
 let cathodeGeom = null, anodeGeom = null, membraneMesh = null, wallsGroup = null;
+let plateMeshC = null, plateMeshA = null, cellEdge = null;
+let decorC = null, decorA = null, decorCore = null;
 // component layers (on/off): electrode geometry + membrane + per-side bubbles
 // + the channel WALLS as their own layer — they used to live inside the
 // electrode groups, so hiding an electrode silently deleted the 3-D walls and
@@ -706,6 +1265,17 @@ function applyLayers() {
   if (anodeGeom) anodeGeom.visible = layers.anode;
   if (membraneMesh) membraneMesh.visible = layers.membrane;
   if (wallsGroup) wallsGroup.visible = layers.walls;
+  if (plateMeshC) plateMeshC.visible = true;
+  if (plateMeshA) plateMeshA.visible = visualPreset !== "internal";
+  const showMap = (P.jmap ?? "on") === "on";
+  if (facePlaneC) facePlaneC.visible = showMap && layers.cathode;
+  if (facePlaneA) facePlaneA.visible = showMap && layers.anode;
+  if (cellEdge) cellEdge.visible = visualPreset === "analysis";
+  syncRibRenderStyle();
+  const showDecor = visualPreset !== "analysis" && !matchMedia("(max-width:900px)").matches;
+  if (decorC) decorC.visible = showDecor && layers.cathode;
+  if (decorA) decorA.visible = showDecor && layers.anode && visualPreset !== "internal";
+  if (decorCore) decorCore.visible = showDecor && layers.membrane;
   // bubble layers (her/oer) are applied in updateBubbles via the side filter
 }
 
@@ -770,6 +1340,48 @@ function box(w, h, d, mat, x, y, z, group) {
   return m;
 }
 
+function roundedBox(w, h, d, mat, x, y, z, group, radius, bevel) {
+  const mesh = new THREE.Mesh(
+    roundedBoxGeometry(THREE, w, h, d, radius, bevel), mat);
+  mesh.position.set(x, y, z); group.add(mesh);
+  return mesh;
+}
+
+function addAssemblyFrame(group, x, H, W, thickness, depth, material) {
+  const r = Math.min(thickness * 0.45, 0.35);
+  roundedBox(depth, thickness, W, material, x, thickness / 2, 0, group, r, r * 0.25);
+  roundedBox(depth, thickness, W, material, x, H - thickness / 2, 0, group, r, r * 0.25);
+  roundedBox(depth, Math.max(thickness, H - 2 * thickness), thickness,
+    material, x, H / 2, -W / 2 + thickness / 2, group, r, r * 0.25);
+  roundedBox(depth, Math.max(thickness, H - 2 * thickness), thickness,
+    material, x, H / 2, W / 2 - thickness / 2, group, r, r * 0.25);
+}
+
+function buildAssemblyDetails(W, H, chT, coreT, baseT, tMemV) {
+  const frameT = Math.max(0.18, Math.min(gridInfo.h * 0.22, Math.min(W, H) * 0.025));
+  const frameD = Math.max(0.10, Math.min(0.28, baseT * 0.22));
+  const plateInner = coreT / 2 + chT + 0.04;
+  addAssemblyFrame(decorC, -plateInner, H, W, frameT, frameD, MAT.gasket);
+  addAssemblyFrame(decorA, plateInner, H, W, frameT, frameD, MAT.gasket);
+  addAssemblyFrame(decorCore, 0, H, W, Math.max(0.10, frameT * 0.52),
+                   Math.max(0.08, tMemV + 0.04), MAT.memEdge);
+
+  const boltR = Math.max(0.22, Math.min(gridInfo.h * 0.18, Math.min(W, H) * 0.018));
+  const boltD = Math.max(0.35, baseT * 0.32);
+  const xOuter = coreT / 2 + chT + baseT;
+  for (const [group, side] of [[decorC, -1], [decorA, +1]]) {
+    for (const y of [H * 0.075, H * 0.925]) {
+      for (const z of [-W * 0.425, W * 0.425]) {
+        const bolt = new THREE.Mesh(
+          new THREE.CylinderGeometry(boltR, boltR, boltD, 16), MAT.bolt);
+        bolt.rotation.z = Math.PI / 2;
+        bolt.position.set(side * (xOuter + boltD / 2), y, z);
+        group.add(bolt);
+      }
+    }
+  }
+}
+
 // ---- the drawn cell IS the computed domain -------------------------------
 // The live view is laid out from the PHYSICS GRID (nx, h, n_lay from the
 // server), not from visually exaggerated real dimensions: bubbles, ribs, the
@@ -803,6 +1415,7 @@ function buildMaskRibs(land) {
     rowRuns.push(JSON.stringify(runs));
   }
   for (const [sub, side] of [[ribSubC, -1], [ribSubA, +1]]) {
+    disposeObjectGeometry(sub, SHARED_RENDER_MATERIALS);
     sub.clear();
     // two-tone: bright crest on the +-x faces (the wall top the bubbles slide
     // along), dark flanks on y/z — BoxGeometry material order [+x,-x,+y,-y,+z,-z]
@@ -818,16 +1431,45 @@ function buildMaskRibs(land) {
       const y0 = (j / ny) * H, y1 = ((j2 + 1) / ny) * H;
       for (const [k0, k1] of runs) {
         const z0 = (k0 / nz) * W - W / 2, z1 = ((k1 + 1) / nz) * W - W / 2;
-        const geo = new THREE.BoxGeometry(chT, y1 - y0, z1 - z0);
-        const m = new THREE.Mesh(geo, mats);
-        m.position.set(xRib, (y0 + y1) / 2, (z0 + z1) / 2);
-        sub.add(m);
-        // crisp dark outline so each wall reads as a 3-D block, not a stripe
-        const eg = new THREE.LineSegments(new THREE.EdgesGeometry(geo), RIB_EDGE);
-        eg.position.copy(m.position);
-        sub.add(eg);
+        const yLen = y1 - y0, zLen = z1 - z0;
+        const exactGeo = new THREE.BoxGeometry(chT, yLen, zLen);
+        const exact = new THREE.Mesh(exactGeo, mats);
+        exact.position.set(xRib, (y0 + y1) / 2, (z0 + z1) / 2);
+        exact.userData.renderStyle = "analysis";
+        exact.visible = visualPreset === "analysis";
+        sub.add(exact);
+        // Exact voxel outline stays available in analysis mode.
+        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(exactGeo), RIB_EDGE);
+        edge.position.copy(exact.position);
+        edge.userData.renderStyle = "analysis";
+        edge.visible = visualPreset === "analysis";
+        sub.add(edge);
+
+        // Rendering-only machined version. Its bounding box is identical to
+        // the voxel run; bevel removes material at corners and never intrudes
+        // into an open channel.
+        const radius = Math.max(0.06, Math.min(gridInfo.h * 0.20, yLen * 0.24, zLen * 0.24));
+        const bevel = Math.max(0.02, Math.min(chT * 0.08, radius * 0.35));
+        const smoothGeo = roundedBoxGeometry(THREE, chT, yLen, zLen, radius, bevel);
+        const smooth = new THREE.Mesh(smoothGeo, [face, flank]);
+        smooth.position.copy(exact.position);
+        smooth.userData.renderStyle = "realistic";
+        smooth.visible = visualPreset !== "analysis";
+        sub.add(smooth);
       }
       j = j2 + 1;
+    }
+  }
+}
+
+function syncRibRenderStyle() {
+  for (const sub of [ribSubC, ribSubA]) {
+    if (!sub) continue;
+    for (const object of sub.children) {
+      if (object.userData.renderStyle === "analysis")
+        object.visible = visualPreset === "analysis";
+      else if (object.userData.renderStyle === "realistic")
+        object.visible = visualPreset !== "analysis";
     }
   }
 }
@@ -835,11 +1477,9 @@ function buildMaskRibs(land) {
 function buildPorts(ports) {
   if (!plateCtx || !portGroup) return;
   const { W, H, chT, coreT } = plateCtx;
-  const L = Math.max(3.0, 1.6 * chT);          // tube length OUTSIDE the plate
-  const depth = coreT + 2 * chT;               // spans both channel layers + core
-  // one channel-width TUBE per contiguous run of open boundary cells, protruding
-  // out of the plate at exactly the projection's port cells (serpentine: a
-  // single bottom-right inlet and top-right outlet, not a full-edge manifold)
+  const L = Math.max(3.2, 1.8 * chT);          // tube length OUTSIDE the plate
+  // One fitting per contiguous boundary run AND per electrode channel layer.
+  // The y/z centre and diameter come straight from the physics port mask.
   const runs = (arr, n) => {
     const out = []; let k0 = -1;
     for (let k = 0; k <= n; k++) {
@@ -849,28 +1489,69 @@ function buildPorts(ports) {
     }
     return out;
   };
+  disposeObjectGeometry(portGroup, SHARED_RENDER_MATERIALS);
   portGroup.clear();
-  const place = (arr, face, mat) => {
+  const orientAxis = (mesh, face) => {
+    if (face === "left" || face === "right") mesh.rotation.x = Math.PI / 2;
+  };
+  const place = (arr, face, ringMaterial, role) => {
     const along = (face === "bottom" || face === "top") ? ports.nz : ports.ny;
     const cw = (face === "bottom" || face === "top") ? W / ports.nz : H / ports.ny;
     for (const [k0, k1] of runs(arr, along)) {
       const a0 = k0 * cw, a1 = (k1 + 1) * cw;
-      if (face === "bottom" || face === "top") {
-        const z = (a0 + a1) / 2 - W / 2;
-        const y = face === "bottom" ? -L / 2 : H + L / 2;
-        box(depth, L, a1 - a0, mat, 0, y, z, portGroup);
-      } else {
-        const y = (a0 + a1) / 2;               // along the electrode height
-        const z = face === "left" ? -W / 2 - L / 2 : W / 2 + L / 2;
-        box(depth, a1 - a0, L, mat, 0, y, z, portGroup);
+      const span = a1 - a0;
+      const radius = Math.max(0.24, Math.min(span * 0.44, chT * 0.44));
+      const flangeR = radius * 1.42;
+      const flangeL = Math.max(0.18, radius * 0.38);
+      for (const side of [-1, +1]) {
+        const assembly = new THREE.Group();
+        const x = side * (coreT / 2 + chT / 2);
+        let y, z, flangeY, flangeZ, outerY, outerZ;
+        if (face === "bottom" || face === "top") {
+          z = (a0 + a1) / 2 - W / 2;
+          y = face === "bottom" ? -L / 2 : H + L / 2;
+          flangeY = face === "bottom" ? -flangeL / 2 : H + flangeL / 2;
+          outerY = face === "bottom" ? -L : H + L;
+          flangeZ = outerZ = z;
+        } else {
+          y = (a0 + a1) / 2;
+          z = face === "left" ? -W / 2 - L / 2 : W / 2 + L / 2;
+          flangeZ = face === "left" ? -W / 2 - flangeL / 2 : W / 2 + flangeL / 2;
+          outerZ = face === "left" ? -W / 2 - L : W / 2 + L;
+          flangeY = outerY = y;
+        }
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius, radius, L, 24, 1, false), MAT.portBody);
+        orientAxis(body, face); body.position.set(x, y, z); assembly.add(body);
+
+        const flange = new THREE.Mesh(
+          new THREE.CylinderGeometry(flangeR, flangeR, flangeL, 24, 1, false), MAT.portBody);
+        orientAxis(flange, face);
+        flange.position.set(x, flangeY, flangeZ); assembly.add(flange);
+
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(radius * 1.03, Math.max(0.07, radius * 0.16), 8, 28),
+          ringMaterial);
+        if (face === "bottom" || face === "top") ring.rotation.x = Math.PI / 2;
+        ring.position.set(x, outerY, outerZ); assembly.add(ring);
+
+        assembly.userData.port = {
+          role, face, side, span,
+          center: [x, y, z],
+          outer: [x, outerY, outerZ],
+        };
+        portGroup.add(assembly);
       }
     }
   };
-  place(ports.in, ports.in_face || "bottom", MAT.inlet);
-  place(ports.out, ports.out_face || "top", MAT.outlet);
+  place(ports.in, ports.in_face || "bottom", MAT.inlet, "inlet");
+  place(ports.out, ports.out_face || "top", MAT.outlet, "outlet");
 }
 
 function rebuildCell() {
+  if (faceTexC) faceTexC.dispose();
+  if (faceTexA) faceTexA.dispose();
+  disposeObjectGeometry(cellGroup, SHARED_RENDER_MATERIALS);
   cellGroup.clear();
   landSig = ""; portSig = "";      // force mask-rib / port rebuild on the next poll
   // The drawn cell IS the computed domain. Using the designer's W_cm/H_cm here
@@ -890,7 +1571,9 @@ function rebuildCell() {
   membraneMesh = new THREE.Group();
   portGroup = new THREE.Group();
   wallsGroup = new THREE.Group();      // channel walls: independent of the electrodes
-  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, portGroup, wallsGroup);
+  decorC = new THREE.Group(); decorA = new THREE.Group(); decorCore = new THREE.Group();
+  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, portGroup, wallsGroup,
+                decorC, decorA, decorCore);
 
   // core: thin bright membrane plane at the centre + PTL halves to the edges
   const tMemV = Math.min(0.5, coreT * 0.18);
@@ -903,18 +1586,24 @@ function rebuildCell() {
   // from the land mask). The ribs go into wallsGroup — NOT the electrode
   // group — so hiding an electrode to see the bubbles keeps the 3-D walls up.
   for (const [geom, side] of [[cathodeGeom, -1], [anodeGeom, +1]]) {
-    box(baseT, H, W, MAT.plate, side * (coreT / 2 + chT + baseT / 2), H / 2, 0, geom);
+    const plateRadius = Math.max(0.25, Math.min(gridInfo.h * 0.45, Math.min(H, W) * 0.045));
+    const plateBevel = Math.max(0.04, Math.min(baseT * 0.14, plateRadius * 0.24));
+    const plate = roundedBox(baseT, H, W, MAT.plate,
+      side * (coreT / 2 + chT + baseT / 2), H / 2, 0, geom,
+      plateRadius, plateBevel);
+    if (side < 0) plateMeshC = plate; else plateMeshA = plate;
     const ribSub = new THREE.Group();
     wallsGroup.add(ribSub);
     if (side < 0) ribSubC = ribSub; else ribSubA = ribSub;
   }
+  buildAssemblyDetails(W, H, chT, coreT, baseT, tMemV);
 
   // electrode-face current maps ON the catalyst planes (the core boundaries —
   // exactly where the bubbles nucleate)
   faceTexC = makeFaceTexture(faceNy || 1, faceNz || 1);
   faceTexA = makeFaceTexture(faceNy || 1, faceNz || 1);
   const faceMat = t => new THREE.MeshBasicMaterial({ map: t, transparent: true,
-    opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    opacity: 0.78, side: THREE.DoubleSide, depthWrite: false });
   const xFace = coreT / 2 + 0.05;
   facePlaneC = new THREE.Mesh(new THREE.PlaneGeometry(W, H), faceMat(faceTexC));
   facePlaneC.rotation.y = Math.PI / 2; facePlaneC.position.set(-xFace, H / 2, 0);
@@ -932,10 +1621,10 @@ function rebuildCell() {
   const tot = coreT + 2 * chT + 2 * baseT;
 
   // bounding edges
-  const eg = new THREE.LineSegments(
+  cellEdge = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(tot, H, W)),
     new THREE.LineBasicMaterial({ color:0x4a5d7a, transparent:true, opacity:0.5 }));
-  eg.position.set(0, H / 2, 0); cellGroup.add(eg);
+  cellEdge.position.set(0, H / 2, 0); cellGroup.add(cellEdge);
 
   // gravity arrow (tilt rotates it about Z)
   const a = P.tilt * Math.PI / 180;
@@ -947,8 +1636,8 @@ function rebuildCell() {
   // camera home: keep the whole cell in view
   const R = Math.max(W, H) * 1.15;
   camHome.set(R * 0.9, H * 0.62, R * 1.05);
-  // zoom limits + clip planes track the CELL, not fixed constants — the grid
-  // changes with every geometry edit, and stale limits are what broke the wheel
+  // Zoom-button limits + clip planes track the CELL, not fixed constants.
+  // Geometry edits can therefore never leave the camera outside a valid range.
   fitCameraRange(Math.max(W, H, tot));
   if (!rebuildCell._did) {                          // first build: place camera
     camera.position.copy(camHome);
@@ -958,9 +1647,11 @@ function rebuildCell() {
     rebuildCell._did = true;
   } else {
     // an existing camera may now sit outside the new cell's zoom range (e.g. the
-    // grid shrank): pull it back into range instead of leaving it stranded
+    // grid shrank): pull it back into range instead of leaving it stranded.
+    // NOT while 국소 확대 is active — that mode owns its own (much closer) range,
+    // so camBase.minD (~0.6R) would yank the camera out of the µm view and blank it.
     const d = camera.position.distanceTo(controls.target);
-    if (d < camBase.minD || d > camBase.maxD) {
+    if (!zoomed && (d < camBase.minD || d > camBase.maxD)) {
       const dir = camera.position.clone().sub(controls.target).normalize();
       const dc = Math.min(camBase.maxD, Math.max(camBase.minD, d));
       camera.position.copy(controls.target).addScaledVector(dir, dc);
@@ -971,17 +1662,43 @@ function rebuildCell() {
 }
 rebuildCell();
 
-// bubbles: instanced spheres, fed from /api3d/state (empty until P1 physics)
+// Bubbles remain instanced. Attached and free populations use separate meshes
+// so a wall-contact cap can be flattened without creating one Mesh per bubble.
 const MAXB = 9000;
+function bubbleMaterial(opacity, roughness) {
+  const material = new THREE.MeshPhysicalMaterial({
+    color:0xffffff, transparent:true, opacity,
+    depthWrite:true, roughness, metalness:0,
+    clearcoat:1, clearcoatRoughness:0.16, envMapIntensity:1.18,
+  });
+  material.onBeforeCompile = shader => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <opaque_fragment>",
+      `float bubbleRim = pow(1.0 - clamp(abs(dot(normalize(normal),
+        normalize(vViewPosition))), 0.0, 1.0), 2.15);
+       outgoingLight += diffuseColor.rgb * bubbleRim * 0.72
+                      + vec3(0.10, 0.14, 0.19) * bubbleRim;
+       diffuseColor.a *= mix(0.58, 1.0, bubbleRim);
+       #include <opaque_fragment>`);
+  };
+  material.customProgramCacheKey = () => `bubble-rim-${opacity}-${roughness}`;
+  return material;
+}
+const bubbleGeometry = new THREE.SphereGeometry(1, 24, 18);
 const inst = new THREE.InstancedMesh(
-  new THREE.SphereGeometry(1, 24, 18),          // smoother spheres (visible up close)
-  new THREE.MeshPhysicalMaterial({ color:0xdff3ff, roughness:0.15, metalness:0,
-    clearcoat:1, clearcoatRoughness:0.18, envMapIntensity:1.25 }),
+  bubbleGeometry,
+  bubbleMaterial(0.72, 0.10),
   MAXB);
 inst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
 inst.frustumCulled = false; inst.count = 0;
-scene.add(inst);
-const C_H2 = new THREE.Color(0x2f9fd4), C_O2 = new THREE.Color(0xd98420);  // readable on a light stage
+const instAttached = new THREE.InstancedMesh(
+  bubbleGeometry,
+  bubbleMaterial(0.80, 0.16),
+  MAXB);
+instAttached.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
+instAttached.frustumCulled = false; instAttached.count = 0;
+scene.add(inst, instAttached);
+const C_H2 = new THREE.Color(0x72c4e3), C_O2 = new THREE.Color(0xe9a15f);
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
 
 // bubbles arrive as flat [x_m, y_m, z_m, r_m, side]*N in GRID coords: convert
@@ -1093,12 +1810,30 @@ function ingestBubbles(st) {
   bubCur = { t: now, simT: st.t, map, grid: st.grid };
 }
 function renderBubbles(now) {
-  if (mode !== "live" || !bubGrid) { if (mode !== "live") return; inst.count = 0; return; }
+  if (mode !== "live" || !bubGrid) {
+    if (mode !== "live") return;
+    inst.count = 0; instAttached.count = 0; return;
+  }
   const g = bubGrid, gridLx = (g.nx * g.h_mm);   // mm
+  // Attached bubbles can detach within milliseconds. Keep the microscope view
+  // useful by handing focus to the next largest live cathode bubble instead of
+  // leaving the camera pointed at an empty location.
+  if (zoomed && (!zoomFocus || zoomFocus.dying))
+    zoomFocus = pickZoomFocus();
+  if (zoomed && zoomFocus) {
+    const focus = _lerpNow(zoomFocus, now);
+    const nextTarget = new THREE.Vector3(
+      focus[0] * 1000 - gridLx / 2,
+      focus[1] * 1000,
+      focus[2] * 1000 - (g.nz * g.h_mm) / 2);
+    const delta = nextTarget.clone().sub(controls.target);
+    camera.position.add(delta);
+    controls.target.copy(nextTarget);
+  }
   const Lm = [g.nx * g.h_mm, g.ny * g.h_mm, g.nz * g.h_mm].map(v => v / 1000);
   const cut = slabOnly ? slicePos * Lm[sliceAxis] : 0;
   const slabW = 0.10 * Lm[sliceAxis];
-  let w = 0;
+  let freeCount = 0, attachedCount = 0;
   for (const v of visPool) {
     if (v.side < 0.5 ? !layers.her : !layers.oer) continue;
     const s = _lerpNow(v, now);                     // smooth pose from the pool
@@ -1107,32 +1842,52 @@ function renderBubbles(now) {
       const pa = [px, py, pz][sliceAxis];
       if (Math.abs(pa - cut) > slabW) continue;
     }
-    const x = px * 1000 - gridLx / 2;
+    let x = px * 1000 - gridLx / 2;
     const y = py * 1000;
     const z = pz * 1000 - (g.nz * g.h_mm) / 2;      // grid frame, same as the ribs
     // physical radius x the DISPLAY scale the user picked (실제 ×1 shows true
     // 50-150 um bubbles — use 국소 확대 to see them; ×4/×12 for the far view)
     const r = Math.max(0.02, pr * 1000 * (+P.bscale || 1));
-    _p.set(x, y, z); _s.set(r, r, r);
-    _m.compose(_p, _q, _s); inst.setMatrixAt(w, _m);
+    if (v.att) {
+      // The physics centre remains untouched in visPool. Rendering compresses
+      // only the electrode-normal axis and shifts the visual centre by the
+      // removed cap height so the bubble still touches its catalyst plane.
+      const theta = Math.max(1, Math.min(179, +P.theta || 60));
+      const normalScale = 0.48 + 0.18 * (theta / 179);
+      const tangentScale = 1.04 + 0.10 * (1 - normalScale);
+      x += (v.side < 0.5 ? -1 : 1) * r * (1 - normalScale) * 0.86;
+      _s.set(r * normalScale, r * tangentScale, r * tangentScale);
+    } else {
+      // Free bubbles remain almost spherical; only a restrained rise-direction
+      // elongation is allowed, based on the already measured parcel speed.
+      const elong = 1 + Math.min(0.10, Math.max(0, (v.spd || 0) / VEL_SCALE) * 0.08);
+      const transverse = 1 / Math.sqrt(elong);
+      _s.set(r * transverse, r * elong, r * transverse);
+    }
+    _p.set(x, y, z);
+    _m.compose(_p, _q, _s);
     if (P.bcol === "vel") {
       // CFD-paper style: colour by rise speed u_p (attached ~0 -> blue)
       const [cr, cg, cb] = turbo(Math.min(1, (v.spd || 0) / VEL_SCALE));
       _col.setRGB(cr / 255, cg / 255, cb / 255);
     } else {
-      // stable shade variation so bubbles don't read as clones; attached
-      // (still growing on the wall) a touch darker than the risers
+      // Muted gas-family tint; transparent body + shader rim carries shape.
       const base = v.side < 0.5 ? C_H2 : C_O2;
-      const jitter = 0.86 + 0.14 * ((v.key >>> 8) & 255) / 255;
-      _col.copy(base).multiplyScalar(v.att ? jitter * 0.82 : jitter);
+      const jitter = 0.90 + 0.10 * ((v.key >>> 8) & 255) / 255;
+      _col.copy(base).multiplyScalar(v.att ? jitter * 0.92 : jitter);
     }
-    inst.setColorAt(w, _col);
-    w++;
-    if (w >= MAXB) break;
+    const target = v.att ? instAttached : inst;
+    const index = v.att ? attachedCount++ : freeCount++;
+    target.setMatrixAt(index, _m);
+    target.setColorAt(index, _col);
+    if (freeCount + attachedCount >= MAXB) break;
   }
-  inst.count = w;
+  inst.count = freeCount;
+  instAttached.count = attachedCount;
   inst.instanceMatrix.needsUpdate = true;
+  instAttached.instanceMatrix.needsUpdate = true;
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  if (instAttached.instanceColor) instAttached.instanceColor.needsUpdate = true;
   // velocity colourbar legend follows the colour mode
   const wantLegend = P.bcol === "vel" && mode === "live";
   if (renderBubbles._leg !== wantLegend) {
@@ -1141,6 +1896,15 @@ function renderBubbles(now) {
   }
 }
 const VEL_SCALE = 0.25;                             // colourbar max [m/s]
+
+function pickZoomFocus() {
+  let best = null;
+  for (const bubble of visPool) {
+    if (!bubble.att || bubble.side >= 0.5 || bubble.dying) continue;
+    if (!best || bubble.tr > best.tr) best = bubble;
+  }
+  return best;
+}
 
 // ---- flow tracers: ride the COMPUTED velocity field ------------------------
 // Why: the tracked parcels are a Monte-Carlo sample that is re-drawn (fresh
@@ -1236,8 +2000,8 @@ window.__traceStep = now => renderTracers(now ?? performance.now());  // headles
 // electrode-face current-density maps from the snapshot
 function updateFaces(st) {
   const show = (P.jmap ?? "on") === "on";
-  if (facePlaneC) facePlaneC.visible = show;
-  if (facePlaneA) facePlaneA.visible = show;
+  if (facePlaneC) facePlaneC.visible = show && layers.cathode;
+  if (facePlaneA) facePlaneA.visible = show && layers.anode;
   // ribs from the PHYSICS mask (rebuild only when the geometry changes)
   if (st.land2d) {
     const sig = st.land2d.ny + "x" + st.land2d.nz + ":" + st.land2d.m.join("");
@@ -1286,11 +2050,13 @@ function setPanel(m, expId) {
   document.getElementById("liveCtls").style.display = showLive ? "" : "none";
   document.getElementById("plateEd").style.display = showLive ? "" : "none";
   document.getElementById("expCtls").style.display = m === "exp" ? "" : "none";
+  document.getElementById("aiCtls").style.display = m === "ai" ? "" : "none";
   document.getElementById("eqCtls").style.display = m === "eq" ? "" : "none";
   document.getElementById("csvCtls").style.display = m === "csv" ? "" : "none";
   document.getElementById("userExpBox").style.display = m === "user" ? "" : "none";
   document.getElementById("expSaveBox").style.display = "none";
   if (m === "exp") expEnter();
+  if (m === "ai") aiRefreshStatus();
   if (m === "user") showUserExp(expId);
   setView(viewMode, { reset: false });   // keep the user's zoom/rotation on tab switches
   drawSlice(); updateClip();
@@ -1304,16 +2070,17 @@ modeSeg.addEventListener("click", e => {
 
 // ==================== experiment tab (NF + PP mesh) ========================
 // Blind-prediction workflow: the model is calibrated on the measured PRISTINE
-// curve only (points drawn on the chart); mesh curves are computed from mesh
-// GEOMETRY via kernel.meshlayer — measured mesh data never enters the model.
+// curve only (points drawn on the chart); mesh curves use geometry, calculated
+// bubble size, and explicit surface contact angles. Measured mesh polarization
+// data never enters the model.
 const EXP_PRESET = {
   W_cm: 2.2, H_cm: 2.2, ff: "serp", n_ch: 13, w_ch_mm: 0.88, d_ch_mm: 0.9,
-  w_land_mm: 0.88, t_ptl_um: 600, eps_ptl: 0.95, electrolyte: "KOH", c_mol: 1.0,
+  w_land_mm: 0.88, t_ptl_um: 600, electrolyte: "KOH", c_mol: 1.0,
   // u_flow is the CHANNEL VELOCITY the solvers need; the measured cell is a
   // 4 mL/min anolyte pump. Serpentine = one continuous 0.88x0.9 mm channel, so
   // u = Q/A = (4e-6/60) / (0.88e-3*0.9e-3) = 0.0842 m/s. (It was 0.08 = 3.80
   // mL/min, a silent -5% on the calibrated flow.)
-  T: 65, u_flow: 0.0842, mode: "CP", j: 0.5,
+  T: 65, u_flow: 0.0842, mode: "CP", j: 0.5, theta: 110, mesh_theta: 105.8,
   // CALIBRATED WITH the dry-cathode water term ON (the cell IS anolyte-only).
   // The pristine curve was re-fit against all 16 measured points with the water
   // balance active: RMSE 26 mV (the old dry-OFF fit was 39 mV). The earlier
@@ -1331,27 +2098,165 @@ const EXP_MEAS = [[10,1.48294],[20,1.4937],[50,1.5184],[100,1.55191],[200,1.6049
   [300,1.65078],[400,1.69504],[500,1.74178],[625,1.80051],[750,1.86602],
   [875,1.94376],[1000,2.03323],[1250,2.20449],[1500,2.37841],[2000,2.6616],
   [2250,2.78376]];
-let expCatalogLoaded = false, expLast = null;
+let expCatalogLoaded = false, expLast = null, expCatalog = [];
+let expCatalogRequest = 0, expCatalogTimer = null;
 
 async function expEnter() {
   if (!expCatalogLoaded) await expLoadCatalog();
+  expUpdateAngleRead();
+  expDrawMeshGeometry();
 }
 
 async function expLoadCatalog() {
   try {
-    const r = await (await fetch("/api3d/meshes")).json();
+    const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
+    const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
+    const req = ++expCatalogRequest;
+    const q = new URLSearchParams({ theta: te, mesh_theta: tm });
+    const r = await (await fetch("/api3d/meshes?" + q)).json();
+    if (req !== expCatalogRequest) return;           // discard an older angle response
+    expCatalog = r.catalog || [];
     const sel = document.getElementById("exMesh");
+    const wanted = sel.value || "pp_040x053";
     sel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
-    for (const m of r.catalog || []) {
+    for (const m of expCatalog) {
       const o = document.createElement("option");
       o.value = m.id;
       o.textContent = (m.fits ? "" : "🚫 ") + m.name + (m.fits ? "" : " — 장착불가");
       o.disabled = !m.fits;
-      if (m.id === "pp_040x053") o.selected = true;
+      if (m.id === wanted) o.selected = true;
       sel.appendChild(o);
     }
     expCatalogLoaded = true;
+    expDrawMeshGeometry();
   } catch {}
+}
+
+function expSelectedMesh() {
+  const id = document.getElementById("exMesh").value;
+  return expCatalog.find(m => m.id === id) || null;
+}
+
+function expUpdateAngleRead() {
+  const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
+  const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
+  const ce = Math.cos(te * Math.PI / 180), cm = Math.cos(tm * Math.PI / 180);
+  const pw = Math.max(0, Math.min(1, (ce - cm) / Math.max(1e-9, 1 + ce)));
+  const el = document.getElementById("exAngleRead");
+  el.innerHTML = `θ<sub>e</sub>=${te.toFixed(1)}° · θ<sub>m</sub>=${tm.toFixed(1)}° · ` +
+    `P<sub>wet</sub>=<b style="color:${pw > 0 ? 'var(--grn)' : 'var(--gold)'}">${pw.toFixed(3)}</b> — ` +
+    (pw > 0 ? "PP 쪽 기체 선호 구동력이 있는 조건" : "PP가 전극보다 더 소수성이 아니어서 전달 구동력 0");
+}
+
+function expDrawMeshGeometry(override) {
+  const c = document.getElementById("exMeshGeom");
+  if (!c) return;
+  const rect = c.getBoundingClientRect(), dpr = Math.max(1, devicePixelRatio || 1);
+  const w = Math.max(272, Math.round(rect.width || 272)), h = 176;
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const x = c.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  const bg = css.getPropertyValue("--bg").trim() || "#0d1420";
+  const surf = css.getPropertyValue("--surf").trim() || "#151f2e";
+  const tx = css.getPropertyValue("--tx").trim() || "#eef3fb";
+  const dim = css.getPropertyValue("--dim").trim() || "#9aa6b7";
+  x.fillStyle = bg; x.fillRect(0, 0, w, h);
+
+  const m = override || expSelectedMesh();
+  const read = document.getElementById("exMeshGeomRead");
+  if (!m) {
+    x.fillStyle = dim; x.font = "11px sans-serif"; x.textAlign = "center";
+    x.fillText("mesh 없음 — pristine", w / 2, h / 2);
+    read.textContent = "mesh를 선택하면 실제 Lx·Ly 직사각형 개구와 가능한 버블 시작 위치를 표시합니다.";
+    return;
+  }
+
+  const lx = Math.max(0.001, +(m.hole_x_mm ?? m.hole_mm));
+  const ly = Math.max(0.001, +(m.hole_y_mm ?? m.hole_mm));
+  const phi = Math.max(0.01, Math.min(0.99, +m.open));
+  const db = Math.max(0, +(m.bubble_d_mm ?? 0.3904));
+  // One simple rectangular unit-cell reconstruction: scale both pitches by
+  // 1/sqrt(phi), so Lx*Ly/(pitchX*pitchY) is exactly the catalog open fraction.
+  const pitchX = lx / Math.sqrt(phi), pitchY = ly / Math.sqrt(phi);
+  const nx = 3, ny = 2, top = 18, side = 24, bottom = 31;
+  const scale = Math.min((w - 2 * side) / (nx * pitchX), (h - top - bottom) / (ny * pitchY));
+  const totalW = nx * pitchX * scale, totalH = ny * pitchY * scale;
+  const ox = (w - totalW) / 2, oy = top + (h - top - bottom - totalH) / 2;
+  const wx = (pitchX - lx) / 2, wy = (pitchY - ly) / 2;
+
+  x.fillStyle = "#7e8ca1";
+  x.fillRect(ox, oy, totalW, totalH);
+  for (let iy = 0; iy < ny; iy++) for (let ix = 0; ix < nx; ix++) {
+    const hx = ox + (ix * pitchX + wx) * scale;
+    const hy = oy + (iy * pitchY + wy) * scale;
+    x.fillStyle = surf; x.fillRect(hx, hy, lx * scale, ly * scale);
+    x.strokeStyle = "#aeb9c8"; x.lineWidth = 0.7;
+    x.strokeRect(hx, hy, lx * scale, ly * scale);
+  }
+
+  // Highlight one unit cell and the centre positions where a full bubble can
+  // remain inside the aperture without touching a strand.
+  const ci = 1, cj = 0;
+  const cx0 = ox + ci * pitchX * scale, cy0 = oy + cj * pitchY * scale;
+  const hx0 = cx0 + wx * scale, hy0 = cy0 + wy * scale;
+  x.strokeStyle = "#d8a400"; x.lineWidth = 1.5;
+  x.strokeRect(cx0, cy0, pitchX * scale, pitchY * scale);
+  if (lx > db && ly > db) {
+    x.save(); x.setLineDash([4, 3]); x.strokeStyle = "#39b26a"; x.lineWidth = 1.2;
+    x.strokeRect(hx0 + db * scale / 2, hy0 + db * scale / 2,
+                 (lx - db) * scale, (ly - db) * scale);
+    x.restore();
+  }
+
+  // Several deterministic example origins across the unit cells.  They make
+  // the model assumption visible: the centre is not fixed at the hole centre.
+  const samples = [
+    [0, 0, .22, .28], [1, 0, .50, .50], [2, 0, .80, .32],
+    [0, 1, .58, .78], [1, 1, .16, .60], [2, 1, .72, .68],
+  ];
+  const rr = Math.max(2.5, db * scale / 2);
+  for (const [ix, iy, ux, uy] of samples) {
+    const bx = ox + (ix + ux) * pitchX * scale;
+    const by = oy + (iy + uy) * pitchY * scale;
+    x.beginPath(); x.arc(bx, by, rr, 0, 2 * Math.PI);
+    x.fillStyle = "rgba(51,151,255,.18)"; x.fill();
+    x.strokeStyle = "rgba(70,170,255,.90)"; x.lineWidth = 1; x.stroke();
+    x.beginPath(); x.arc(bx, by, 1.8, 0, 2 * Math.PI);
+    x.fillStyle = "#65b8ff"; x.fill();
+  }
+
+  x.fillStyle = tx; x.font = "10px sans-serif"; x.textAlign = "center";
+  x.fillText(`Lx ${lx.toFixed(3)} mm`, hx0 + lx * scale / 2, h - 15);
+  x.save(); x.translate(w - 10, hy0 + ly * scale / 2); x.rotate(-Math.PI / 2);
+  x.fillText(`Ly ${ly.toFixed(3)} mm`, 0, 0); x.restore();
+  x.textAlign = "left"; x.fillStyle = "#65b8ff"; x.fillText("○ 버블 시작 위치 예시", 7, 11);
+  x.fillStyle = "#39b26a"; x.fillText("- - 비접촉 중심 영역", w - 118, 11);
+
+  // For a catalog preview, recompute these two values directly from the two
+  // visible angle inputs and this rectangle.  A sweep result passed as
+  // `override` already contains the backend's exact values and takes priority.
+  const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
+  const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
+  const ce = Math.cos(te * Math.PI / 180), cm = Math.cos(tm * Math.PI / 180);
+  const pcLocal = 1 - phi * Math.max(1 - db / lx, 0) * Math.max(1 - db / ly, 0);
+  const pwLocal = Math.max(0, Math.min(1, (ce - cm) / Math.max(1e-9, 1 + ce)));
+  const pc = override ? (m.contact_prob ?? m.contact_probability ?? pcLocal) : pcLocal;
+  const pw = override ? (m.wetting_drive ?? pwLocal) : pwLocal;
+  read.innerHTML = `<b>직사각형 개구 ${lx.toFixed(3)}×${ly.toFixed(3)} mm</b> · ` +
+    `개구율 ${(100 * phi).toFixed(0)}% · 두께 ${(+m.t_mm).toFixed(3)} mm · d<sub>b</sub> ${db.toFixed(3)} mm` +
+    (pc != null ? ` · P<sub>contact,UB</sub> ${(+pc).toFixed(3)}` : "") +
+    (pw != null ? ` · P<sub>wet</sub> ${(+pw).toFixed(3)}` : "") +
+    `<br><b>버블 중심은 가운데 고정이 아니라 단위 셀 전체 어디서든 균일하게 시작</b>한다고 가정합니다. ` +
+    `파란 원은 가능한 위치의 예시이며, 계산은 몇 개 점이 아니라 전체 면적을 적분한 식입니다.`;
+}
+
+document.getElementById("exMesh").addEventListener("change", () => expDrawMeshGeometry());
+for (const id of ["exElecTheta", "exMeshTheta"]) {
+  document.getElementById(id).addEventListener("input", () => {
+    expUpdateAngleRead(); expDrawMeshGeometry();
+    clearTimeout(expCatalogTimer);
+    expCatalogTimer = setTimeout(expLoadCatalog, 180); // refresh d_b for the new electrode angle
+  });
 }
 
 document.getElementById("exCover").addEventListener("input", e => {
@@ -1366,10 +2271,12 @@ document.getElementById("exPreset").onclick = () => {
   const stat = document.getElementById("exPresetStat");
   stat.textContent = "프리셋 전송 중… (격자 재구축, 몇 초)";
   for (const k in EXP_PRESET) send(k, EXP_PRESET[k]);
+  document.getElementById("exElecTheta").value = EXP_PRESET.theta;
+  document.getElementById("exMeshTheta").value = EXP_PRESET.mesh_theta;
   setTimeout(() => {
     stat.textContent =
       "적용됨: 2.2×2.2cm · 13ch 서펜타인 0.88/0.9mm · 1M KOH 65°C · " +
-      "캘리브레이션 키네틱스 (pristine 저전류 RMSE 7mV). 복셀 0.55mm.";
+      "캘리브레이션 키네틱스 (pristine 16점 RMSE 26mV) · Ni 110° · PP 105.8°. 복셀 0.55mm.";
     expLoadCatalog();          // fits badges depend on the (new) channel depth
   }, 900);
 };
@@ -1383,6 +2290,8 @@ async function expSweep() {
     mesh_id: document.getElementById("exMesh").value,
     mesh_cover: (+document.getElementById("exCover").value) / 100,
     mesh_pos: pos,
+    theta: +document.getElementById("exElecTheta").value,
+    mesh_theta: +document.getElementById("exMeshTheta").value,
   };
   // keep the shared designer in sync so app2d / state agree with the sweep
   for (const k in body) send(k, body[k]);
@@ -1391,6 +2300,7 @@ async function expSweep() {
       headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
     if (res.error) throw new Error(res.error);
     expLast = res;
+    expDrawMeshGeometry(res.mesh_info || null);
     expOverlayAdd(res, body);                     // stack this prediction for comparison
     expDrawCurves(); expDrawProfile(res); expReadout(res);
     const w = document.getElementById("exWarn");
@@ -1418,7 +2328,8 @@ function expOverlayAdd(res, body) {
   const V = res.mesh ? res.mesh.V : res.pristine.V;
   const ffKo = { serp: "서펜타인", par: "평행", inter: "인터디지트", custom: "직접그림" };
   let label = `${ffKo[s.ff] || s.ff} ${s.n_ch}ch · u${(+s.u_flow).toFixed(2)}`;
-  if (+s.theta !== 60) label += ` · θ${s.theta}`;
+  if (s.theta != null) label += ` · θe${s.theta}`;
+  if (s.mesh_theta != null && res.mesh) label += `/θm${s.mesh_theta}`;
   if (res.mesh) {
     const posKo = { inlet: "입구쪽", middle: "중간", outlet: "출구쪽" };
     const cover = Math.round((s.mesh_cover ?? 1) * 100);
@@ -1526,8 +2437,8 @@ document.getElementById("exCpClr").onclick = () => { cpRec = []; expDrawCp(); };
 // Excel opens Korean text correctly instead of mojibake.
 const CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
   "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt","drag_K",
-  "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","t_ptl_um","eps_ptl",
-  "void_frac","mesh_id","mesh_cover","mesh_pos","dry_cathode","n_drag","D_w_mem",
+  "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","t_ptl_um",
+  "void_frac","mesh_id","mesh_cover","mesh_pos","mesh_theta","dry_cathode","n_drag","D_w_mem",
   "in_face","in_z","in_w","out_face","out_z","out_w"];
 
 function csvCell(v) {
@@ -1706,8 +2617,8 @@ document.getElementById("csvRow").onclick = () => {
 // ---- pump flow in mL/min (the knob a real pump actually has) ---------------
 // u_flow (m/s) stays the stored physics key; this box converts through the
 // channel cross-section so the volumetric number is never a hidden hand
-// calculation again. It also flags when the 3-D voxel grid's inlet port does
-// not match the physical channel — the sim then pushes a DIFFERENT volume.
+// calculation again. The backend conserves this requested physical flow while
+// mapping it onto the coarser voxel inlet.
 const exQ = document.getElementById("exQ");
 function exSyncQ(st) {
   if (!st || !st.designer || document.activeElement === exQ) return;
@@ -1715,17 +2626,17 @@ function exSyncQ(st) {
   exQ.value = flowMLmin(d).toFixed(2);
   const A = chanArea_m2(d) * 1e6;                       // mm^2
   const dg = st.diag || {};
-  const q3d = (dg.q_liq_mLs != null) ? dg.q_liq_mLs * 60 : null;   // mL/min
+  const q3d = (dg.q_liq_mLs != null) ? dg.q_liq_mLs * 60 : null;   // cell total mL/min
+  const nCirc = dg.liquid_circuits || 1;
   let html = `유로 단면 ${(+d.w_ch_mm).toFixed(2)}×${(+d.d_ch_mm).toFixed(2)} mm` +
     ` = ${A.toFixed(3)} mm² → u = ${(+d.u_flow).toFixed(4)} m/s` +
     ` (${d.ff === "par" || d.ff === "inter" ? d.n_ch + "채널 병렬" : "직렬 1채널"})`;
   if (q3d != null) {
-    const off = Math.abs(q3d - flowMLmin(d)) > 0.25 * Math.max(1e-9, flowMLmin(d));
+    const target = flowMLmin(d) * nCirc;
+    const off = Math.abs(q3d - target) > 0.01 * Math.max(1e-9, target);
     html += `<br><span style="color:${off ? "var(--gold)" : "var(--dim)"}">` +
-      `3-D 라이브 셀이 실제로 흘리는 양: ${q3d.toFixed(2)} mL/min` +
-      (off ? ` — 복셀 입구 포트가 실제 유로 단면과 달라 (양쪽 전극 채널 합산 + 격자 양자화)
-              LSV 예측의 기준 유량과 다릅니다. LSV(채널 모델)는 위 값을 씁니다.` : "") +
-      `</span>`;
+      `펌프 회로당 ${flowMLmin(d).toFixed(2)} mL/min · ${nCirc}개 회로 셀 총량 ${q3d.toFixed(2)} mL/min` +
+      (off ? ` — 유량 보존 오차 확인 필요` : ` · 복셀 입구에도 같은 총유량을 보존`) + `</span>`;
   }
   document.getElementById("exQnote").innerHTML = html;
 }
@@ -1825,10 +2736,15 @@ function expReadout(res) {
   });
   const eo = res.pristine.eps_out[res.pristine.eps_out.length - 1];
   const gl = eo < 1 ? (eo / (1 - eo)).toFixed(1) : "∞";
-  let html = `<b>예측 ΔV (mesh − pristine)</b><br>${rows.join(" · ")}<br>` +
+  let html = `<b>전압차 mesh − pristine (음수=개선)</b><br>${rows.join(" · ")}<br>` +
     `최대전류 기액비 ≈ ${gl}:1 (출구 ε ${eo.toFixed(2)})`;
   if (res.mesh_info) {
-    html += `<br>mesh: 흡착지수 ${res.mesh_info.wick} · 국소유속 ×${(+res.mesh_info.u_boost).toFixed(1)}`;
+    html += `<br>mesh 물리: 이탈기포 ${(+res.mesh_info.bubble_d_mm).toFixed(3)} mm · ` +
+      `접촉확률 상한 ${(100*(+res.mesh_info.contact_prob)).toFixed(1)}% · ` +
+      `젖음성 구동 ${(100*(+res.mesh_info.wetting_drive)).toFixed(1)}% · ` +
+      `전달지수 상한 ${(100*(+res.mesh_info.capture_eff)).toFixed(1)}%<br>` +
+      `유로 폐색 ${(100*(+res.mesh_info.obstruction)).toFixed(1)}% · 국소유속 ×${(+res.mesh_info.u_boost).toFixed(2)} · ` +
+      `층류 ΔP 추정 ×${(+res.mesh_info.dp_ratio).toFixed(2)}`;
   }
   // dry cathode: where is the water-supply wall, and did the cell hit it?
   const w = res.water;
@@ -1974,7 +2890,7 @@ async function poll() {
     cpRecord(st);                    // ⑤ live CP/CA transient recorder (exp tab)
     exSyncQ(st);                     // pump flow in mL/min (exp tab)
     if (st.diag) drawEta3(st.diag.eta, st.diag.V_cell);   // ⚡ voltage breakdown
-    document.getElementById("hSrv").innerHTML = `<span class="st ok"></span>:8766 (${st.phase})`;
+    document.getElementById("hSrv").innerHTML = `<span class="st ok"></span>연결됨 · 라이브`;
     document.getElementById("hT").textContent = st.t.toFixed(2) + " s";
     document.getElementById("hGrid").textContent =
       `${st.grid.nx}×${st.grid.ny}×${st.grid.nz} @ ${st.grid.h_mm.toFixed(1)}mm`;
@@ -1986,6 +2902,16 @@ async function poll() {
       rebuildCell();
     }
     const dg = st.diag || {};
+    const validity = [];
+    if (dg.grid_coarsened) validity.push(`격자 ${dg.h_requested_mm.toFixed(2)}→${dg.h_mm.toFixed(2)} mm`);
+    if (dg.flow_ok === false) validity.push("입구-출구 단절");
+    if (dg.H_achieved_mm != null &&
+        (Math.abs(dg.H_achieved_mm-dg.H_requested_mm) > .05*dg.H_requested_mm ||
+         Math.abs(dg.W_achieved_mm-dg.W_requested_mm) > .05*dg.W_requested_mm))
+      validity.push("계산영역 양자화 큼");
+    const hv = document.getElementById("hValid");
+    hv.textContent = validity.length ? validity.join(" · ") : "범위 내 · 표면반응 모델";
+    hv.style.color = validity.length ? "var(--gold)" : "var(--grn)";
     document.getElementById("hN").textContent = dg.n_real_est != null
       ? `${st.n_bub} / ~${dg.n_real_est.toLocaleString()}` : st.n_bub;
     if (dg.r_dep_um != null) document.getElementById("hRdep").textContent =
@@ -2234,18 +3160,93 @@ let viewMode = "orbit", slabOnly = false;
 
 function targetGroup() { return cellGroup; }
 
+const camPanEl = document.getElementById("camPan");
+let camPanValue = 0;
+
+function setCamPanValue(value) {
+  camPanValue = Math.max(-100, Math.min(100, +value || 0));
+  camPanEl.value = String(camPanValue);
+}
+
+function visibleHalfWidth() {
+  if (activeCam.isOrthographicCamera)
+    return Math.max(0.1, (activeCam.right - activeCam.left) / (2 * activeCam.zoom));
+  const d = activeCam.position.distanceTo(controls.target);
+  return Math.max(0.1, d * Math.tan(THREE.MathUtils.degToRad(activeCam.fov * 0.5))
+                       * Math.max(0.2, activeCam.aspect));
+}
+
+function panCameraHorizontal(nextValue) {
+  const next = Math.max(-100, Math.min(100, +nextValue || 0));
+  const delta = next - camPanValue;
+  camPanValue = next;
+  if (!delta) return;
+
+  // Matrix column 0 is the current screen-right vector.  Move camera and target
+  // together, so the slider pans without changing orbit angle or zoom.
+  activeCam.updateMatrixWorld(true);
+  const right = new THREE.Vector3().setFromMatrixColumn(activeCam.matrixWorld, 0).normalize();
+  const shift = right.multiplyScalar(delta * visibleHalfWidth() / 100);
+  activeCam.position.add(shift);
+  controls.target.add(shift);
+  activeCam.lookAt(controls.target);
+  controls.update();
+}
+
+function zoomCamera(stepIn) {
+  const factor = 1.18;
+  if (activeCam.isOrthographicCamera) {
+    const next = activeCam.zoom * (stepIn ? factor : 1 / factor);
+    activeCam.zoom = Math.max(controls.minZoom, Math.min(controls.maxZoom, next));
+    activeCam.updateProjectionMatrix();
+  } else {
+    const offset = activeCam.position.clone().sub(controls.target);
+    const d = Math.max(1e-9, offset.length());
+    const next = d * (stepIn ? 1 / factor : factor);
+    const clamped = Math.max(controls.minDistance, Math.min(controls.maxDistance, next));
+    activeCam.position.copy(controls.target).addScaledVector(offset.normalize(), clamped);
+  }
+  activeCam.lookAt(controls.target);
+  controls.update();
+  applyLayers();
+}
+
+camPanEl.addEventListener("input", e => {
+  panCameraHorizontal(e.target.value);
+});
+document.getElementById("zoomOut").onclick = () => zoomCamera(false);
+document.getElementById("zoomIn").onclick = () => zoomCamera(true);
+
+// Leave 국소 확대: put the cell-scale +/- range back. Called by the 국소 확대
+// button and by every genuine view change.
+function exitZoom() {
+  if (!zoomed) return;
+  zoomed = false;
+  zoomFocus = null;
+  if (zoomPrev) P.bscale = zoomPrev.bscale;
+  controls.minDistance = camBase.minD; controls.maxDistance = camBase.maxD;
+  camera.near = camBase.near; camera.far = camBase.far;
+  camera.updateProjectionMatrix();
+  const bz = document.getElementById("bZoom");
+  if (bz) bz.textContent = "🔍 국소 확대 — 실제 크기(µm)로 핵생성·이탈 보기";
+}
+
 function setView(v, opts) {
-  // opts.reset === false -> keep the user's orbit camera (zoom/rotation) when
+  // opts.reset === false -> keep the user's orbit camera (zoom/rotation/pan) when
   // this is only a PANEL/tab change. Every tab switch used to slam the camera
-  // back to camHome, which read as "휠 줌이 자꾸 풀리는" bug.
+  // back to camHome.
   const reset = !(opts && opts.reset === false);
+  if (reset) {
+    exitZoom();                   // a real view change ends 국소 확대 cleanly
+    setCamPanValue(0);
+  }
   viewMode = v;
   const grp = targetGroup();
   const bb = new THREE.Box3().setFromObject(grp);
   const c = bb.getCenter(new THREE.Vector3());
   const sz = bb.getSize(new THREE.Vector3());
-  // an empty group makes Box3 infinite -> NaN centre -> a NaN controls.target
-  // kills wheel/drag entirely; guard with the grid's own frame
+  // An empty group makes Box3 infinite -> NaN centre -> a NaN controls.target
+  // kills every camera control; guard with the grid's own frame.
   const H = gridInfo.ny * gridInfo.h;
   if (!isFinite(c.x + c.y + c.z)) c.set(0, H / 2, 0);
   if (!isFinite(sz.x + sz.y + sz.z)) sz.set(H, H, H);
@@ -2263,10 +3264,8 @@ function setView(v, opts) {
   } else {
     activeCam = orthoCam;
     controls.object = orthoCam;
-    // A pure PANEL/tab change (reset === false) must leave a flat view exactly
-    // as the user left it. Re-framing here — and especially resetting
-    // orthoCam.zoom to 1 — threw away their wheel zoom, which is the same bug
-    // the orbit branch was already guarded against.
+    // A pure PANEL/tab change (reset === false) leaves the flat view exactly
+    // as the user left it. A genuine preset change re-frames it.
     if (reset) {
       // frame the two axes in view; place the ortho cam far along the third
       let half, dir;
@@ -2274,7 +3273,7 @@ function setView(v, opts) {
       else if (v === "face") { half = Math.max(sz.z, sz.y) * 0.55; dir = new THREE.Vector3(1, 0, 0); } // look along -x: electrode face (z-y)
       else { half = Math.max(sz.x, sz.z) * 0.55; dir = new THREE.Vector3(0, 1, 0); }                   // top: look along -y (x-z)
       orthoHalf = Math.max(2, half);
-      orthoCam.zoom = 1;                     // wheel zoom from the LAST visit
+      orthoCam.zoom = 1;
       orthoCam.updateProjectionMatrix();     // must not leak into this framing
       resize();
       orthoCam.position.copy(c.clone().addScaledVector(dir, Math.max(sz.x, sz.y, sz.z) * 2 + 20));
@@ -2290,6 +3289,27 @@ document.getElementById("viewSeg").querySelectorAll("button").forEach(b => b.onc
   document.getElementById("viewSeg").querySelectorAll("button").forEach(x => x.classList.remove("on"));
   b.classList.add("on"); setView(b.dataset.v);
 });
+
+function setVisualPreset(next) {
+  if (!["assembly", "internal", "analysis"].includes(next)) return;
+  visualPreset = next;
+  document.getElementById("visualSeg").querySelectorAll("button").forEach(button =>
+    button.classList.toggle("on", button.dataset.v === next));
+  // A preset starts from a complete layer set. These remain ordinary
+  // checkboxes afterwards, so the user can immediately customize the view.
+  document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
+    cb.checked = true; layers[cb.dataset.layer] = true;
+  });
+  const mapValue = next === "analysis" ? "on" : "off";
+  if (ctls.reg.jmap) ctls.reg.jmap(mapValue); else P.jmap = mapValue;
+  applyLayers();
+  setView(next === "analysis" ? "face" : "orbit");
+}
+document.getElementById("visualSeg").querySelectorAll("button").forEach(button => {
+  button.onclick = () => setVisualPreset(button.dataset.v);
+});
+setVisualPreset("internal");
+
 document.getElementById("slabOnly").addEventListener("change", e => {
   slabOnly = e.target.checked;                  // renderBubbles re-filters next frame
 });
@@ -2300,42 +3320,38 @@ document.getElementById("slabOnly").addEventListener("change", e => {
 // becomes ~0.5 s of watchable slow motion).
 document.getElementById("bZoom").onclick = e => {
   if (!zoomed) {
-    if (!bubCur || !bubCur.grid) return;
-    // pick an attached cathode bubble to stare at (mid-population)
-    let target = null;
-    for (const [, c] of bubCur.map) {
-      if (c[5] > 0.5 && c[4] < 0.5) { target = c; break; }
-    }
-    if (!target) return;
-    const g = bubCur.grid, gridLx = g.nx * g.h_mm;
-    const tx = target[0] * 1000 - gridLx / 2;
-    const ty = target[1] * 1000;
-    const tz = target[2] * 1000 - (g.nz * g.h_mm) / 2;
+    if (!bubGrid || !visPool.length) return;
+    // Use the persistent render pool, not the raw Monte-Carlo snapshot ids.
+    // Pick the largest attached cathode bubble so it remains readable at ×1.
+    zoomFocus = pickZoomFocus();
+    if (!zoomFocus) return;
+    const focus = _lerpNow(zoomFocus, performance.now());
+    const g = bubGrid, gridLx = g.nx * g.h_mm;
+    const tx = focus[0] * 1000 - gridLx / 2;
+    const ty = focus[1] * 1000;
+    const tz = focus[2] * 1000 - (g.nz * g.h_mm) / 2;
     zoomPrev = { pos: camera.position.clone(), tgt: controls.target.clone(),
-                 bscale: P.bscale, view: viewMode };
+                 bscale: P.bscale, view: viewMode, pan: camPanValue };
+    setCamPanValue(0);
     P.bscale = "1";                              // true size while zoomed
     activeCam = camera; controls.object = camera;
-    // UNLOCK the micro range: the cell-scale limits (min ~1.5 mm) would clamp the
-    // wheel long before a 40 µm bubble fills the view. Restored on the way out.
+    // Unlock the micro range for the +/- buttons. Restored on the way out.
     zoomed = true;
     controls.minDistance = 0.02; controls.maxDistance = camBase.maxD;
-    camera.near = 0.005; camera.far = camBase.far;
+    camera.near = 0.001; camera.far = camBase.far;
     camera.updateProjectionMatrix();
     controls.target.set(tx, ty, tz);
-    camera.position.set(tx - 3.5, ty + 1.2, tz + 3.5);   // ~5 mm away, in-channel
+    // Approach along the electrode normal from inside the cathode channel.
+    // An oblique sub-mm view was easily blocked by a neighbouring rib; the
+    // normal view keeps the focused attached bubble centred and unobstructed.
+    camera.position.set(tx - 0.62, ty, tz);
     camera.lookAt(controls.target); controls.update();
     e.target.textContent = "↩ 전체 보기로 복귀";
   } else {
-    P.bscale = zoomPrev.bscale;
-    zoomed = false;
-    // back to the cell-scale range (the micro range would otherwise let the
-    // wheel bury the camera again, which is how the zoom "broke")
-    controls.minDistance = camBase.minD; controls.maxDistance = camBase.maxD;
-    camera.near = camBase.near; camera.far = camBase.far;
-    camera.updateProjectionMatrix();
+    exitZoom();                    // restores range + zoomed=false + bscale + button label
     camera.position.copy(zoomPrev.pos); controls.target.copy(zoomPrev.tgt);
+    setCamPanValue(zoomPrev.pan);
     camera.lookAt(controls.target); controls.update();
-    e.target.textContent = "🔍 국소 확대 — 실제 크기(µm)로 핵생성·이탈 보기";
     if (zoomPrev.view && zoomPrev.view !== "orbit") setView(zoomPrev.view);  // was in a flat view
   }
 };
@@ -2441,69 +3457,88 @@ document.querySelectorAll(".fpanel .csvb[data-csv]").forEach(b => b.onclick = ()
   csvDownload(b.dataset.csv, rows, d, title);
 });
 
-// ---- floating panels: drag anywhere to move, corner to resize (persists) ----
-// Every analysis section is its OWN window now (단면 / 구간 / 전압 / LSV / EIS),
-// so each can be moved and sized on its own. Double-click a panel to reset it.
-const ANALYSIS_PANELS = ["pSlice","pProf","pEta","pLsv","pEis"];
-if (window.dragResize) {
-  dragResize(document.getElementById("panel"), null, "panel3d");    // whole panel = grip
-  dragResize(document.getElementById("hud"), null, "hud3d");
-  for (const id of ANALYSIS_PANELS) {
-    const el = document.getElementById(id);
-    if (el) dragResize(el, null, id);                                // localStorage key = id
-  }
-}
+// ---- fixed panel rails + collapsible analysis sections --------------------
+// Desktop uses a left settings panel and a right analysis rail. Mobile turns
+// the same DOM into a vertical document flow. Panels never float over each
+// other, while collapse state still persists per viewport class.
+const MOBILE_LAYOUT = matchMedia("(max-width:900px)");
 
-// Tidy default arrangement: a right-anchored column packer.
-//  · The compact analysis panels (구간·전압·LSV·EIS) stack in the rightmost
-//    column STARTING BELOW THE HUD so they never cover it; when the next one
-//    would run past the bottom edge it wraps to a fresh column on the LEFT, so a
-//    short screen spreads them sideways instead of off the bottom.
-//  · The tall 단면 뷰 (~400 px) can't share the space left under the HUD, so it
-//    gets its OWN fresh column that starts at the very top.
-// Panels the user has already placed (saved layout) are left alone unless
-// `force` (the 🧹 정렬 button) re-tidies everything.
-function tidyPanels(force) {
-  const w = 238, gap = 10, top0 = 12;
-  const hud = document.getElementById("hud");
-  const hb = hud ? hud.getBoundingClientRect() : null;
-  const hudBot = hb ? Math.round(hb.bottom) + gap : top0;
-  const botLimit = innerHeight - 12;
-  const colX = c => Math.max(12, innerWidth - 12 - (c + 1) * w - c * gap);
-  // force: wipe saved layout + any custom size (back to CSS 238px). Leaving the
-  // inline width UNSET matters: dragResize's mouseup treats a set width as
-  // "resized" and would persist on the first click — CSS width lets a tidied-
-  // but-untouched panel keep re-tidying on window resize instead.
-  const want = id => {
-    const el = document.getElementById(id); if (!el) return null;
-    if (force) { try { localStorage.removeItem(id); } catch (e) {}
-      el._floated = false; el.style.width = ""; el.style.height = ""; return el; }
-    return localStorage.getItem(id) ? null : el;       // saved -> user placed it
-  };
-  const place = (el, x, y) => {
-    el.style.position = "fixed"; el.style.right = "auto"; el.style.bottom = "auto";
-    el.style.margin = "0"; el.style.left = x + "px"; el.style.top = y + "px";
-    return Math.round(el.getBoundingClientRect().height) || 180;
-  };
-  let col = 0, colStartY = hudBot, y = hudBot;
-  for (const id of ["pProf", "pEta", "pLsv", "pEis"]) {
-    const el = want(id); if (!el) continue;
-    let h = place(el, colX(col), y);
-    if (y !== colStartY && y + h > botLimit) {          // overflow & not first in column
-      col++; colStartY = top0; y = top0; h = place(el, colX(col), y);
-    }
-    y += h + gap;
+// Mobile settings are compact accordions. Desktop keeps every box fully open
+// and continues to use the floating-panel workflow.
+const mobileSettingBoxes = [...document.querySelectorAll("#liveCtls > .box"), document.getElementById("plateEd")]
+  .filter(Boolean);
+function setMobileBoxOpen(box, open) {
+  box.classList.toggle("mobile-collapsed", !open);
+  const fold = box.querySelector(":scope > h3 > .mobileFold");
+  if (fold) {
+    fold.textContent = open ? "▾" : "▸";
+    fold.setAttribute("aria-expanded", open ? "true" : "false");
   }
-  const sl = want("pSlice");                            // tall viewer -> its own column, top
-  if (sl) place(sl, colX(col + 1), top0);
 }
-// First pass at load, then one more after the charts/legend have populated (they
-// grow the echem panels a little), so the final stack has no stale-height gaps.
-tidyPanels(false);
-setTimeout(() => tidyPanels(false), 800);
-{ const bt = document.getElementById("bTidy"); if (bt) bt.onclick = () => tidyPanels(true); }
-addEventListener("resize", () => { if (!tidyPanels._t) tidyPanels._t =
-  setTimeout(() => { tidyPanels._t = null; tidyPanels(false); }, 300); });
+mobileSettingBoxes.forEach((box, index) => {
+  const head = box.querySelector(":scope > h3"); if (!head) return;
+  const fold = document.createElement("button");
+  fold.type = "button"; fold.className = "mobileFold";
+  fold.setAttribute("aria-label", "설정 접기 또는 펼치기");
+  head.appendChild(fold);
+  const key = "mobileSetting:" + index;
+  const saved = localStorage.getItem(key);
+  setMobileBoxOpen(box, saved === null ? index < 2 : saved === "1");
+  const toggle = e => {
+    if (!MOBILE_LAYOUT.matches) return;
+    if (e) e.stopPropagation();
+    const open = box.classList.contains("mobile-collapsed");
+    setMobileBoxOpen(box, open);
+    try { localStorage.setItem(key, open ? "1" : "0"); } catch (_) {}
+  };
+  fold.onclick = toggle;
+  head.addEventListener("click", e => {
+    if (MOBILE_LAYOUT.matches && !e.target.closest("button,a,input,select,label")) toggle(e);
+  });
+});
+document.getElementById("mobileCollapseAll").onclick = () => mobileSettingBoxes.forEach((box, i) => {
+  setMobileBoxOpen(box, false); try { localStorage.setItem("mobileSetting:" + i, "0"); } catch (_) {}
+});
+document.getElementById("mobileExpandAll").onclick = () => mobileSettingBoxes.forEach((box, i) => {
+  setMobileBoxOpen(box, true); try { localStorage.setItem("mobileSetting:" + i, "1"); } catch (_) {}
+});
+
+const ANALYSIS_PANELS = ["pSlice","pProf","pEta","pLsv","pEis"];
+const analysisEntries = [];
+for (const id of ANALYSIS_PANELS) {
+  const el = document.getElementById(id), head = el && el.querySelector(".fhead");
+  if (!el || !head) continue;
+  const fold = document.createElement("button"); fold.className = "foldb";
+  fold.type = "button"; fold.setAttribute("aria-label", "패널 접기 또는 펼치기");
+  const syncFold = () => {
+    const collapsed = el.classList.contains("collapsed");
+    fold.textContent = collapsed ? "펼치기" : "접기";
+    fold.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  };
+  const applySavedOpen = () => {
+    const mobile = MOBILE_LAYOUT.matches;
+    const key = id + (mobile ? ":mobileOpen" : ":open");
+    const saved = localStorage.getItem(key);
+    const open = mobile ? saved === "1" : (saved === "1" || (saved === null && id === "pSlice"));
+    el.classList.toggle("collapsed", !open);
+    syncFold();
+  };
+  head.appendChild(fold); applySavedOpen();
+  fold.onclick = e => {
+    e.stopPropagation(); el.classList.toggle("collapsed"); syncFold();
+    const key = id + (MOBILE_LAYOUT.matches ? ":mobileOpen" : ":open");
+    try { localStorage.setItem(key, el.classList.contains("collapsed") ? "0" : "1"); } catch (_) {}
+  };
+  head.addEventListener("click", e => {
+    if (MOBILE_LAYOUT.matches && !e.target.closest("button,a,input,select,label")) fold.click();
+  });
+  analysisEntries.push({ applySavedOpen });
+}
+MOBILE_LAYOUT.addEventListener("change", () => analysisEntries.forEach(x => x.applySavedOpen()));
+// Discard obsolete coordinates/sizes from the former draggable layout.
+for (const key of ["panel3d","hud3d", ...ANALYSIS_PANELS]) {
+  try { localStorage.removeItem(key); } catch (_) {}
+}
 
 // ============================ render loop ==================================
 let last = performance.now(), fps = 0, hudT = 0, chartT = 0;
@@ -2512,8 +3547,7 @@ function loop(now) {
   fps = 0.9 * fps + 0.1 / Math.max(1e-3, dt);
   if (mode === "live") renderBubbles(now);   // 60 fps interpolated bubble motion
   renderTracers(now);                        // flow-field particle trace overlay
-  // self-heal: if any path ever leaves controls steering the NON-rendered
-  // camera, the wheel silently zooms the invisible one ("휠이 죽었다")
+  // Self-heal if a view transition leaves controls steering the non-rendered camera.
   if (controls.object !== activeCam) controls.object = activeCam;
   controls.update();
   renderer.render(scene, activeCam);
@@ -2544,12 +3578,14 @@ window.__camInfo = () => ({
   pos: activeCam.position.toArray().map(v => +v.toFixed(3)),
   tgt: controls.target.toArray().map(v => +v.toFixed(3)),
   minD: controls.minDistance, maxD: controls.maxDistance,
-  near: camera.near, far: camera.far, zoomed,
+  near: camera.near, far: camera.far, zoomed, wheelZoom: controls.enableZoom,
+  panSlider: camPanValue,
 });
 window.__tick = () => { controls.update(); renderer.render(scene, activeCam); };
 window.__rinfo = () => ({ calls: renderer.info.render.calls,
                           tris: renderer.info.render.triangles,
-                          instCount: inst.count,
+                          instCount: inst.count + instAttached.count,
+                          freeBubbles: inst.count, attachedBubbles: instAttached.count,
                           w: renderer.domElement.width, h: renderer.domElement.height });
 window.__verify = () => {
   controls.update();
@@ -2579,14 +3615,23 @@ window.__dbg3d = () => {
            quat: camera.quaternion.toArray(), aspect: camera.aspect };
 };
 window.__clipCount = () => renderer.clippingPlanes.length;
-window.__renderNow = () => { renderBubbles(performance.now()); return inst.count; };
+window.__renderNow = () => {
+  renderBubbles(performance.now());
+  return inst.count + instAttached.count;
+};
+window.__bubbleStyleInfo = () => ({
+  free: inst.count, attached: instAttached.count,
+  meshes: 2, maxInstances: MAXB,
+  attachedNormalScaleAtTheta: +(0.48 + 0.18 * (Math.max(1, Math.min(179, +P.theta || 60)) / 179)).toFixed(3),
+});
 window.__ribInfo = () => {
   const info = sub => {
     if (!sub) return null;
-    const boxes = sub.children.filter(o => o.isMesh);
-    const edges = sub.children.filter(o => o.isLineSegments);
+    const boxes = sub.children.filter(o => o.isMesh && o.visible);
+    const edges = sub.children.filter(o => o.isLineSegments && o.visible);
     return { boxes: boxes.length, edges: edges.length,
              twoTone: boxes.length ? Array.isArray(boxes[0].material) : false,
+             style: boxes.length ? boxes[0].userData.renderStyle : null,
              opaque: boxes.length ? !boxes[0].material[0].transparent : null,
              visible: sub.visible && sub.parent.visible };
   };
@@ -2609,18 +3654,46 @@ window.__visInfo = () => {
 };
 window.__portInfo = () => {
   if (!portGroup) return null;
-  const bb = new THREE.Box3();
-  const zs = [];
-  for (const m of portGroup.children) {
-    bb.setFromObject(m); zs.push({ y: +m.position.y.toFixed(1), z: +m.position.z.toFixed(1),
-                                   inlet: m.material === MAT.inlet });
+  const fittings = [];
+  for (const group of portGroup.children) {
+    const p = group.userData.port;
+    if (!p) continue;
+    fittings.push({
+      role: p.role, face: p.face, side: p.side, span: +p.span.toFixed(3),
+      center: p.center.map(v => +v.toFixed(3)),
+      outer: p.outer.map(v => +v.toFixed(3)),
+      parts: group.children.length,
+    });
   }
-  return { n: portGroup.children.length, sig: portSig.slice(0, 16), meshes: zs };
+  return { n: fittings.length, sig: portSig.slice(0, 16), fittings };
 };
 window.__ribCount = () => ({ c: ribSubC ? ribSubC.children.length : -1,
                              a: ribSubA ? ribSubA.children.length : -1, sig: landSig.slice(0, 12) });
 window.__camType = () => activeCam.isOrthographicCamera ? "ortho" : "persp";
+window.__zoomInfo = () => ({
+  zoomed,
+  hasFocus: !!(zoomFocus && !zoomFocus.dying),
+  distance: +camera.position.distanceTo(controls.target).toFixed(4),
+  target: controls.target.toArray().map(v => +v.toFixed(4)),
+});
 window.__plateOp = () => ({ plate: +MAT.plate.opacity.toFixed(2), ptl: +MAT.ptl.opacity.toFixed(2) });
+window.__memoryInfo = () => ({
+  geometries: renderer.info.memory.geometries,
+  textures: renderer.info.memory.textures,
+  calls: renderer.info.render.calls,
+  triangles: renderer.info.render.triangles,
+  points: renderer.info.render.points,
+  lines: renderer.info.render.lines,
+});
+window.__visualInfo = () => ({
+  preset: visualPreset, view: viewMode, jmap: P.jmap,
+  plateC: !!(plateMeshC && plateMeshC.visible),
+  plateA: !!(plateMeshA && plateMeshA.visible),
+  decorC: !!(decorC && decorC.visible),
+  decorA: !!(decorA && decorA.visible),
+  decorCore: !!(decorCore && decorCore.visible),
+  layers: {...layers},
+});
 window.__ready = true;
 </script>
 </body>

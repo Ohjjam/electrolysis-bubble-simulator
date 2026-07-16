@@ -1,0 +1,17 @@
+{
+  "scenario": "zero-standoff full-strand contact",
+  "mesh_id": "pp_040x053",
+  "current_density_mA_cm2": 1000,
+  "blocking_fraction": 0.5,
+  "theta_mesh_bubble_only": 0.6998,
+  "active_fraction_before_blocking": 0.3002,
+  "active_fraction_after_blocking": 0.1501,
+  "effective_total_coverage": 0.8499,
+  "contact_angle_saving_mV": 0.0,
+  "residence_saving_mV": 70.7,
+  "blocking_penalty_mV": 38.998420443206946,
+  "pristine_voltage_mV": 2033.3,
+  "mesh_no_block_voltage_mV": 1962.7,
+  "mesh_with_block_voltage_mV": 2001.698420443207,
+  "net_saving_mV": 31.601579556793013
+}

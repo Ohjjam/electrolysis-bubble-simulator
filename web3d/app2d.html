@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>3D 셀 시뮬레이터 — 2 패널 뷰 (live Python kernel)</title>
+<link rel="icon" href="data:,">
 <style>
   /* light "lab notebook" palette: paper cards on a cool grey desk */
   :root{--bg:#eef1f6;--card:#ffffff;--line:#d6dce6;--tx:#1a2331;--dim:#68738a;
@@ -13,27 +14,41 @@
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--tx);
     font:14px/1.45 "Segoe UI",system-ui,sans-serif;padding:14px 16px;}
   h1{font-size:19px;margin:0 0 2px} .sub{color:var(--dim);font-size:12px;margin-bottom:12px}
+  .titleRow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .langSwitch{display:flex;flex:none;gap:2px;padding:2px;border:1px solid var(--line);
+    border-radius:8px;background:var(--surf)}
+  .langSwitch button{border:0;border-radius:5px;padding:4px 7px;background:transparent;
+    color:var(--dim);font-size:10px;cursor:pointer}
+  .langSwitch button.on{background:var(--accent);color:#fff;font-weight:700}
+  .lang-en{display:none}
+  html[lang="en"] .lang-ko{display:none}
+  html[lang="en"] .lang-en{display:inline}
   .pill{display:inline-block;border:1px solid #b6e3d0;background:#e8f7f1;border-radius:99px;
         padding:1px 9px;font-size:11px;color:var(--grn)}
-  .app{display:grid;grid-template-columns:300px 1fr;gap:12px;align-items:start}
+  .app{display:grid;grid-template-columns:minmax(280px,320px) minmax(0,1fr);gap:12px;align-items:start}
   /* the left column is ONE grid item; adding a second one there pushed the
      panels onto row 2 (grid auto-placement, not a styling accident) */
   .side{display:flex;flex-direction:column;gap:12px;min-width:0}
-  /* right side = a compact dashboard: the two visual panels (small) + the
-     electrochemistry panels (LSV / 과전압 / CP / EIS / 시간추이) all at once.
-     auto-fit packs as many ~290px columns as the width allows, so on a wide
-     screen every panel is visible without scrolling. */
-  .dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
+  /* Fixed dashboard grid: panels stay in document flow and never overlap.
+     Two readable columns are the default; very wide screens get three. */
+  .dash{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
         gap:10px;align-items:start;min-width:0}
-  @media (max-width:660px){ .app{grid-template-columns:1fr} }
+  @media (min-width:1600px){.dash{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (max-width:1000px){.app{grid-template-columns:1fr}}
+  @media (max-width:660px){.dash{grid-template-columns:1fr}}
   .phead{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px}
+  .phead .ptitle{margin-right:auto}
+  .panelFold{flex:none;background:var(--surf);color:var(--dim);border:1px solid var(--line);
+    border-radius:7px;padding:3px 8px;font-size:10.5px;cursor:pointer;white-space:nowrap}
+  .panelFold:hover{border-color:var(--accent);color:var(--accent)}
   .csvb{flex:none;background:var(--surf);color:var(--dim);border:1px solid var(--line);
         border-radius:7px;padding:3px 9px;font-size:10.5px;cursor:pointer;white-space:nowrap}
   .csvb:hover{border-color:var(--grn);color:var(--grn)}
-  /* cards are flex columns; a .chartcv canvas GROWS to fill the leftover space,
-     so dragging a panel bigger enlarges the plot (re-drawn crisp) instead of
-     stretching a fixed bitmap. Charts stay sharp at any size/aspect. */
+  /* Cards remain fixed in the grid; charts re-fit their assigned column. */
   .dash>.card{display:flex;flex-direction:column}
+  .dash>.card.collapsed{min-height:0}
+  .dash>.card.collapsed>.phead{margin-bottom:0}
+  .dash>.card.collapsed>:not(.phead){display:none!important}
   .chartcv{flex:1 1 140px;width:100%;min-height:140px;display:block}
   canvas{width:100%}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
@@ -66,7 +81,13 @@
 </style>
 </head>
 <body>
-<h1>3D 셀 시뮬레이터 <span class="pill">계산 = 3D bubblesim3d 커널 (live)</span></h1>
+<div class="titleRow">
+  <h1>3D 셀 시뮬레이터 <span class="pill">계산 = 3D bubblesim3d 커널 (live)</span></h1>
+  <div class="langSwitch" data-i18n-skip role="group" aria-label="Language / 언어">
+    <button type="button" data-language="ko">한국어</button>
+    <button type="button" data-language="en">English</button>
+  </div>
+</div>
 <div class="sub">모든 수치는 3-D 격자에서 계산 — NS 유동 + 기포 생애주기 + 전기화학. 브라우저는 그리기만.
   <a href="/" style="color:var(--accent);margin-left:8px">🧊 3D 렌더 뷰로 →</a>
   <span id="conn">⚠ 서버 연결 끊김 — bat 창이 닫혔는지 확인</span></div>
@@ -111,17 +132,40 @@
       <button data-s="0" class="on">음극 (H₂)</button><button data-s="1">양극 (O₂)</button>
     </div>
     <canvas id="hero" width="400" height="200"></canvas>
-    <div class="ri" style="margin-top:6px"><span class="un" style="width:34px">확대</span>
+    <div class="ri" style="margin-top:6px"><span class="un" data-i18n-skip style="width:42px"><span class="lang-ko">확대</span><span class="lang-en">Zoom</span></span>
       <input id="sZoom" type="range" min="1" max="12" step="0.5" value="1">
       <input id="nZoom" type="number" min="1" max="60" step="0.5" value="1"></div>
-    <div class="ri" style="margin-top:4px"><span class="un" style="width:34px">깊이</span>
+    <div class="ri" style="margin-top:4px"><span class="un" data-i18n-skip style="width:42px"><span class="lang-ko">깊이</span><span class="lang-en">Depth</span></span>
       <input id="sWinZ" type="range" min="0.05" max="3" step="0.05" value="0.6">
       <input id="nWinZ" type="number" min="0.05" max="3" step="0.05" value="0.6"></div>
     <!-- metrics live in their OWN line: drawHero rewrites #heroLoc every frame,
          so the mRd/mHeroN/mHeroR spans must NOT sit inside it (they'd be wiped
          and getElementById would then return null → the render loop would die) -->
-    <div class="hint" id="heroMet" style="margin-top:5px">r<sub>dep</sub> <b id="mRd">–</b>µm · 창 <b id="mHeroN">–</b>개 · 최대 <b id="mHeroR">–</b>µm</div>
-    <div class="hint" id="heroLoc" style="margin-top:4px">–</div>
+    <div class="hint" id="heroMet" data-i18n-skip style="margin-top:5px">
+      r<sub>dep</sub> <b id="mRd">–</b>µm ·
+      <span class="lang-ko">창 </span><span class="lang-en">window </span><b id="mHeroN">–</b><span class="lang-ko">개 · 최대 </span><span class="lang-en"> · max </span><b id="mHeroR">–</b>µm
+    </div>
+    <!-- This region changes with the animation. Translate it synchronously in
+         drawHero instead of letting the global MutationObserver rewrite it
+         after every frame (which caused the English view to oscillate). -->
+    <div class="hint" id="heroLoc" data-i18n-skip style="margin-top:4px">–</div>
+    <div class="hint" id="heroExplain" data-i18n-skip style="margin-top:3px">
+      <span class="lang-ko">대표 버블을 실제 사이트 밀도로 되펼친 재구성 — 성장률·이탈크기·상승속도는 모두 시뮬레이션 값.
+        이탈한 기포는 벽에 <b>눌린 채</b>(Tomiyama 양력 &gt; Antal 벽력, 평형 이격거리 ≈ 1.05 r)
+        <b>부력 + 국소 유동</b>의 합 방향으로 미끄러집니다. 유동 방향은 <b>위치마다 다릅니다</b>:
+        패스 중앙에서는 유로를 따라 거의 <b>가로</b>이고 패스마다 좌우가 뒤집히지만,
+        <b>턴 갭(양 끝)</b>에서는 다음 패스로 올라가느라 거의 <b>수직 상승</b>입니다
+        (음극면 실측: 가로 87%, 수직 5%, 비스듬 8%). 이 창의 세로축은 그 <b>합(빨강 화살표)</b> 방향이고,
+        나침반은 셀 좌표계(위 = +y, 오른쪽 = +z)에서 부력·유동·합을 각각의 실제 각도로 그립니다.</span>
+      <span class="lang-en">Representative bubbles are reconstructed at the actual site density; growth rate, detachment size,
+        and rise velocity all come from the simulation. Detached bubbles remain <b>pressed against the wall</b>
+        (Tomiyama lift &gt; Antal wall force; equilibrium gap ≈ 1.05 r) and slide in the combined direction of
+        <b>buoyancy + local flow</b>. Flow direction varies by position: it is nearly <b>horizontal</b> along the
+        channel in the middle of a pass and reverses between passes, while the <b>turn gaps</b> are nearly a
+        <b>vertical rise</b> into the next pass (cathode-side count: horizontal 87%, vertical 5%, diagonal 8%).
+        The vertical axis of this window follows that resultant (red arrow); the compass shows buoyancy, flow,
+        and their resultant in cell coordinates (up = +y, right = +z).</span>
+    </div>
   </div>
 
   <!-- ② whole-cell blocking (compact) -->
@@ -190,6 +234,8 @@
   </div>
 </div>
 
+<script src="/web3d/i18n_catalog.js"></script>
+<script src="/web3d/i18n.js"></script>
 <script src="/web3d/controls.js"></script>
 <script src="/web3d/plate_editor.js"></script>
 <script>
@@ -228,7 +274,11 @@ function prep(cv) {                                   // aspect-locked HiDPI can
   const dpr = DPR();
   const W = cv.clientWidth || +cv.getAttribute("width");
   const H = Math.round(W * (+cv.getAttribute("height") / +cv.getAttribute("width")));
-  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  // round to whole backing-store pixels BEFORE comparing: canvas.width coerces
+  // to an int, so at a fractional dpr (Windows 125%/150%) `W*dpr` never equals
+  // the stored int and the guard reallocated the backing store every frame.
+  const dw = Math.round(W * dpr), dh = Math.round(H * dpr);
+  if (cv.width !== dw || cv.height !== dh) { cv.width = dw; cv.height = dh; }
   cv.style.height = H + "px";
   const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, W, H);
@@ -526,39 +576,74 @@ function drawHero() {
 
   const pm = d.p_merge || 0, conf = d.r_conf_um || 0, nmf = d.n_merge_free || 0;
   const capped = rDep > 0 && conf > 0 && rDep >= conf - 0.05;
-  document.getElementById("mHeroN").textContent = n;
-  document.getElementById("mHeroR").textContent = rmax.toFixed(0);
-  document.getElementById("heroLoc").innerHTML =
-    `창 ${(winN*1000)|0}(벽 법선)×${(winT*1000)|0}(기포 이동) µm · z-투영 ${WIN_Z.toFixed(2)} mm · ` +
-    `국소 전류 <b style="color:var(--tx)">${jFac.toFixed(2)}×</b> 평균 · ` +
-    `사이트 ${dens.toFixed(1)}/mm² · 한 사이클 <b style="color:var(--gold)">${per0 ? per0.toFixed(1) : "–"} ms</b> · ` +
-    `상류 유입 <b style="color:var(--tx)">${nUp}</b>개<br>` +
-    (flow ? (flow.mag < 1
-              ? `국소 유동 <b style="color:var(--dim)">거의 없음</b> (리브 아래 / 정체 구간) · `
-              : `국소 유동 <b style="color:var(--tx)">${flow.mag.toFixed(0)} mm/s</b> ` +
-                `(${Math.abs(flow.vz) > Math.abs(flow.vy)
-                     ? (flow.vz > 0 ? "→ 폭방향 +z" : "← 폭방향 −z")
-                     : (flow.vy > 0 ? "↑ 위" : "↓ 아래")}, 연직에서 ` +
-                `<b style="color:var(--tx)">${Math.round(flow.ang)}°</b> — ` +
-                `<b style="color:var(--accent)">${flow.zone}</b>) · `) +
-            `근벽에서 <b style="color:var(--tx)">${uAt(rDep*1e-3).toFixed(0)} mm/s</b> · ` +
-            `부력 슬립 <b style="color:var(--grn)">${vT.toFixed(1)} mm/s</b> → ` +
-            `기포 이동 <b style="color:var(--warn)">${Math.hypot(uAt(rDep*1e-3)*ly + vT, uAt(rDep*1e-3)*lz).toFixed(0)} mm/s</b>` +
-            `<br>` : "") +
-    `합체 확률 <b style="color:var(--tx)">${pm.toFixed(2)}</b> ` +
-    `(${pm < 0.5 ? "진한 전해질 — 억제" : "묽은 전해질 — 활발"}) · ` +
-    `출구 기포 <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> ` +
-    `(무리 합체 ${nmf.toLocaleString()}회) · ` +
-    `벽 구속 한계 <b style="color:${capped ? "var(--gold)" : "var(--dim)"}">${conf.toFixed(0)} µm</b>` +
-    `${capped ? " — 반대편 플레이트가 이탈 크기를 결정" : ""} · ` +
-    `기포층 두께 ≈ <b style="color:var(--tx)">${(2*rDep).toFixed(0)} µm</b><br>` +
-    `<span style="color:var(--dim)">대표 버블을 실제 사이트 밀도로 되펼친 재구성 — 성장률·이탈크기·상승속도는 모두 시뮬레이션 값. ` +
-    `이탈한 기포는 벽에 <b>눌린 채</b>(Tomiyama 양력 > Antal 벽력, 평형 이격거리 ≈ 1.05 r) ` +
-    `<b>부력 + 국소 유동</b>의 합 방향으로 미끄러집니다. 유동 방향은 <b>위치마다 다릅니다</b>: ` +
-    `패스 중앙에서는 유로를 따라 거의 <b>가로</b>이고 패스마다 좌우가 뒤집히지만, ` +
-    `<b>턴 갭(양 끝)</b>에서는 다음 패스로 올라가느라 거의 <b>수직 상승</b>입니다 ` +
-    `(음극면 실측: 가로 87%, 수직 5%, 비스듬 8%). 이 창의 세로축은 그 <b>합(빨강 화살표)</b> 방향이고, ` +
-    `나침반은 셀 좌표계(위 = +y, 오른쪽 = +z)에서 부력·유동·합을 각각의 실제 각도로 그립니다.</span>`;
+  const infoLang = window.SimI18n?.getLanguage() === "en" ? "en" : "ko";
+  const infoNow = performance.now();
+  // Canvas stays at display refresh rate, but text/layout metrics only need
+  // human-readable cadence. This avoids rebuilding a large DOM subtree at 60 Hz.
+  if (infoLang !== drawHero._infoLang || infoNow >= (drawHero._infoNext || 0)) {
+    drawHero._infoLang = infoLang;
+    drawHero._infoNext = infoNow + 125;
+    const heroN = document.getElementById("mHeroN");
+    const heroR = document.getElementById("mHeroR");
+    if (heroN.textContent !== String(n)) heroN.textContent = n;
+    if (heroR.textContent !== rmax.toFixed(0)) heroR.textContent = rmax.toFixed(0);
+
+    const nearWall = uAt(rDep*1e-3);
+    const bubbleSpeed = Math.hypot(nearWall*ly + vT, nearWall*lz);
+    const zoneEn = flow && ({
+      "정체":"stagnant zone",
+      "턴 (수직 상승)":"turn (vertical rise)",
+      "패스 (가로 흐름)":"pass (horizontal flow)",
+      "코너 (비스듬)":"corner (diagonal flow)",
+    }[flow.zone] || flow.zone);
+    const flowKo = flow ? (flow.mag < 1
+      ? `국소 유동 <b style="color:var(--dim)">거의 없음</b> (리브 아래 / 정체 구간) · `
+      : `국소 유동 <b style="color:var(--tx)">${flow.mag.toFixed(0)} mm/s</b> ` +
+        `(${Math.abs(flow.vz) > Math.abs(flow.vy)
+             ? (flow.vz > 0 ? "→ 폭방향 +z" : "← 폭방향 −z")
+             : (flow.vy > 0 ? "↑ 위" : "↓ 아래")}, 연직에서 ` +
+        `<b style="color:var(--tx)">${Math.round(flow.ang)}°</b> — ` +
+        `<b style="color:var(--accent)">${flow.zone}</b>) · `) +
+      `근벽에서 <b style="color:var(--tx)">${nearWall.toFixed(0)} mm/s</b> · ` +
+      `부력 슬립 <b style="color:var(--grn)">${vT.toFixed(1)} mm/s</b> → ` +
+      `기포 이동 <b style="color:var(--warn)">${bubbleSpeed.toFixed(0)} mm/s</b><br>` : "";
+    const flowEn = flow ? (flow.mag < 1
+      ? `Local flow <b style="color:var(--dim)">nearly zero</b> (under rib / stagnant zone) · `
+      : `Local flow <b style="color:var(--tx)">${flow.mag.toFixed(0)} mm/s</b> ` +
+        `(${Math.abs(flow.vz) > Math.abs(flow.vy)
+             ? (flow.vz > 0 ? "→ width direction +z" : "← width direction −z")
+             : (flow.vy > 0 ? "↑ up" : "↓ down")}, ` +
+        `<b style="color:var(--tx)">${Math.round(flow.ang)}°</b> from vertical — ` +
+        `<b style="color:var(--accent)">${zoneEn}</b>) · `) +
+      `Near-wall flow <b style="color:var(--tx)">${nearWall.toFixed(0)} mm/s</b> · ` +
+      `buoyant slip <b style="color:var(--grn)">${vT.toFixed(1)} mm/s</b> → ` +
+      `bubble speed <b style="color:var(--warn)">${bubbleSpeed.toFixed(0)} mm/s</b><br>` : "";
+    const infoHtml = infoLang === "en"
+      ? `Window ${(winN*1000)|0} (wall-normal) × ${(winT*1000)|0} (bubble travel) µm · z-projection ${WIN_Z.toFixed(2)} mm · ` +
+        `local current <b style="color:var(--tx)">${jFac.toFixed(2)}×</b> mean · ` +
+        `sites ${dens.toFixed(1)}/mm² · one cycle <b style="color:var(--gold)">${per0 ? per0.toFixed(1) : "–"} ms</b> · ` +
+        `upstream entries <b style="color:var(--tx)">${nUp}</b><br>` + flowEn +
+        `Coalescence probability <b style="color:var(--tx)">${pm.toFixed(2)}</b> ` +
+        `(${pm < 0.5 ? "concentrated electrolyte — suppressed" : "dilute electrolyte — active"}) · ` +
+        `outlet bubble <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> ` +
+        `(swarm merges ${nmf.toLocaleString()} times) · ` +
+        `wall-confinement limit <b style="color:${capped ? "var(--gold)" : "var(--dim)"}">${conf.toFixed(0)} µm</b>` +
+        `${capped ? " — opposite plate sets the detachment size" : ""} · ` +
+        `bubble-layer thickness ≈ <b style="color:var(--tx)">${(2*rDep).toFixed(0)} µm</b>`
+      : `창 ${(winN*1000)|0}(벽 법선)×${(winT*1000)|0}(기포 이동) µm · z-투영 ${WIN_Z.toFixed(2)} mm · ` +
+        `국소 전류 <b style="color:var(--tx)">${jFac.toFixed(2)}×</b> 평균 · ` +
+        `사이트 ${dens.toFixed(1)}/mm² · 한 사이클 <b style="color:var(--gold)">${per0 ? per0.toFixed(1) : "–"} ms</b> · ` +
+        `상류 유입 <b style="color:var(--tx)">${nUp}</b>개<br>` + flowKo +
+        `합체 확률 <b style="color:var(--tx)">${pm.toFixed(2)}</b> ` +
+        `(${pm < 0.5 ? "진한 전해질 — 억제" : "묽은 전해질 — 활발"}) · ` +
+        `출구 기포 <b style="color:var(--gold)">${(d.r_exit_um ?? 0).toFixed(0)} µm</b> ` +
+        `(무리 합체 ${nmf.toLocaleString()}회) · ` +
+        `벽 구속 한계 <b style="color:${capped ? "var(--gold)" : "var(--dim)"}">${conf.toFixed(0)} µm</b>` +
+        `${capped ? " — 반대편 플레이트가 이탈 크기를 결정" : ""} · ` +
+        `기포층 두께 ≈ <b style="color:var(--tx)">${(2*rDep).toFixed(0)} µm</b>`;
+    const heroLoc = document.getElementById("heroLoc");
+    if (heroLoc.innerHTML !== infoHtml) heroLoc.innerHTML = infoHtml;
+  }
 }
 
 // =================== PANEL 2: whole cell, gas blocking =======================
@@ -710,9 +795,19 @@ async function poll() {
     // the conversion through the channel cross-section was invisible until now
     const dsn = s.designer || {};
     const qCh = flowMLmin(dsn), q3d = (d.q_liq_mLs != null) ? d.q_liq_mLs * 60 : null;
-    gm.innerHTML += `<br>펌프 유량 ≈ <b style="color:var(--tx)">${qCh.toFixed(2)} mL/min</b>` +
+    const nCirc = d.liquid_circuits || 1;
+    gm.innerHTML += `<br>펌프 유량(회로당) <b style="color:var(--tx)">${qCh.toFixed(2)} mL/min</b>` +
       ` (u ${(+dsn.u_flow || 0).toFixed(3)} m/s × 유로 단면 ${(chanArea_m2(dsn) * 1e6).toFixed(3)} mm²)` +
-      (q3d != null ? ` · 3-D 셀 실제 통과량 ${q3d.toFixed(2)} mL/min` : "");
+      (q3d != null ? ` · ${nCirc}개 액체회로 셀 총량 ${q3d.toFixed(2)} mL/min` : "");
+    if (d.H_achieved_mm != null) {
+      const sizeOff = Math.abs(d.H_achieved_mm-d.H_requested_mm) > .05*d.H_requested_mm ||
+                      Math.abs(d.W_achieved_mm-d.W_requested_mm) > .05*d.W_requested_mm;
+      gm.innerHTML += `<br><span style="color:${sizeOff||d.grid_coarsened?"var(--gold)":"var(--dim)"}">` +
+        `계산영역 ${d.H_achieved_mm.toFixed(1)}×${d.W_achieved_mm.toFixed(1)} mm ` +
+        `(요청 ${d.H_requested_mm.toFixed(1)}×${d.W_requested_mm.toFixed(1)} mm)` +
+        (d.grid_coarsened ? ` · 셀 크기 보존을 위해 격자 ${d.h_requested_mm.toFixed(2)}→${d.h_mm.toFixed(2)} mm 자동 조정` : "") +
+        `</span>`;
+    }
   } catch {
     document.getElementById("conn").style.display = "inline";
     dt = 1200;
@@ -1054,19 +1149,38 @@ document.querySelectorAll(".csvb[data-csv]").forEach(b => b.onclick = () => {
   csvDownload(b.dataset.csv, got.rows, dsn(), got.title);
 });
 
-// ---- make every dashboard card draggable (header) + resizable (corner) ----
-// The user rearranges them freely; layout persists in localStorage. Double-
-// click a card's header to snap it back into the tidy grid.
-// interactive canvases must NOT start a drag (they handle clicks themselves)
-document.querySelectorAll("#face").forEach(c => c.setAttribute("data-nodrag", ""));
+// ---- fixed dashboard cards with persistent fold/unfold --------------------
 document.querySelectorAll(".dash > .card").forEach((card, i) => {
-  if (window.dragResize) dragResize(card, card, "dash2d_" + i);   // whole card is the grip
+  const head = card.querySelector(":scope > .phead");
+  if (!head) return;
+  const fold = document.createElement("button");
+  fold.type = "button";
+  fold.className = "panelFold";
+  fold.setAttribute("aria-label", "패널 접기 또는 펼치기");
+  const key = "dash2dOpen:" + i;
+  const sync = () => {
+    const collapsed = card.classList.contains("collapsed");
+    fold.textContent = collapsed ? "펼치기" : "접기";
+    fold.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  };
+  const saved = localStorage.getItem(key);
+  card.classList.toggle("collapsed", saved === "0");
+  head.appendChild(fold);
+  sync();
+  fold.onclick = e => {
+    e.stopPropagation();
+    card.classList.toggle("collapsed");
+    sync();
+    try { localStorage.setItem(key, card.classList.contains("collapsed") ? "0" : "1"); } catch (_) {}
+  };
+  head.addEventListener("click", e => {
+    if (!e.target.closest("button,a,input,select,label")) fold.click();
+  });
 });
-// left controls column: whole column draggable (form controls excluded) + resizable
-(function(){
-  const side = document.querySelector(".side");
-  if (side && window.dragResize) dragResize(side, side, "side2d");
-})();
+for (let i = 0; i < 7; i++) {
+  try { localStorage.removeItem("dash2d_" + i); } catch (_) {}
+}
+try { localStorage.removeItem("side2d"); } catch (_) {}
 
 // slow panels (operating-point spectra) refresh on their own cadence
 loadLsv(); loadEis();

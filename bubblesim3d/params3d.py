@@ -18,9 +18,8 @@ DESIGNER_DEFAULTS = {
     "W_cm": 5.0, "H_cm": 5.0,
     "ff": "serp", "L_flow_cm": 40.0, "n_ch": 8,
     "w_ch_mm": 1.0, "d_ch_mm": 1.0, "w_land_mm": 1.0,
-    "t_mem_um": 50.0, "sigma_mem": 10.0,
-    "t_ptl_um": 200.0, "eps_ptl": 0.7, "t_mpl_um": 30.0, "cat_load": 1.0,
-    "n_cell": 1, "comp_pct": 20.0,
+    "t_mem_um": 50.0,
+    "t_ptl_um": 200.0,
     # --- flow-field ports (the plate breathes through holes, not whole faces) ---
     # in_w / out_w are port WIDTHS as a fraction of the cell width z.
     #   in_w  = 0  -> "auto": the preset's own inlet (serpentine start / every
@@ -45,15 +44,20 @@ DESIGNER_DEFAULTS = {
     "j0_cathode": 130.0,         # HER exchange current density [A/m^2]
     "j0_anode": 1.3e-7,          # OER exchange current density [A/m^2]
     "r_mem": 3.2e-6,             # area membrane resistance [ohm*m^2]
-    # 0.35 m/s: enough pumped liquid that the default cell is NOT gas-choked
-    # (at 0.5 A/cm^2 the Faradaic gas rate is ~2.2 mL/s; see CellSim3D.gas_liquid)
+    # Explicit MODEL parameters.  These are fitted/closure values, not universal
+    # physical constants; keeping them in the designer makes that distinction
+    # visible and keeps live + sweep calculations on the same values.
+    "fritz_scale": 0.08,         # electrolysis departure-size calibration [-]
+    "dep_grad_um": 100.0,        # DEP proxy gradient length [um]
+    # 0.35 m/s: channel mean velocity. Pump flow is derived from the requested
+    # physical channel cross-section, not from the coarse live voxel inlet.
     "u_flow": 0.35, "tilt": 0.0, "B": 0.0, "E": 0.0,
     "theta": 60.0, "T": 60.0, "Pbar": 1.0,
     "drag_K": 60.0,              # bubble->flow blocking strength [1/s per void]
     # --- electrode kinetics shape + electrolyte-path convention -------------
     "alpha_a": 1.0,              # OER anodic transfer coefficient (Tafel slope lever)
     "gap_mm": 2.0,               # electrode-to-membrane electrolyte gap CONVENTION [mm]
-    "C_dl_anode": 0.2,           # anode double-layer capacitance [F/m^2] (EIS + CP tau)
+    "C_dl_anode": 0.2,           # anode double-layer capacitance [F/m^2] (EIS only)
     "C_dl_cathode": 0.2,         # cathode double-layer capacitance [F/m^2]
     # --- dry cathode (anolyte-only AEM): membrane water transport -------------
     # OFF by default: every existing cell keeps both electrodes liquid-wetted.
@@ -66,6 +70,7 @@ DESIGNER_DEFAULTS = {
     "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)
     "mesh_cover": 1.0,           # fraction of the flow path covered (1 = full)
     "mesh_pos": "outlet",        # partial-cover anchor: inlet | middle | outlet
+    "mesh_theta": 105.8,          # untreated PP apparent water contact angle [deg]
     "void_frac": 0.82,           # void_ohmic_frac for the polarization sweep
                                  # (fraction of the electrolyte path the channel
                                  # void obstructs; calibrated on the pristine cell)
@@ -76,23 +81,32 @@ DESIGNER_DEFAULTS = {
 # PREDICTED from it, never fitted (blind protocol).
 MESH_CATALOG = [
     {"id": "pp_015x015", "name": '0.015"×0.015" — 구멍 0.46 mm · 24% · t 0.76 mm',
-     "hole_mm": 0.457, "open": 0.24, "t_mm": 0.762},
+     "hole_mm": 0.457, "hole_x_mm": 0.457, "hole_y_mm": 0.457,
+     "open": 0.24, "t_mm": 0.762},
     {"id": "pp_025x030", "name": '0.025"×0.030" — 구멍 0.70 mm · 35% · t 0.36 mm',
-     "hole_mm": 0.699, "open": 0.35, "t_mm": 0.356},
+     "hole_mm": 0.699, "hole_x_mm": 0.635, "hole_y_mm": 0.762,
+     "open": 0.35, "t_mm": 0.356},
     {"id": "pp_030x037", "name": '0.030"×0.037" — 구멍 0.85 mm · 20% · t 0.91 mm',
-     "hole_mm": 0.851, "open": 0.20, "t_mm": 0.914},
+     "hole_mm": 0.851, "hole_x_mm": 0.762, "hole_y_mm": 0.940,
+     "open": 0.20, "t_mm": 0.914},
     {"id": "pp_040x053", "name": '0.040"×0.053" — 구멍 1.18 mm · 50% · t 0.48 mm (실측에 사용)',
-     "hole_mm": 1.181, "open": 0.50, "t_mm": 0.483},
+     "hole_mm": 1.181, "hole_x_mm": 1.016, "hole_y_mm": 1.346,
+     "open": 0.50, "t_mm": 0.483},
     {"id": "pp_085x115", "name": '0.085"×0.115" — 구멍 2.54 mm · 35% · t 1.75 mm',
-     "hole_mm": 2.540, "open": 0.35, "t_mm": 1.753},
+     "hole_mm": 2.540, "hole_x_mm": 2.159, "hole_y_mm": 2.921,
+     "open": 0.35, "t_mm": 1.753},
     {"id": "pp_094x094", "name": '0.094"×0.094" — 구멍 2.39 mm · 45% · t 2.03 mm',
-     "hole_mm": 2.388, "open": 0.45, "t_mm": 2.032},
+     "hole_mm": 2.388, "hole_x_mm": 2.388, "hole_y_mm": 2.388,
+     "open": 0.45, "t_mm": 2.032},
     {"id": "pp_120x175", "name": '0.120"×0.175" — 구멍 3.75 mm · 60% · t 0.89 mm',
-     "hole_mm": 3.747, "open": 0.60, "t_mm": 0.889},
+     "hole_mm": 3.747, "hole_x_mm": 3.048, "hole_y_mm": 4.445,
+     "open": 0.60, "t_mm": 0.889},
     {"id": "pp_145x175", "name": '0.145"×0.175" — 구멍 4.06 mm · 70% · t 0.89 mm',
-     "hole_mm": 4.064, "open": 0.70, "t_mm": 0.889},
+     "hole_mm": 4.064, "hole_x_mm": 3.683, "hole_y_mm": 4.445,
+     "open": 0.70, "t_mm": 0.889},
     {"id": "pp_3x3", "name": '3×3 strand/inch — 구멍 7.06 mm · 65% · t 2.29 mm',
-     "hole_mm": 7.061, "open": 0.65, "t_mm": 2.286},
+     "hole_mm": 7.061, "hole_x_mm": 7.061, "hole_y_mm": 7.061,
+     "open": 0.65, "t_mm": 2.286},
 ]
 
 
@@ -141,6 +155,7 @@ def operating_from_designer(d: dict) -> Operating:
         T=_num(d, "T") + 273.15,                        # degC -> K
         P=max(0.1, _num(d, "Pbar")) * 1.0e5,            # bar -> Pa
         contact_angle=_num(d, "theta"),
+        mesh_contact_angle=_num(d, "mesh_theta"),
         u_flow=max(0.0, _num(d, "u_flow")),
         B_field=max(0.0, _num(d, "B")),
         E_ext=max(0.0, _num(d, "E")) * 1.0e6,           # MV/m -> V/m
@@ -152,6 +167,7 @@ def operating_from_designer(d: dict) -> Operating:
         n_drag=max(0.0, _num(d, "n_drag")),
         D_w_mem=max(0.0, _num(d, "D_w_mem")),
         t_mem_um=max(1.0, _num(d, "t_mem_um")),
+        high_fidelity=True,
     )
 
 
@@ -169,7 +185,7 @@ def sweep_operating(d: dict, j_macm2: float) -> Operating:
     op.cell_width_cm = max(0.2, _num(d, "W_cm"))
     op.face_height_cm = max(0.2, _num(d, "H_cm"))
     op.chan_depth_mm = max(0.05, _num(d, "d_ch_mm"))
-    op.u_flow = max(0.005, _num(d, "u_flow"))
+    op.u_flow = max(0.0, _num(d, "u_flow"))
     op.high_fidelity = True          # Gilliam/Pitzer properties: the calibrated
                                      # (j0, alpha_a, r_mem, void_frac) set pairs with these
     op.channel_void_ohmic = True
@@ -177,8 +193,11 @@ def sweep_operating(d: dict, j_macm2: float) -> Operating:
     ms = mesh_spec(str(d.get("mesh_id", "")))
     if ms is not None:
         op.mesh_hole_mm = ms["hole_mm"]
+        op.mesh_hole_x_mm = ms.get("hole_x_mm", ms["hole_mm"])
+        op.mesh_hole_y_mm = ms.get("hole_y_mm", ms["hole_mm"])
         op.mesh_open = ms["open"]
         op.mesh_t_mm = ms["t_mm"]
+        op.mesh_contact_angle = _num(d, "mesh_theta")
         op.mesh_cover = min(1.0, max(0.0, _num(d, "mesh_cover")))
         op.mesh_pos = str(d.get("mesh_pos", "outlet"))
     return op
@@ -202,7 +221,6 @@ class Cell3DConfig:
     d_ch_mm: float = 1.0
     w_land_mm: float = 1.0
     t_ptl_um: float = 200.0
-    eps_ptl: float = 0.7
     t_mem_um: float = 50.0
     tilt: float = 0.0            # cell tilt [deg]: 0 vertical, 90 horizontal
     # ports: which edge, then fractional centre and width ALONG that edge
@@ -220,8 +238,16 @@ class Cell3DConfig:
     h: float = 2.0e-3            # voxel size [m] (live tier; parcels render as
                                  # spheres regardless, so a coarser flow grid
                                  # barely changes the visual but ~halves cost)
+    h_requested: float = 0.0      # requested h before the live-cell safety cap
     max_cells: int = 60_000      # grid safety cap (live interactivity)
     cap_parcels: int = 6000
+
+    def _layer_counts_at(self, h):
+        """Channel/core layer counts at a candidate isotropic voxel size."""
+        n_lay = max(1, min(4, int(round(self.d_ch_mm * 1e-3 / h + 0.49))))
+        core_m = 2.0 * (self.t_ptl_um * 1e-6) + self.t_mem_um * 1e-6
+        n_core = max(2, int(round(core_m / h + 0.49)))
+        return n_lay, n_core
 
     def layer_counts(self):
         """(n_lay, n_core): channel-layer and core thickness in voxels.
@@ -231,10 +257,38 @@ class Cell3DConfig:
         free liquid path in a zero-gap cell) is at least 2 voxels so the
         membrane plane stays representable.
         """
-        n_lay = max(1, min(4, int(round(self.d_ch_mm * 1e-3 / self.h + 0.49))))
-        core_m = 2.0 * (self.t_ptl_um * 1e-6) + self.t_mem_um * 1e-6
-        n_core = max(2, int(round(core_m / self.h + 0.49)))
-        return n_lay, n_core
+        return self._layer_counts_at(self.h)
+
+    def effective_h(self):
+        """Coarsen h when needed while preserving the requested H/W extents.
+
+        The former cap reduced ny/nz with h unchanged, silently turning a large
+        or fine-resolution cell into a physically smaller cell.  Here the safety
+        cap changes resolution, never the requested geometry.  A short binary
+        search handles the through-plane layer-count discontinuities.
+        """
+        base = max(1e-6, self.h_requested or self.h)
+        H, W = self.H_cm * 1e-2, self.W_cm * 1e-2
+
+        def cells(h):
+            n_lay, n_core = self._layer_counts_at(h)
+            nx = 2 * n_lay + n_core
+            ny = max(8, round(H / h))
+            nz = max(6, round(W / h))
+            return nx * ny * nz
+
+        if cells(base) <= self.max_cells:
+            return base
+        lo, hi = base, base
+        while cells(hi) > self.max_cells:
+            hi *= 1.5
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            if cells(mid) > self.max_cells:
+                lo = mid
+            else:
+                hi = mid
+        return hi
 
     def n_passes(self, dim):
         """Channels the flow axis can actually hold (each needs >= 1 rib cell)."""
@@ -263,11 +317,6 @@ class Cell3DConfig:
         nx = 2 * n_lay + n_core
         ny = max(8, round(self.H_cm * 1e-2 / self.h))
         nz = max(6, round(self.W_cm * 1e-2 / self.h))
-        total = nx * ny * nz
-        if total > self.max_cells:
-            s = (self.max_cells / total) ** 0.5      # shrink y,z only
-            ny = max(8, int(ny * s))
-            nz = max(6, int(nz * s))
         # snap BOTH in-plane axes, for EVERY flow field. If the snap depended on
         # `ff`, switching a preset over to the hand-drawn plate would change the
         # grid underneath the drawing and resample it — a 6 mm rib came back as
@@ -293,15 +342,22 @@ class Cell3DConfig:
         mm = self.h * 1e3
         return pitch * mm, rib * mm, (pitch - rib) * mm
 
+    def channel_area_m2(self):
+        """Requested physical channel cross-section of one liquid circuit."""
+        paths = self.n_ch if self.ff in ("par", "inter") else 1
+        return (max(0.0, self.w_ch_mm) * 1e-3
+                * max(0.0, self.d_ch_mm) * 1e-3
+                * max(1, int(round(paths))))
+
 
 def cell_config_from_designer(d: dict) -> Cell3DConfig:
-    return Cell3DConfig(
+    cfg = Cell3DConfig(
         W_cm=_num(d, "W_cm"), H_cm=_num(d, "H_cm"),
         ff=str(d.get("ff", "serp")),
         n_ch=max(1, _num(d, "n_ch", int)),
         w_ch_mm=_num(d, "w_ch_mm"), d_ch_mm=_num(d, "d_ch_mm"),
         w_land_mm=_num(d, "w_land_mm"),
-        t_ptl_um=_num(d, "t_ptl_um"), eps_ptl=_num(d, "eps_ptl"),
+        t_ptl_um=_num(d, "t_ptl_um"),
         t_mem_um=_num(d, "t_mem_um"),
         tilt=_num(d, "tilt"),
         in_face=str(d.get("in_face", "bottom")),
@@ -313,6 +369,9 @@ def cell_config_from_designer(d: dict) -> Cell3DConfig:
         # clamped so the grid stays live-interactive
         h=min(3.0, max(0.4, _num(d, "h_mm"))) * 1e-3,
     )
+    cfg.h_requested = cfg.h
+    cfg.h = cfg.effective_h()
+    return cfg
 
 
 def decode_mask(txt):

@@ -10,9 +10,10 @@ read-only, never reimplemented):
       + electrode-face current redistribution.  `CellSim3D`.
 
   Track B (pore scale, ~um voxels, offline batch):
-      voxel microstructure of a porous electrode; 3-D secondary current
-      distribution on the real scaffold, dissolved-gas transport, bubble
-      nucleation/growth inside pores; snapshots for playback.  `PoreSim3D`.
+      voxel microstructure used only as gas-access geometry. Electrochemical
+      reaction is restricted to the first externally accessible catalyst
+      surface; gas may subsequently occupy connected pores. No porous-electrode
+      reaction penetration or internal secondary-current solve. `PoreSim3D`.
 
 Honest scope: parcels are sub-grid (no resolved interfaces -> not VOF), and
 pore growth is volume-filling (not interface-tracking). numpy is allowed here

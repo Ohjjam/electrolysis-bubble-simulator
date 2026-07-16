@@ -14,3 +14,9 @@ server_error.log
 games/maplestory/maplestory-saves.json
 # user-saved experiment conditions (3D app; personal data, not code)
 experiments.json
+
+# local Codex / Playwright verification artifacts
+.playwright-cli/
+.codex-ui-server.*.log
+output/playwright/
+.card

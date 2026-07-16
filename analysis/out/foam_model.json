@@ -1,0 +1,371 @@
+{
+  "foam": {
+    "L_foam_um": 600.0,
+    "eps_foam": 0.95,
+    "d_pore_um": 450.0,
+    "kappa": 27.0,
+    "alpha_a": 1.19,
+    "T": 338.15
+  },
+  "anchor": {
+    "KD": 1.6,
+    "KS": 1.3,
+    "MEXP": 0.7
+  },
+  "regime_probe": [
+    {
+      "mL_min": 1.0,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "mL_min": 2.0,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "mL_min": 4.0,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "mL_min": 8.0,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    }
+  ],
+  "q_threshold": [
+    {
+      "q_eff": 0.3,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "q_eff": 0.6,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "q_eff": 0.7,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "q_eff": 0.8,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "q_eff": 0.9,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    },
+    {
+      "q_eff": 0.97,
+      "outlet_best_cover": 1.0,
+      "flip": false
+    }
+  ],
+  "q_flip_min": null,
+  "ref_case": {
+    "recover": 0.35,
+    "kd": 1.6,
+    "q_eff": 0.325,
+    "outlet_best_cover": 1.0,
+    "outlet_best_dV": 107.3,
+    "rows": [
+      {
+        "pos": "inlet",
+        "cover": 0.25,
+        "q_eff": 0.325,
+        "base_dV": -1.4,
+        "foam_dV": 1.2,
+        "total_dV": -0.3,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 196.0
+      },
+      {
+        "pos": "inlet",
+        "cover": 0.5,
+        "q_eff": 0.325,
+        "base_dV": 28.3,
+        "foam_dV": 5.0,
+        "total_dV": 33.3,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 318.0
+      },
+      {
+        "pos": "inlet",
+        "cover": 0.75,
+        "q_eff": 0.325,
+        "base_dV": 65.8,
+        "foam_dV": 7.4,
+        "total_dV": 73.2,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 445.0
+      },
+      {
+        "pos": "inlet",
+        "cover": 1.0,
+        "q_eff": 0.325,
+        "base_dV": 99.2,
+        "foam_dV": 8.2,
+        "total_dV": 107.3,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 564.0
+      },
+      {
+        "pos": "middle",
+        "cover": 0.25,
+        "q_eff": 0.325,
+        "base_dV": 33.7,
+        "foam_dV": 4.6,
+        "total_dV": 38.3,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 329.0
+      },
+      {
+        "pos": "middle",
+        "cover": 0.5,
+        "q_eff": 0.325,
+        "base_dV": 59.0,
+        "foam_dV": 7.0,
+        "total_dV": 66.0,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 436.0
+      },
+      {
+        "pos": "middle",
+        "cover": 0.75,
+        "q_eff": 0.325,
+        "base_dV": 80.7,
+        "foam_dV": 7.9,
+        "total_dV": 88.6,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 501.0
+      },
+      {
+        "pos": "middle",
+        "cover": 1.0,
+        "q_eff": 0.325,
+        "base_dV": 99.2,
+        "foam_dV": 8.2,
+        "total_dV": 107.3,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 564.0
+      },
+      {
+        "pos": "outlet",
+        "cover": 0.25,
+        "q_eff": 0.325,
+        "base_dV": 62.1,
+        "foam_dV": 3.5,
+        "total_dV": 65.6,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 378.0
+      },
+      {
+        "pos": "outlet",
+        "cover": 0.5,
+        "q_eff": 0.325,
+        "base_dV": 84.8,
+        "foam_dV": 6.2,
+        "total_dV": 91.0,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 498.0
+      },
+      {
+        "pos": "outlet",
+        "cover": 0.75,
+        "q_eff": 0.325,
+        "base_dV": 93.9,
+        "foam_dV": 8.1,
+        "total_dV": 102.0,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 564.0
+      },
+      {
+        "pos": "outlet",
+        "cover": 1.0,
+        "q_eff": 0.325,
+        "base_dV": 99.2,
+        "foam_dV": 8.2,
+        "total_dV": 107.3,
+        "zwet_pris_out": 173.0,
+        "zwet_mesh_out": 564.0
+      }
+    ]
+  },
+  "scan": [
+    {
+      "recover": 0.0,
+      "kd": 1.0,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 102.0,
+      "flip": false
+    },
+    {
+      "recover": 0.0,
+      "kd": 1.6,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 106.6,
+      "flip": false
+    },
+    {
+      "recover": 0.0,
+      "kd": 2.4,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 115.0,
+      "flip": false
+    },
+    {
+      "recover": 0.0,
+      "kd": 3.5,
+      "q_eff": 0.5,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 116.6,
+      "flip": false
+    },
+    {
+      "recover": 0.2,
+      "kd": 1.0,
+      "q_eff": 0.4,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 102.1,
+      "flip": false
+    },
+    {
+      "recover": 0.2,
+      "kd": 1.6,
+      "q_eff": 0.4,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 107.1,
+      "flip": false
+    },
+    {
+      "recover": 0.2,
+      "kd": 2.4,
+      "q_eff": 0.4,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 115.8,
+      "flip": false
+    },
+    {
+      "recover": 0.2,
+      "kd": 3.5,
+      "q_eff": 0.4,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 118.1,
+      "flip": false
+    },
+    {
+      "recover": 0.35,
+      "kd": 1.0,
+      "q_eff": 0.325,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 102.1,
+      "flip": false
+    },
+    {
+      "recover": 0.35,
+      "kd": 1.6,
+      "q_eff": 0.325,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 107.3,
+      "flip": false
+    },
+    {
+      "recover": 0.35,
+      "kd": 2.4,
+      "q_eff": 0.325,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 116.3,
+      "flip": false
+    },
+    {
+      "recover": 0.35,
+      "kd": 3.5,
+      "q_eff": 0.325,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 119.1,
+      "flip": false
+    },
+    {
+      "recover": 0.5,
+      "kd": 1.0,
+      "q_eff": 0.25,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 102.1,
+      "flip": false
+    },
+    {
+      "recover": 0.5,
+      "kd": 1.6,
+      "q_eff": 0.25,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 107.5,
+      "flip": false
+    },
+    {
+      "recover": 0.5,
+      "kd": 2.4,
+      "q_eff": 0.25,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 116.8,
+      "flip": false
+    },
+    {
+      "recover": 0.5,
+      "kd": 3.5,
+      "q_eff": 0.25,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 120.0,
+      "flip": false
+    },
+    {
+      "recover": 0.7,
+      "kd": 1.0,
+      "q_eff": 0.15,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 102.1,
+      "flip": false
+    },
+    {
+      "recover": 0.7,
+      "kd": 1.6,
+      "q_eff": 0.15,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 107.7,
+      "flip": false
+    },
+    {
+      "recover": 0.7,
+      "kd": 2.4,
+      "q_eff": 0.15,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 117.4,
+      "flip": false
+    },
+    {
+      "recover": 0.7,
+      "kd": 3.5,
+      "q_eff": 0.15,
+      "outlet_best_cover": 1.0,
+      "outlet_best_dV": 121.0,
+      "flip": false
+    }
+  ],
+  "flip_fraction": 0.0
+}

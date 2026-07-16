@@ -2,9 +2,10 @@
 
     python -m bubblesim3d.runner --substrate ni_foam --grid 64 --frames 200
 
-Generates a voxel microstructure and (from P4) advances the pore-scale
-current + dissolved-gas + bubble physics, writing per-frame snapshots under
-results/<run>/ for playback in the 3-D app. Windows-safe: pathlib, ASCII-only
+Generates a voxel microstructure and advances external-surface Faradaic gas
+generation plus connected-pore bubble filling, writing per-frame snapshots
+under results/<run>/ for playback in the 3-D app. There is no electrochemical
+reaction penetration into the scaffold. Windows-safe: pathlib, ASCII-only
 progress log (cp949 consoles), --resume.
 
 P3 scope: generate + save the scaffold and manifest (frames=0 -> static

@@ -6,10 +6,9 @@ Runs the SAME calibrated channel-bottleneck model the experiment tab uses
 knob at a time around the calibrated 13-channel serpentine AEM cell, and dumps
 polarization (LSV) curves + derived efficiency metrics + EIS spectra as CSVs.
 
-IMPORTANT (documented blind protocol): the model is calibrated on the PRISTINE
-measured curve only. No mesh measurement enters the model here; mesh curves are
-predicted from mesh GEOMETRY alone. We only *compare* to the reported empirical
-trend qualitatively -- never fit to it.
+IMPORTANT: the model is calibrated on the PRISTINE measured curve only. No mesh
+polarization measurement enters the model. Mesh curves use geometry, the
+force-balance departure diameter, and explicit electrode/PP contact angles.
 
 Run:
   python analysis/mesh_study.py --smoke   # wiring check, prints ctx keys
@@ -46,6 +45,9 @@ D0 = {
     "d_ch_mm": 0.9, "w_land_mm": 0.88, "t_ptl_um": 600, "eps_ptl": 0.95,
     "electrolyte": "KOH", "c_mol": 1.0, "T": 65, "u_flow": 0.0842,
     "mode": "CP", "j": 0.5,
+    # Representative untreated surfaces used only by the mesh-transfer model.
+    # Bare Ni foam: 110 deg; untreated PP mesh: 105.8 deg (sessile-water angle).
+    "theta": 110.0, "mesh_theta": 105.8,
     "j0_anode": 6.3e-4, "j0_cathode": 6500, "alpha_a": 1.19, "r_mem": 1.33e-5,
     "gap_mm": 0.5, "void_frac": 0.81,
     "dry_cathode": "1", "n_drag": 2.5, "D_w_mem": 1.6e-9, "t_mem_um": 50,
@@ -62,7 +64,8 @@ SWEEP_J = [10, 20, 50, 100, 200, 300, 400, 500, 625, 750, 875,
 
 # The physical PP mesh used in the real cell (0.040"x0.053"): the anchor we vary
 # each axis around, so single-axis sweeps isolate one geometric effect.
-REF_MESH = {"hole_mm": 1.181, "open": 0.50, "t_mm": 0.483, "cover": 1.0, "pos": "outlet"}
+REF_MESH = {"hole_mm": 1.181, "hole_x_mm": 1.016, "hole_y_mm": 1.346,
+            "open": 0.50, "t_mm": 0.483, "cover": 1.0, "pos": "outlet"}
 
 THERMONEUTRAL_V = 1.481    # water-splitting thermoneutral voltage (efficiency ref)
 
@@ -70,6 +73,7 @@ THERMONEUTRAL_V = 1.481    # water-splitting thermoneutral voltage (efficiency r
 def build_params(d):
     """Same Params the server's _sweep_params builds (calibrated kinetics)."""
     return Params(
+        fritz_scale=0.08,
         anode=ElectrodeParams("OER", j0_ref=max(1e-12, float(d["j0_anode"])),
                               alpha_a=min(2.0, max(0.1, float(d["alpha_a"]))),
                               Ea_j0=50.0e3),
@@ -81,8 +85,11 @@ def build_params(d):
 def _apply_mesh(op, mesh):
     if mesh:
         op.mesh_hole_mm = float(mesh["hole_mm"])
+        op.mesh_hole_x_mm = float(mesh.get("hole_x_mm", mesh["hole_mm"]))
+        op.mesh_hole_y_mm = float(mesh.get("hole_y_mm", mesh["hole_mm"]))
         op.mesh_open = float(mesh["open"])
         op.mesh_t_mm = float(mesh["t_mm"])
+        op.mesh_contact_angle = float(mesh.get("mesh_theta", op.mesh_contact_angle))
         op.mesh_cover = min(1.0, max(0.0, float(mesh.get("cover", 1.0))))
         op.mesh_pos = str(mesh.get("pos", "outlet"))
     return op
@@ -114,7 +121,10 @@ def run_lsv(d, mesh=None):
     split = {k: float(v) for k, v in st.overpotentials.items()
              if isinstance(v, (int, float))}
     fields = {k: st.fields.get(k) for k in
-              ("mesh_on", "mesh_wick", "mesh_u_boost", "mesh_warn", "mesh_mask_frac",
+              ("mesh_on", "mesh_bubble_d_mm", "mesh_contact_prob",
+               "mesh_wetting_drive", "mesh_capture_eff", "mesh_obstruction",
+               "mesh_u_boost", "mesh_dp_ratio", "mesh_blocking_fraction",
+               "mesh_electrode_angle", "mesh_contact_angle", "mesh_warn", "mesh_mask_frac",
                "theta_in", "theta_out", "eps_out", "eff_in", "eff_out", "up_frac")}
     return dict(j=list(SWEEP_J), V=V, j_used=ju, reachable=reach,
                 theta_out=th_out, eps_out=ep_out, split_jmax=split,
@@ -140,8 +150,13 @@ def metrics(res, pristine=None):
         "eps_out@jmax": round(res["eps_out"][-1], 4),
         "theta_mean@jmax": round(res["theta_mean_jmax"], 4),
         "mesh_on": bool(res["fields"].get("mesh_on")),
-        "mesh_wick": res["fields"].get("mesh_wick"),
+        "mesh_bubble_d_mm": res["fields"].get("mesh_bubble_d_mm"),
+        "mesh_contact_prob": res["fields"].get("mesh_contact_prob"),
+        "mesh_wetting_drive": res["fields"].get("mesh_wetting_drive"),
+        "mesh_capture_eff": res["fields"].get("mesh_capture_eff"),
+        "mesh_obstruction": res["fields"].get("mesh_obstruction"),
         "mesh_u_boost": res["fields"].get("mesh_u_boost"),
+        "mesh_dp_ratio": res["fields"].get("mesh_dp_ratio"),
         "mesh_warn": res["fields"].get("mesh_warn") or "",
     }
     if pristine is not None:

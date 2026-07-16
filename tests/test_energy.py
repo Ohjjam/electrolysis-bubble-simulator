@@ -21,10 +21,11 @@ def test_thermoneutral_voltage():
 
 
 def test_heat_flux_above_and_below_thermoneutral():
-    """Heat = j (V - V_tn) above thermoneutral; zero below it."""
+    """Heat = j (V - V_tn): generation above, absorption below."""
     assert math.isclose(energy.heat_flux(1.0e4, 2.0),
                         1.0e4 * (2.0 - energy.V_THERMONEUTRAL))
-    assert energy.heat_flux(1.0e4, 1.40) == 0.0
+    assert math.isclose(energy.heat_flux(1.0e4, 1.40),
+                        1.0e4 * (1.40 - energy.V_THERMONEUTRAL))
 
 
 def test_cooling_rate():

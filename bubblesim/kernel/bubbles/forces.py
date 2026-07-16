@@ -57,10 +57,11 @@ def departure_radius(op, props, j):
     # negative dielectrophoresis: F_DEP = 2 pi eps0 eps_l Re(K) a^3 grad(|E|^2)
     # scales with the bubble VOLUME (r^3), NOT r^2 (Jones, 'Electromechanics of
     # Particles' 1995, Eq. 2.27). No true field gradient is available in `op`, so
-    # op.E_ext is read as a DEP drive and grad(|E|^2) is proxied as E_ext^2/L_dep
-    # over a near-surface length. Default E_ext=0 makes the term vanish (golden-safe).
+    # op.E_ext is a DEP drive and grad(|E|^2) is proxied as E_ext^2/L_dep.
+    # A spatially uniform field has no DEP, so L_dep is an explicit MODEL input
+    # rather than a hidden near-surface length.
     K = abs((1.0 - prop.EPS_WATER) / (1.0 + 2.0 * prop.EPS_WATER))
-    L_dep = 1.0e-4
+    L_dep = max(1.0e-9, props.get("dep_gradient_length", 1.0e-4))
     dep_coeff = 2.0 * math.pi * EPS0 * prop.EPS_WATER * K * op.E_ext * op.E_ext / L_dep
 
     r_min = props["r_min_detach"]

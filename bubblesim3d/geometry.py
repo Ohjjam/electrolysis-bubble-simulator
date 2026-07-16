@@ -146,7 +146,7 @@ def voxelize(cfg: Cell3DConfig, grid: Grid3D):
 
     pitch_f = cfg.w_ch_mm + cfg.w_land_mm
     land_frac = float(np.clip(cfg.w_land_mm / pitch_f, 0.05, 0.95))
-    n = max(1, int(round(cfg.n_ch)))
+    n = max(1, int(round(cfg.n_ch)))     # requested channels; capped per-axis below
     ff = cfg.ff
 
     def _band_indices(n_cells, n_div, first, last):
@@ -187,7 +187,11 @@ def voxelize(cfg: Cell3DConfig, grid: Grid3D):
             # cell stays a cell (the editor shows what the engine actually runs).
             land2d[:, nz // 2] = False
     elif ff in ("par", "inter"):
-        # vertical land bands across z: n channels -> n+1 dividers (0..n)
+        # vertical land bands across z: n channels -> n+1 dividers (0..n).
+        # Cap n to what the z-axis actually holds — grid_dims snapped nz for the
+        # SAME n_passes(nz), and rib_channel_mm reports it; using the raw n_ch here
+        # (which grid_dims capped) left the drawn ribs inconsistent with the report.
+        n = cfg.n_passes(nz)
         is_land, _owner = _band_indices(nz, n, 0, n)
         # guarantee every channel keeps >=1 open column even when a wide land
         # at a coarse grid would swallow it (the channel must stay a channel)
@@ -211,7 +215,9 @@ def voxelize(cfg: Cell3DConfig, grid: Grid3D):
         # (matches the drawn plate) — flow and bubbles must traverse each pass
         # and turn at the gap instead of leaking straight up.
         # uniform-thickness rib bands; `k_near` is the divider each row belongs
-        # to, so the turn gap alternates sides pass by pass
+        # to, so the turn gap alternates sides pass by pass. Cap n to the y-axis
+        # capacity (grid_dims snapped ny for n_passes(ny); rib_channel_mm reports it).
+        n = cfg.n_passes(ny)
         is_land_row, k_near = _band_indices(ny, n, 1, n - 1)
         # turn-gap width ~ one channel width of the drawn plate
         gap_frac = float(np.clip(cfg.w_ch_mm / max(1e-6, cfg.W_cm * 10.0),

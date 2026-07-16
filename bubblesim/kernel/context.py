@@ -19,7 +19,10 @@ def build_context(op, params) -> dict:
     # high_fidelity adds the water-vapor (p_sat) and water-activity Nernst terms;
     # both default to the ideal (golden-safe: p_w=0, a_H2O=1 at the 1 bar reference).
     a_H2O = prop.water_activity_koh(op.c_electrolyte) if (hf and med == "KOH") else 1.0
-    p_w = prop.saturation_pressure(op.T) if hf else 0.0
+    # KOH lowers the effective water vapour pressure.  Use the same activity
+    # correction for the Nernst term and wet-gas volume conversion so the two
+    # high-fidelity paths do not disagree about the dry-gas partial pressure.
+    p_w = a_H2O * prop.saturation_pressure(op.T) if hf else 0.0
     d = {
         "E_rev": prop.reversible_voltage(op.T, op.P, a_H2O=a_H2O, p_w=p_w),
         "kappa": prop.conductivity(med, op.c_electrolyte, op.T, high_fidelity=hf),
@@ -33,7 +36,10 @@ def build_context(op, params) -> dict:
         "j_lim_eff": params.j_lim * (1.0 + params.flow_jlim * op.u_flow),
         "Cd_flow": params.Cd_flow,
         "k_mhd": params.k_mhd,
+        "dep_gradient_length": params.dep_gradient_length,
         "r_min_detach": params.r_min_detach,
+        "water_activity": a_H2O,
+        "p_water": p_w,
     }
     # --- two-electrode (Butler-Volmer) coefficients + series resistances ---
     # (additive keys; the lumped solver ignores them, so golden values are unchanged)

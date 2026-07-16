@@ -52,7 +52,9 @@ class NS3D:
         self.W = np.zeros((nx, ny, nz + 1))
         self.p = np.zeros((nx, ny, nz))
         self.gas = np.zeros(grid.shape)
-        self.buoy = 0.6
+        # CellSim3D replaces this with (rho_l-rho_g)/rho_l from the property
+        # context.  1.0 is the physical light-gas limit for standalone tests.
+        self.buoy = 1.0
         # kinematic viscosity [m^2/s]; 0 disables the viscous term. CellSim3D
         # sets it from the kernel context (mu / rho_l).
         self.nu = 0.0

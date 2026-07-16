@@ -1,0 +1,1053 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Mesh 실험 모델 v2 — 접촉각 기반 재해석과 설계 판단",
+    "description": "Nickel foam/PP mesh contact-angle model correction, rerun results, engineering guardrails and validation plan.",
+    "generatedAt": "2026-07-16T03:03:34+00:00",
+    "cards": [
+      {
+        "id": "card_dv",
+        "dataset": "headline",
+        "sourceId": "decomp_source",
+        "description": "pp_040x053, 1000 mA/cm²에서 pristine 대비 모델 전압 절감",
+        "metrics": [
+          {
+            "label": "기준 메시 ΔV@1000 (mV)",
+            "field": "ref_dV_1000_mV",
+            "format": "number",
+            "signed": true
+          }
+        ]
+      },
+      {
+        "id": "card_transfer",
+        "dataset": "headline",
+        "sourceId": "decomp_source",
+        "description": "110° Ni foam과 105.8° PP 사이의 접촉각 기반 상한 전달 지수",
+        "metrics": [
+          {
+            "label": "접촉각 전달 지수 상한",
+            "field": "ref_transfer_index",
+            "format": "percent"
+          }
+        ]
+      },
+      {
+        "id": "card_dp",
+        "dataset": "headline",
+        "sourceId": "decomp_source",
+        "description": "woven mesh CFD가 아닌 평행 간극 근사 압력강하 비",
+        "metrics": [
+          {
+            "label": "ΔP/ΔP₀ 추정",
+            "field": "ref_pressure_drop_ratio",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "card_rmse",
+        "dataset": "headline",
+        "sourceId": "summary_source",
+        "description": "mesh 데이터가 아니라 pristine 보정점에 대한 모델 오차",
+        "metrics": [
+          {
+            "label": "Pristine RMSE (mV)",
+            "field": "pristine_RMSE_mV",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "id": "catalog_chart",
+        "title": "장착 가능한 PP mesh별 전압 절감",
+        "subtitle": "전압만 보면 촘촘한 메시가 커 보이지만, ΔP 추정과 조립 여유를 함께 봐야 한다.",
+        "intent": "comparison",
+        "type": "bar",
+        "dataset": "catalog",
+        "sourceId": "summary_source",
+        "encodings": {
+          "x": {
+            "field": "mesh_label",
+            "type": "nominal",
+            "label": "PP mesh",
+            "aggregate": "none"
+          },
+          "y": {
+            "field": "dV_1000_mV",
+            "type": "quantitative",
+            "label": "ΔV@1000",
+            "unit": "mV",
+            "aggregate": "none"
+          },
+          "tooltip": [
+            {
+              "field": "pressure_drop_ratio_est",
+              "type": "quantitative",
+              "label": "ΔP/ΔP₀ 추정"
+            },
+            {
+              "field": "clearance_mm",
+              "type": "quantitative",
+              "label": "채널 여유",
+              "unit": "mm"
+            },
+            {
+              "field": "transfer_index_upper",
+              "type": "quantitative",
+              "label": "전달 지수 상한",
+              "format": "percent"
+            }
+          ]
+        },
+        "layout": "full",
+        "valueFormat": "number",
+        "unit": "mV",
+        "settings": {
+          "orientation": "horizontal",
+          "sort": "descending",
+          "showValues": true
+        },
+        "palette": {
+          "kind": "sequential",
+          "name": "blue"
+        }
+      },
+      {
+        "id": "pore_chart",
+        "title": "구멍 크기별 전압 절감과 전극 접촉각 가정",
+        "subtitle": "일반 Ni foam 110°에서는 구멍 크기 효과가 사라지고, 전극이 더 친수성일 때만 작은 구멍의 전달 상한이 커진다.",
+        "intent": "comparison",
+        "type": "bar",
+        "dataset": "pore_cases",
+        "sourceId": "summary_source",
+        "encodings": {
+          "x": {
+            "field": "hole_label",
+            "type": "ordinal",
+            "label": "구멍 크기",
+            "unit": "mm",
+            "aggregate": "none"
+          },
+          "y": {
+            "field": "dV_1000_mV",
+            "type": "quantitative",
+            "label": "ΔV@1000",
+            "unit": "mV",
+            "aggregate": "none"
+          },
+          "color": {
+            "field": "electrode_case",
+            "type": "nominal",
+            "label": "전극 가정",
+            "aggregate": "none"
+          },
+          "tooltip": [
+            {
+              "field": "contact_probability_upper",
+              "type": "quantitative",
+              "label": "접촉 확률 상한",
+              "format": "percent"
+            },
+            {
+              "field": "wetting_drive",
+              "type": "quantitative",
+              "label": "젖음성 구동력",
+              "format": "percent"
+            },
+            {
+              "field": "transfer_index_upper",
+              "type": "quantitative",
+              "label": "전달 지수 상한",
+              "format": "percent"
+            }
+          ]
+        },
+        "layout": "full",
+        "valueFormat": "number",
+        "unit": "mV",
+        "settings": {
+          "groupMode": "grouped",
+          "orientation": "vertical",
+          "showValues": false
+        },
+        "legend": {
+          "position": "bottom",
+          "title": "전극 접촉각"
+        },
+        "palette": {
+          "kind": "categorical",
+          "name": "default"
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "catalog_table",
+        "title": "PP mesh 후보: 성능과 물리 guardrail",
+        "subtitle": "ΔP/ΔP₀≤3, 채널 여유≥0.10 mm를 보고서의 보수적 선별 기준으로 표시했다.",
+        "dataset": "catalog",
+        "sourceId": "summary_source",
+        "defaultSort": {
+          "field": "dV_1000_mV",
+          "direction": "desc"
+        },
+        "density": "dense",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "mesh_id",
+            "label": "mesh",
+            "type": "text"
+          },
+          {
+            "field": "hole_mm",
+            "label": "구멍 mm",
+            "format": "number"
+          },
+          {
+            "field": "open_fraction",
+            "label": "개구율",
+            "format": "percent"
+          },
+          {
+            "field": "thickness_mm",
+            "label": "두께 mm",
+            "format": "number"
+          },
+          {
+            "field": "clearance_mm",
+            "label": "채널 여유 mm",
+            "format": "number"
+          },
+          {
+            "field": "dV_1000_mV",
+            "label": "ΔV@1000 mV",
+            "format": "number",
+            "movement": true
+          },
+          {
+            "field": "pressure_drop_ratio_est",
+            "label": "ΔP/ΔP₀ 추정",
+            "format": "number"
+          },
+          {
+            "field": "hydraulic_guardrail",
+            "label": "유압",
+            "type": "text"
+          },
+          {
+            "field": "assembly_guardrail",
+            "label": "조립",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "angle_table",
+        "title": "전극 × PP 접촉각 민감도",
+        "subtitle": "정적 물 접촉각을 이용한 상한 민감도이며, 실제 운전 중 동적 접촉각·히스테리시스는 포함하지 않는다.",
+        "dataset": "contact_angles",
+        "sourceId": "summary_source",
+        "defaultSort": {
+          "field": "electrode_angle_deg",
+          "direction": "asc"
+        },
+        "density": "dense",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "electrode_angle_deg",
+            "label": "전극 θe (°)",
+            "format": "number"
+          },
+          {
+            "field": "mesh_angle_deg",
+            "label": "mesh θm (°)",
+            "format": "number"
+          },
+          {
+            "field": "contact_probability_upper",
+            "label": "접촉확률 상한",
+            "format": "percent"
+          },
+          {
+            "field": "wetting_drive",
+            "label": "젖음성 구동력",
+            "format": "percent"
+          },
+          {
+            "field": "transfer_index_upper",
+            "label": "전달 지수 상한",
+            "format": "percent"
+          },
+          {
+            "field": "dV_1000_mV",
+            "label": "ΔV@1000 mV",
+            "format": "number",
+            "movement": true
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "summary_source",
+        "label": "재실행한 mesh parameter study",
+        "path": "analysis/out/summary.json",
+        "query": {
+          "engine": "DuckDB",
+          "language": "sql",
+          "sql": "SELECT * FROM read_json_auto('analysis/out/summary.json')",
+          "description": "현재 mesh model v2로 재실행한 전체 스윕 JSON을 읽는다.",
+          "executed_at": "2026-07-16T03:03:34+00:00",
+          "tables_used": [
+            "analysis/out/summary.json"
+          ],
+          "filters": [
+            "65 °C",
+            "4 mL/min",
+            "electrode angle 110°",
+            "PP angle 105.8°"
+          ],
+          "metric_definitions": [
+            "ΔV@1000 = pristine voltage - mesh voltage at 1000 mA/cm²"
+          ]
+        }
+      },
+      {
+        "id": "decomp_source",
+        "label": "메커니즘 반사실 분해",
+        "path": "analysis/out/decomp.json",
+        "query": {
+          "engine": "DuckDB",
+          "language": "sql",
+          "sql": "SELECT * FROM read_json_auto('analysis/out/decomp.json')",
+          "description": "접촉각 전달과 체류시간 감소를 순차적으로 켠 반사실 분해 JSON을 읽는다.",
+          "executed_at": "2026-07-16T03:03:34+00:00",
+          "tables_used": [
+            "analysis/out/decomp.json"
+          ],
+          "metric_definitions": [
+            "각 기여 mV = 직전 단계 cell voltage - 다음 단계 cell voltage"
+          ]
+        }
+      },
+      {
+        "id": "ni_angle_source",
+        "label": "Bare Ni foam water contact angle 110°",
+        "href": "https://www.sciencedirect.com/science/article/pii/S1002007122001083"
+      },
+      {
+        "id": "pp_angle_source",
+        "label": "Untreated PP mesh water contact angle 105.8°",
+        "href": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5393001/"
+      },
+      {
+        "id": "detachment_limit_source",
+        "label": "Bubble detachment beyond static Fritz scaling",
+        "href": "https://pubs.acs.org/doi/abs/10.1021/acs.langmuir.4c01963"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "layout": "full",
+        "body": "# Mesh 실험 모델 v2 — 접촉각 기반 재해석과 설계 판단"
+      },
+      {
+        "id": "summary",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 결론\n\n기본값은 **bare Ni foam 물 접촉각 110°**, **untreated PP mesh 105.8°**로 바꿨다. 이 조합에서는 PP가 전극보다 더 소수성이 아니므로 Young 식 기반 기포 전달 구동력이 **0**이다. 따라서 기준 pp_040x053의 **70.7 mV 절감**은 접촉각 포획이 아니라 메시 고체 체적에 따른 국소 유속 증가·기체 체류시간 감소에서 나온 모델 결과다. 이 결과는 mesh 분극 데이터로 검증된 값이 아니므로 **제한부 사용 가능(share with caveats)** 상태다."
+      },
+      {
+        "id": "metrics",
+        "type": "metric-strip",
+        "layout": "full",
+        "cardIds": [
+          "card_dv",
+          "card_transfer",
+          "card_dp",
+          "card_rmse"
+        ]
+      },
+      {
+        "id": "evidence",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 무엇을 근거로 바꿨나\n\n- 문헌 입력: bare Ni foam의 정적 물 접촉각 **110°**, untreated PP mesh의 정적 물 접촉각 **105.8°**.\n- 모델 직접 계산: 이 두 값에서는 `cos(θe)−cos(θm)<0`이므로 접촉각 전달 구동력은 0.\n- 해석: 일반 Ni foam 기준에서는 ‘PP가 기포를 끌어당겨 떼어낸다’고 단정할 수 없다.\n- 남은 효과: 유로 내 고체 체적비로부터 얻은 체류시간 변화. 단, 실제 woven mesh 압력손실은 permeability/CFD가 필요하다.\n\n문헌: [Ni foam 110°](https://www.sciencedirect.com/science/article/pii/S1002007122001083), [PP mesh 105.8°](https://pmc.ncbi.nlm.nih.gov/articles/PMC5393001/)."
+      },
+      {
+        "id": "catalog_heading",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 후보 mesh 비교\n\n전압만 보면 가장 촘촘한 pp_015x015가 100.8 mV로 가장 크지만, ΔP 추정이 22.1배여서 설계 후보로 쓰기 어렵다. **pp_025x030**는 ΔP 2.44배, 채널 여유 0.544 mm이고 작은 구멍 덕분에 전극 접촉각이 달라지는 경우에도 비교적 강건한 1차 실험 후보로 본다."
+      },
+      {
+        "id": "catalog_chart_block",
+        "type": "chart",
+        "layout": "full",
+        "chartId": "catalog_chart"
+      },
+      {
+        "id": "catalog_table_block",
+        "type": "table",
+        "layout": "full",
+        "tableId": "catalog_table"
+      },
+      {
+        "id": "angle_heading",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 접촉각과 구멍 크기의 관계\n\n`L_ref=2 mm` 같은 문턱은 삭제했다. 기포 직경과 직사각형 개구의 실제 치수로 접촉 가능 영역을 계산한다. 다만 이는 mesh가 전극에 거의 붙어 있다는 **zero-standoff 상한**이다. 일반 Ni foam 110°에서는 젖음성 구동력이 0이라 구멍을 더 작게 해도 전압 이득이 늘지 않는다. 전극이 60°처럼 더 친수성일 때에만 작은 구멍의 기하 접촉 상한이 전압에 반영된다."
+      },
+      {
+        "id": "pore_chart_block",
+        "type": "chart",
+        "layout": "full",
+        "chartId": "pore_chart"
+      },
+      {
+        "id": "angle_table_block",
+        "type": "table",
+        "layout": "full",
+        "tableId": "angle_table"
+      },
+      {
+        "id": "method",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 수정한 식\n\n1. 기포 직경 `d_b`: 기존 bubble force-balance의 이탈 직경을 운전 전류와 벽면 유속으로 계산.\n2. 접촉확률 상한 `P_contact,UB = 1 − φ·max(1−d_b/Lx,0)·max(1−d_b/Ly,0)`.\n3. 젖음성 구동력 `P_wet = max[0,(cosθe−cosθm)/(1+cosθe)]`.\n4. 전달 지수 상한 `P_transfer,UB = P_contact,UB·P_wet`; 피복 진폭은 상한 민감도에서 `1−P_transfer,UB`를 곱함.\n5. 고체 체적비 `χ=(1−φ)t_m/d_ch`; `u/u₀=1/(1−χ)`, `τ/τ₀=1−χ`, 평행 간극 근사 `ΔP/ΔP₀≈[1/(1−χ)]³`.\n6. 촉매 차단 손실: χ에서 추정하지 않음. 간격·압착·측면 액 접근이 없으므로 전압식에 0으로 두고 미모델링 위험으로 남김.\n\n삭제한 항: `wick`, `L_ref=2 mm`, `C_theta=0.6`, `C_ret=0.5`, `C_block=0.3`."
+      },
+      {
+        "id": "limitations",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 한계와 검증 상태\n\n- 110°와 105.8°는 서로 다른 논문의 정적 물 접촉각이며, 실제 KOH·65 °C·전위 인가 상태의 동적 값이 아니다.\n- 거친 다공성 표면에서는 sessile-drop 각도와 수중 bubble contact angle이 다를 수 있다.\n- 접촉각 히스테리시스와 contact-line pinning은 bubble departure를 크게 바꿀 수 있으므로 정적 Fritz 계열 계산만으로 완전하지 않다. [관련 검토](https://pubs.acs.org/doi/abs/10.1021/acs.langmuir.4c01963).\n- `P_transfer,UB`는 kinetics가 검증된 효율이 아니라 thermodynamic/geometric 상한 지수다.\n- 압력강하 비는 woven-mesh Darcy–Forchheimer 모델이 아니라 평행 간극 추정이다.\n- mesh 실측 분극곡선으로 보정하거나 외부 검증하지 않았으므로 절대 mV는 설계 방향 탐색용이다."
+      },
+      {
+        "id": "next",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## 다음 실험\n\n1차 후보는 **pp_025x030**와 기준 **pp_040x053** 두 개로 좁힌다. 같은 셀에서 (a) KOH·65 °C 상태의 전극/PP 수중 advancing–receding contact angle, (b) mesh 전후 압력강하, (c) 500/1000/2000 mA cm⁻² 전압을 함께 측정한다. 그 세 데이터가 들어오면 현재 상한 지수와 hydraulic estimate를 실제 transfer time constant와 permeability로 교체할 수 있다."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-16T03:03:34+00:00",
+    "status": "ready",
+    "datasets": {
+      "headline": [
+        {
+          "ref_dV_1000_mV": 70.7,
+          "ref_transfer_index": 0.0,
+          "ref_pressure_drop_ratio": 2.55,
+          "pristine_RMSE_mV": 26.2
+        }
+      ],
+      "catalog": [
+        {
+          "rank_voltage": 1,
+          "mesh_id": "pp_015x015",
+          "mesh_label": "PP 015x015",
+          "hole_mm": 0.457,
+          "open_fraction": 0.24,
+          "thickness_mm": 0.762,
+          "clearance_mm": 0.138,
+          "V_1000_mV": 1932.5,
+          "dV_1000_mV": 100.8,
+          "contact_probability_upper": 0.9949,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "solid_volume_fraction": 0.6435,
+          "flow_speed_ratio": 2.8,
+          "pressure_drop_ratio_est": 22.06,
+          "hydraulic_guardrail": "주의",
+          "assembly_guardrail": "통과"
+        },
+        {
+          "rank_voltage": 2,
+          "mesh_id": "pp_120x175",
+          "mesh_label": "PP 120x175",
+          "hole_mm": 3.747,
+          "open_fraction": 0.6,
+          "thickness_mm": 0.889,
+          "clearance_mm": 0.011,
+          "V_1000_mV": 1952.8,
+          "dV_1000_mV": 80.5,
+          "contact_probability_upper": 0.5228,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "solid_volume_fraction": 0.3951,
+          "flow_speed_ratio": 1.65,
+          "pressure_drop_ratio_est": 4.52,
+          "hydraulic_guardrail": "주의",
+          "assembly_guardrail": "주의"
+        },
+        {
+          "rank_voltage": 3,
+          "mesh_id": "pp_145x175",
+          "mesh_label": "PP 145x175",
+          "hole_mm": 4.064,
+          "open_fraction": 0.7,
+          "thickness_mm": 0.889,
+          "clearance_mm": 0.011,
+          "V_1000_mV": 1960.5,
+          "dV_1000_mV": 72.8,
+          "contact_probability_upper": 0.4292,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "solid_volume_fraction": 0.2963,
+          "flow_speed_ratio": 1.42,
+          "pressure_drop_ratio_est": 2.87,
+          "hydraulic_guardrail": "통과",
+          "assembly_guardrail": "주의"
+        },
+        {
+          "rank_voltage": 4,
+          "mesh_id": "pp_040x053",
+          "mesh_label": "PP 040x053",
+          "hole_mm": 1.181,
+          "open_fraction": 0.5,
+          "thickness_mm": 0.483,
+          "clearance_mm": 0.417,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "contact_probability_upper": 0.7814,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "solid_volume_fraction": 0.2683,
+          "flow_speed_ratio": 1.37,
+          "pressure_drop_ratio_est": 2.55,
+          "hydraulic_guardrail": "통과",
+          "assembly_guardrail": "통과"
+        },
+        {
+          "rank_voltage": 5,
+          "mesh_id": "pp_025x030",
+          "mesh_label": "PP 025x030",
+          "hole_mm": 0.699,
+          "open_fraction": 0.35,
+          "thickness_mm": 0.356,
+          "clearance_mm": 0.544,
+          "V_1000_mV": 1963.5,
+          "dV_1000_mV": 69.9,
+          "contact_probability_upper": 0.9342,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "solid_volume_fraction": 0.2571,
+          "flow_speed_ratio": 1.35,
+          "pressure_drop_ratio_est": 2.44,
+          "hydraulic_guardrail": "통과",
+          "assembly_guardrail": "통과"
+        }
+      ],
+      "pore_cases": [
+        {
+          "hole_label": "0.30",
+          "hole_mm": 0.3,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 1.0,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "0.30",
+          "hole_mm": 0.3,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1922.4,
+          "dV_1000_mV": 110.9,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.9742,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.5016,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "0.46",
+          "hole_mm": 0.46,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.9885,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "0.46",
+          "hole_mm": 0.46,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1924.9,
+          "dV_1000_mV": 108.4,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.877,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.4515,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "0.70",
+          "hole_mm": 0.7,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.9022,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "0.70",
+          "hole_mm": 0.7,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1927.7,
+          "dV_1000_mV": 105.6,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.7764,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.3997,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "1.00",
+          "hole_mm": 1.0,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.8142,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "1.00",
+          "hole_mm": 1.0,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1929.9,
+          "dV_1000_mV": 103.5,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.705,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.363,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "1.18",
+          "hole_mm": 1.181,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.7759,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "1.18",
+          "hole_mm": 1.181,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1930.7,
+          "dV_1000_mV": 102.6,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.677,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.3486,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "2.00",
+          "hole_mm": 2.0,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.6761,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "2.00",
+          "hole_mm": 2.0,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1933.0,
+          "dV_1000_mV": 100.4,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.6092,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.3137,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "3.00",
+          "hole_mm": 3.0,
+          "electrode_case": "일반 Ni foam 110°",
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.6217,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0,
+          "pressure_drop_ratio_est": 2.55
+        },
+        {
+          "hole_label": "3.00",
+          "hole_mm": 3.0,
+          "electrode_case": "젖음성 개선 전극 60°",
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1934.2,
+          "dV_1000_mV": 99.2,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.5743,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.2957,
+          "pressure_drop_ratio_est": 2.55
+        }
+      ],
+      "contact_angles": [
+        {
+          "electrode_angle_deg": 40.0,
+          "mesh_angle_deg": 90.0,
+          "V_1000_mV": 1935.7,
+          "dV_1000_mV": 97.6,
+          "bubble_d_mm": 0.16,
+          "contact_probability_upper": 0.6288,
+          "wetting_drive": 0.4338,
+          "transfer_index_upper": 0.2727
+        },
+        {
+          "electrode_angle_deg": 40.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1929.5,
+          "dV_1000_mV": 103.9,
+          "bubble_d_mm": 0.16,
+          "contact_probability_upper": 0.6288,
+          "wetting_drive": 0.5879,
+          "transfer_index_upper": 0.3697
+        },
+        {
+          "electrode_angle_deg": 40.0,
+          "mesh_angle_deg": 120.0,
+          "V_1000_mV": 1925.0,
+          "dV_1000_mV": 108.4,
+          "bubble_d_mm": 0.16,
+          "contact_probability_upper": 0.6288,
+          "wetting_drive": 0.7169,
+          "transfer_index_upper": 0.4508
+        },
+        {
+          "electrode_angle_deg": 40.0,
+          "mesh_angle_deg": 140.0,
+          "V_1000_mV": 1920.4,
+          "dV_1000_mV": 112.9,
+          "bubble_d_mm": 0.16,
+          "contact_probability_upper": 0.6288,
+          "wetting_drive": 0.8675,
+          "transfer_index_upper": 0.5455
+        },
+        {
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 90.0,
+          "V_1000_mV": 1939.2,
+          "dV_1000_mV": 94.2,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.6806,
+          "wetting_drive": 0.3333,
+          "transfer_index_upper": 0.2269
+        },
+        {
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1930.6,
+          "dV_1000_mV": 102.7,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.6806,
+          "wetting_drive": 0.5149,
+          "transfer_index_upper": 0.3504
+        },
+        {
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 120.0,
+          "V_1000_mV": 1924.8,
+          "dV_1000_mV": 108.5,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.6806,
+          "wetting_drive": 0.6667,
+          "transfer_index_upper": 0.4537
+        },
+        {
+          "electrode_angle_deg": 60.0,
+          "mesh_angle_deg": 140.0,
+          "V_1000_mV": 1919.2,
+          "dV_1000_mV": 114.2,
+          "bubble_d_mm": 0.2318,
+          "contact_probability_upper": 0.6806,
+          "wetting_drive": 0.844,
+          "transfer_index_upper": 0.5744
+        },
+        {
+          "electrode_angle_deg": 80.0,
+          "mesh_angle_deg": 90.0,
+          "V_1000_mV": 1949.9,
+          "dV_1000_mV": 83.5,
+          "bubble_d_mm": 0.2987,
+          "contact_probability_upper": 0.7254,
+          "wetting_drive": 0.148,
+          "transfer_index_upper": 0.1073
+        },
+        {
+          "electrode_angle_deg": 80.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1935.5,
+          "dV_1000_mV": 97.8,
+          "bubble_d_mm": 0.2987,
+          "contact_probability_upper": 0.7254,
+          "wetting_drive": 0.38,
+          "transfer_index_upper": 0.2756
+        },
+        {
+          "electrode_angle_deg": 80.0,
+          "mesh_angle_deg": 120.0,
+          "V_1000_mV": 1926.8,
+          "dV_1000_mV": 106.6,
+          "bubble_d_mm": 0.2987,
+          "contact_probability_upper": 0.7254,
+          "wetting_drive": 0.574,
+          "transfer_index_upper": 0.4163
+        },
+        {
+          "electrode_angle_deg": 80.0,
+          "mesh_angle_deg": 140.0,
+          "V_1000_mV": 1918.9,
+          "dV_1000_mV": 114.5,
+          "bubble_d_mm": 0.2987,
+          "contact_probability_upper": 0.7254,
+          "wetting_drive": 0.8007,
+          "transfer_index_upper": 0.5808
+        },
+        {
+          "electrode_angle_deg": 100.0,
+          "mesh_angle_deg": 90.0,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3609,
+          "contact_probability_upper": 0.7641,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0
+        },
+        {
+          "electrode_angle_deg": 100.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1951.6,
+          "dV_1000_mV": 81.8,
+          "bubble_d_mm": 0.3609,
+          "contact_probability_upper": 0.7641,
+          "wetting_drive": 0.1194,
+          "transfer_index_upper": 0.0912
+        },
+        {
+          "electrode_angle_deg": 100.0,
+          "mesh_angle_deg": 120.0,
+          "V_1000_mV": 1933.7,
+          "dV_1000_mV": 99.6,
+          "bubble_d_mm": 0.3609,
+          "contact_probability_upper": 0.7641,
+          "wetting_drive": 0.3949,
+          "transfer_index_upper": 0.3018
+        },
+        {
+          "electrode_angle_deg": 100.0,
+          "mesh_angle_deg": 140.0,
+          "V_1000_mV": 1920.3,
+          "dV_1000_mV": 113.0,
+          "bubble_d_mm": 0.3609,
+          "contact_probability_upper": 0.7641,
+          "wetting_drive": 0.7169,
+          "transfer_index_upper": 0.5478
+        },
+        {
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 90.0,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.7814,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0
+        },
+        {
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.7814,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0
+        },
+        {
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 120.0,
+          "V_1000_mV": 1942.4,
+          "dV_1000_mV": 91.0,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.7814,
+          "wetting_drive": 0.2401,
+          "transfer_index_upper": 0.1876
+        },
+        {
+          "electrode_angle_deg": 110.0,
+          "mesh_angle_deg": 140.0,
+          "V_1000_mV": 1922.3,
+          "dV_1000_mV": 111.0,
+          "bubble_d_mm": 0.3904,
+          "contact_probability_upper": 0.7814,
+          "wetting_drive": 0.6444,
+          "transfer_index_upper": 0.5036
+        },
+        {
+          "electrode_angle_deg": 120.0,
+          "mesh_angle_deg": 90.0,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.4187,
+          "contact_probability_upper": 0.7975,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0
+        },
+        {
+          "electrode_angle_deg": 120.0,
+          "mesh_angle_deg": 105.8,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.4187,
+          "contact_probability_upper": 0.7975,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0
+        },
+        {
+          "electrode_angle_deg": 120.0,
+          "mesh_angle_deg": 120.0,
+          "V_1000_mV": 1962.7,
+          "dV_1000_mV": 70.7,
+          "bubble_d_mm": 0.4187,
+          "contact_probability_upper": 0.7975,
+          "wetting_drive": 0.0,
+          "transfer_index_upper": 0.0
+        },
+        {
+          "electrode_angle_deg": 120.0,
+          "mesh_angle_deg": 140.0,
+          "V_1000_mV": 1926.4,
+          "dV_1000_mV": 107.0,
+          "bubble_d_mm": 0.4187,
+          "contact_probability_upper": 0.7975,
+          "wetting_drive": 0.5321,
+          "transfer_index_upper": 0.4243
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "summary_source",
+      "label": "재실행한 mesh parameter study",
+      "path": "analysis/out/summary.json",
+      "query": {
+        "engine": "DuckDB",
+        "language": "sql",
+        "sql": "SELECT * FROM read_json_auto('analysis/out/summary.json')",
+        "description": "현재 mesh model v2로 재실행한 전체 스윕 JSON을 읽는다.",
+        "executed_at": "2026-07-16T03:03:34+00:00",
+        "tables_used": [
+          "analysis/out/summary.json"
+        ],
+        "filters": [
+          "65 °C",
+          "4 mL/min",
+          "electrode angle 110°",
+          "PP angle 105.8°"
+        ],
+        "metric_definitions": [
+          "ΔV@1000 = pristine voltage - mesh voltage at 1000 mA/cm²"
+        ]
+      }
+    },
+    {
+      "id": "decomp_source",
+      "label": "메커니즘 반사실 분해",
+      "path": "analysis/out/decomp.json",
+      "query": {
+        "engine": "DuckDB",
+        "language": "sql",
+        "sql": "SELECT * FROM read_json_auto('analysis/out/decomp.json')",
+        "description": "접촉각 전달과 체류시간 감소를 순차적으로 켠 반사실 분해 JSON을 읽는다.",
+        "executed_at": "2026-07-16T03:03:34+00:00",
+        "tables_used": [
+          "analysis/out/decomp.json"
+        ],
+        "metric_definitions": [
+          "각 기여 mV = 직전 단계 cell voltage - 다음 단계 cell voltage"
+        ]
+      }
+    },
+    {
+      "id": "ni_angle_source",
+      "label": "Bare Ni foam water contact angle 110°",
+      "href": "https://www.sciencedirect.com/science/article/pii/S1002007122001083"
+    },
+    {
+      "id": "pp_angle_source",
+      "label": "Untreated PP mesh water contact angle 105.8°",
+      "href": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5393001/"
+    },
+    {
+      "id": "detachment_limit_source",
+      "label": "Bubble detachment beyond static Fritz scaling",
+      "href": "https://pubs.acs.org/doi/abs/10.1021/acs.langmuir.4c01963"
+    }
+  ]
+}

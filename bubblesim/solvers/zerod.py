@@ -194,7 +194,12 @@ class ZeroDTwoElectrodeSolver:
             return _invert_bv(j / omt_a, j0_a, aa_a, ac_a, T, n=self.n_inner)
 
         def eta_c_of(j):
-            return _invert_bv(j / omt_c, j0_c, aa_c, ac_c, T, n=self.n_inner)
+            # HER is CATHODIC: in magnitude form the GROWING Tafel branch is the
+            # cathodic one, so its slope is governed by alpha_c (not alpha_a).
+            # Pass alpha_c as _invert_bv's "alpha_a" (the growing-exp coefficient).
+            # (Bit-identical while HER stays symmetric alpha_a==alpha_c==0.5, but
+            # correct if an asymmetric cathode is ever set.)
+            return _invert_bv(j / omt_c, j0_c, ac_c, aa_c, T, n=self.n_inner)
 
         # DRY CATHODE: with no liquid feed, every electron needs a water molecule
         # dragged (electro-osmosis) or diffused through the membrane. The ON/OFF
@@ -246,7 +251,7 @@ class ZeroDTwoElectrodeSolver:
             "eta_ohmic": j * R_total,
             "eta_membrane": j * context["r_membrane_area"],
             "eta_bub_cov_anode": (fRT / aa_a) * math.log(1.0 / omt_a),
-            "eta_bub_cov_cathode": (fRT / aa_c) * math.log(1.0 / omt_c),
+            "eta_bub_cov_cathode": (fRT / ac_c) * math.log(1.0 / omt_c),   # cathodic slope: alpha_c
             "eta_bub_void": j * (R_ohm - R_ohm_clear),
             "eta_water": eta_w,        # dry-cathode water starvation (0 = wet/off)
         }

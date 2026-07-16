@@ -4,13 +4,16 @@ Shared by every fidelity — the Faraday + ideal-gas conversion of current to a
 gas volume rate is the same whether the current came from a 0D or a 2D solver.
 """
 from ..constants import F, R_GAS
-from ..properties import GAS
+from ..properties import GAS, saturation_pressure
 
 
-def faradaic_gas_rate(j, electrode, T, P, area, eta_F=1.0):
+def faradaic_gas_rate(j, electrode, T, P, area, eta_F=1.0, *, wet=False,
+                      water_activity=1.0):
     """Evolved-gas volume rate [m^3/s] at cell conditions.
 
-        I = j * area ;  n_dot = eta_F * I / (z F) ;  Q = n_dot * R T / P
+        I = j * area ;  n_dot = eta_F * I / (z F)
+        Q_dry = n_dot * R T / P
+        Q_wet = n_dot * R T / (P - a_w p_sat)  when wet=True
 
     `z` electrons per gas molecule (HER: H2, z=2; OER: O2, z=4) so HER evolves
     twice the gas volume of OER per unit charge. `eta_F` is the Faradaic (current)
@@ -19,7 +22,11 @@ def faradaic_gas_rate(j, electrode, T, P, area, eta_F=1.0):
     z = GAS[electrode]["z"]
     I = j * area
     n_dot = eta_F * I / (z * F)    # mol/s
-    return n_dot * R_GAS * T / P   # m^3/s of gas at cell (T, P)
+    p_gas = P
+    if wet:
+        p_w = max(0.0, float(water_activity)) * saturation_pressure(T)
+        p_gas = max(0.05 * P, P - min(0.95 * P, p_w))
+    return n_dot * R_GAS * T / p_gas   # m^3/s at cell T and wet/dry pressure
 
 
 def faradaic_molar_rate(j, electrode, area, eta_F=1.0):
