@@ -1279,7 +1279,7 @@ function setSolidsTransparency(flat) {
   RIB_EDGE.opacity = flat ? 0.42 : 0.12;
 }
 
-let gravArrow = null, camHome = new THREE.Vector3();
+let camHome = new THREE.Vector3();
 let cathodeGeom = null, anodeGeom = null, membraneMesh = null, ptlGroup = null, wallsGroup = null;
 let ptlMeshC = null, ptlMeshA = null;
 let plateMeshC = null, plateMeshA = null, cellEdge = null;
@@ -1665,13 +1665,6 @@ function rebuildCell() {
     new THREE.EdgesGeometry(new THREE.BoxGeometry(tot, H, W)),
     new THREE.LineBasicMaterial({ color:0x4a5d7a, transparent:true, opacity:0.5 }));
   cellEdge.position.set(0, H / 2, 0); cellGroup.add(cellEdge);
-
-  // gravity arrow (tilt rotates it about Z)
-  const a = P.tilt * Math.PI / 180;
-  const gdir = new THREE.Vector3(-Math.sin(a), -Math.cos(a), 0);
-  gravArrow = new THREE.ArrowHelper(gdir, new THREE.Vector3(tot / 2 + W * 0.12, H, 0),
-                                    H * 0.22, 0xb39bff, H * 0.05, H * 0.03);
-  cellGroup.add(gravArrow);
 
   // camera home: keep the whole cell in view
   const R = Math.max(W, H) * 1.15;
