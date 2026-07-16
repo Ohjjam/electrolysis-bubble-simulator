@@ -111,9 +111,13 @@ def face_maps(parcels, grid, j_mean_A_m2, contact_angle_deg,
         j_spread = round(float(jv.max() / max(1e-9, jv.min())), 3) if jv.size else 1.0
         if act is not None:
             jf = np.where(act, jf, -1.0)                     # -1 = land (no electrolyte)
+            th_out = np.where(act, th, -1.0)
+        else:
+            th_out = th
         out[key] = {
             "ny": ny_f, "nz": nz_f,
             "j": np.round(jf, 3).ravel().tolist(),
+            "theta": np.round(th_out, 3).ravel().tolist(),
             "theta_mean": round(float(th.mean()), 4),
             "j_spread": j_spread,
         }

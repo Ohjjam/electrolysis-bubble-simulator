@@ -103,16 +103,52 @@ def test_provider_keys_are_isolated_and_clearable(monkeypatch):
     for names in app.AI_ENV_KEYS.values():
         for name in names:
             monkeypatch.delenv(name, raising=False)
+    app.AI_SESSIONS.clear()
+    session_a = "test-browser-session-aaaaaaaa"
+    session_b = "test-browser-session-bbbbbbbb"
     app._ai_set_session({
         "provider": "openai", "model": "gpt-5.6-terra",
         "key": "sk-test-openai-not-real-123456",
-    })
-    assert app._ai_key_status("openai")["configured"] is True
-    assert app._ai_key_status("google")["configured"] is False
+    }, session_id=session_a, allow_environment=False)
+    assert app._ai_key_status(
+        "openai", session_id=session_a, allow_environment=False)["configured"] is True
+    assert app._ai_key_status(
+        "openai", session_id=session_b, allow_environment=False)["configured"] is False
+    assert app._ai_key_status(
+        "google", session_id=session_a, allow_environment=False)["configured"] is False
     app._ai_set_session({
         "provider": "openai", "model": "gpt-5.6-terra", "clear": True,
-    })
-    assert app._ai_key_status("openai")["configured"] is False
+    }, session_id=session_a, allow_environment=False)
+    assert app._ai_key_status(
+        "openai", session_id=session_a, allow_environment=False)["configured"] is False
+
+
+def test_public_session_cannot_use_host_environment_key(monkeypatch):
+    app.AI_SESSIONS.clear()
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-host-key-not-for-public-visitors")
+    sid = "test-browser-session-public-cccc"
+    public = app._ai_key_status("openai", session_id=sid, allow_environment=False)
+    local = app._ai_key_status("openai", session_id=sid, allow_environment=True)
+    assert public["configured"] is False
+    assert local["configured"] is True
+    assert local["source"] == "environment"
+
+
+def test_expired_browser_session_key_is_deleted(monkeypatch):
+    for names in app.AI_ENV_KEYS.values():
+        for name in names:
+            monkeypatch.delenv(name, raising=False)
+    app.AI_SESSIONS.clear()
+    sid = "test-browser-session-expired-dddd"
+    app._ai_set_session({
+        "provider": "openai", "model": "gpt-5.6-terra",
+        "key": "sk-test-expiring-key-not-real-123",
+        "ttl_minutes": 5,
+    }, session_id=sid, allow_environment=False)
+    app.AI_SESSIONS[sid]["expires"] = 0
+    status = app._ai_key_status("openai", session_id=sid, allow_environment=False)
+    assert status["configured"] is False
+    assert sid not in app.AI_SESSIONS
 
 
 def test_non_openai_adapters_parse_structured_text(monkeypatch):

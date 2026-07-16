@@ -37,7 +37,9 @@
       { k:"j0_anode", nm:"양극 겉보기 j₀ (피팅값)", un:"A/m²", num:1, v:1.3e-7, lo:1e-12, hi:1e2 },
       { k:"alpha_a", nm:"양극 α (Tafel 기울기)", un:"–", min:0.3, max:1.6, step:0.01, v:1, lo:0.1, hi:2 },
       { k:"r_mem", nm:"막·접촉 면저항 (피팅값)", un:"Ω·m²", num:1, v:3.2e-6, lo:0, hi:1e-3 },
-      { k:"fritz_scale", nm:"기포 이탈크기 보정 (모델)", un:"–", min:0.02, max:0.3, step:0.01, v:0.08, lo:0.005, hi:2 },
+      { k:"fritz_scale", nm:"기포 이탈크기 계수 (Fritz 기준)", un:"–",
+        min:0.02, max:0.3, step:0.01, v:0.08, lo:0.005, hi:2,
+        help:"Fritz 비등식의 이탈반경에 곱합니다. 1=원식, 0.08=전해기포 문헌 범위(반경 약 50–150 µm)에 맞춘 교정값." },
       { k:"gap_mm", nm:"전해질 갭 (모델 관례, r_mem과 짝)", un:"mm", min:0.1, max:3, step:0.05, v:2, lo:0.05, hi:10 },
       { k:"C_dl_anode", nm:"양극 이중층 C_dl (EIS 전용)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
       { k:"C_dl_cathode", nm:"음극 이중층 C_dl (EIS 전용)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
@@ -68,7 +70,8 @@
       { k:"w_ch_mm", nm:"채널 폭", un:"mm", min:0.2, max:5, step:0.1, v:1, lo:0.05, hi:20 },
       { k:"d_ch_mm", nm:"채널 깊이 (기포 크기 상한)", un:"mm", min:0.2, max:5, step:0.1, v:1, lo:0.05, hi:20 },
       { k:"w_land_mm", nm:"리브 폭", un:"mm", min:0.2, max:5, step:0.1, v:1, lo:0.05, hi:20 },
-      { k:"h_mm", nm:"복셀 해상도 (작을수록 정밀↑ 속도↓)", un:"mm", min:0.4, max:3, step:0.05, v:2, lo:0.4, hi:3 },
+      { k:"h_mm", nm:"복셀 한 칸 크기", un:"mm", min:0.4, max:3, step:0.05, v:2, lo:0.4, hi:3,
+        help:"3D 계산 격자 한 칸의 실제 길이입니다. 작을수록 유로와 분포가 세밀하지만 계산량이 커집니다." },
     ]],
     // Real boundary conditions, not decoration: the inlet is the prescribed
     // normal velocity on y=0, the outlet is the Dirichlet p=0 face on y=Ly.
@@ -138,6 +141,12 @@
         P[c.k] = c.v;
         const row = document.createElement("div"); row.className = "ctl";
         row.dataset.key = c.k; rows[c.k] = row;
+        const appendHelp = () => {
+          if (!c.help) return;
+          row.insertAdjacentHTML("beforeend",
+            `<div class="ctlHelp" style="margin-top:3px;color:var(--dim);font-size:10px;line-height:1.45">${c.help}</div>`);
+          row.title = c.help;
+        };
 
         if (c.seg) {
           row.insertAdjacentHTML("beforeend",
@@ -159,7 +168,7 @@
             };
             seg.appendChild(b);
           }
-          row.appendChild(seg); box.appendChild(row);
+          row.appendChild(seg); appendHelp(); box.appendChild(row);
           reg[c.k] = v => {
             if (P[c.k] === v) return;
             P[c.k] = v;
@@ -183,7 +192,7 @@
             if (!isFinite(x)) x = c.v;
             nu.value = x; publish(c, x);
           });
-          box.appendChild(row);
+          appendHelp(); box.appendChild(row);
           reg[c.k] = v => {
             if (document.activeElement === nu || near(P[c.k], v)) return;
             P[c.k] = +v; nu.value = v;
@@ -207,7 +216,7 @@
           let x = Math.max(c.lo, Math.min(c.hi, +nu.value)); if (!isFinite(x)) x = c.v;
           nu.value = x; sl.value = Math.max(c.min, Math.min(c.max, x)); apply(x);
         });
-        box.appendChild(row);
+        appendHelp(); box.appendChild(row);
         reg[c.k] = v => {
           const busy = document.activeElement === nu || document.activeElement === sl;
           if (busy || near(P[c.k], v)) return;

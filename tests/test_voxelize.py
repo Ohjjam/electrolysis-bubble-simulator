@@ -439,6 +439,21 @@ def test_uniform_when_no_coverage():
     assert np.allclose(jf, 0.4)
 
 
+def test_face_maps_export_coverage_for_3d_analysis():
+    class EmptyParcels:
+        r = np.array([])
+
+    g = Grid3D(4, 3, 4, 1e-3)
+    active = np.ones((g.ny, g.nz), dtype=bool)
+    active[:, 0] = False
+    maps = face_maps(EmptyParcels(), g, 5000.0, 60.0, active, active, res=2)
+    cathode = maps["cathode"]
+    assert len(cathode["theta"]) == cathode["ny"] * cathode["nz"]
+    theta = np.array(cathode["theta"]).reshape(cathode["ny"], cathode["nz"])
+    assert (theta[:, :2] == -1).all()                 # rib/land stays neutral
+    assert (theta[:, 2:] == 0).all()                  # open face, no bubbles
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -20,6 +20,7 @@ import json
 import math
 import os
 import ipaddress
+import re
 import threading
 import time
 import webbrowser
@@ -583,8 +584,9 @@ def experiments_api(data: dict) -> dict:
 
 # -------------------------- natural-language AI designer -------------------
 # API keys never enter a browser bundle, saved experiment, file, or response.
-# OPENAI_API_KEY is preferred; the optional UI key is process-memory only and
-# disappears when the local simulator server stops.
+# Environment keys are usable from localhost only. Keys entered in the public
+# app are isolated by a random browser-session id, held in process memory, and
+# deleted automatically after the selected TTL or immediately on user request.
 AI_LOCK = threading.Lock()
 AI_PROVIDER = "openai"
 AI_PROVIDER_MODELS = {
@@ -604,8 +606,13 @@ AI_ENV_KEYS = {
     "anthropic": ("ANTHROPIC_API_KEY",),
     "openrouter": ("OPENROUTER_API_KEY",),
 }
-AI_SESSION_KEYS = {provider: "" for provider in AI_PROVIDER_MODELS}
 AI_MODELS = {provider: models[0] for provider, models in AI_PROVIDER_MODELS.items()}
+AI_SESSIONS = {}
+AI_SESSION_TTL_DEFAULT_S = 60 * 60
+AI_SESSION_TTL_MIN_S = 5 * 60
+AI_SESSION_TTL_MAX_S = 2 * 60 * 60
+AI_SESSION_MAX = 512
+AI_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{20,80}$")
 
 AI_FLOW_KEYS = {"ff", "mask", "in_face", "out_face"}
 AI_NUMERIC_KEYS = {
@@ -688,37 +695,97 @@ def _ai_environment_key(provider):
     return "", ""
 
 
-def _ai_key_status(provider=None):
+def _ai_session_id_valid(session_id):
+    return isinstance(session_id, str) and bool(AI_SESSION_ID_RE.fullmatch(session_id))
+
+
+def _ai_cleanup_sessions_locked(now):
+    expired = [sid for sid, rec in AI_SESSIONS.items()
+               if float(rec.get("expires", 0.0)) <= now]
+    for sid in expired:
+        AI_SESSIONS.pop(sid, None)
+    if len(AI_SESSIONS) <= AI_SESSION_MAX:
+        return
+    oldest = sorted(AI_SESSIONS.items(),
+                    key=lambda item: float(item[1].get("last_used", 0.0)))
+    for sid, _rec in oldest[:len(AI_SESSIONS) - AI_SESSION_MAX]:
+        AI_SESSIONS.pop(sid, None)
+
+
+def _ai_session_record_locked(session_id, now, create=False, ttl_s=None):
+    _ai_cleanup_sessions_locked(now)
+    if not _ai_session_id_valid(session_id):
+        return None
+    rec = AI_SESSIONS.get(session_id)
+    if rec is None and create:
+        ttl = int(ttl_s or AI_SESSION_TTL_DEFAULT_S)
+        rec = {
+            "keys": {},
+            "models": dict(AI_MODELS),
+            "ttl_s": ttl,
+            "created": now,
+            "last_used": now,
+            "expires": now + ttl,
+        }
+        AI_SESSIONS[session_id] = rec
+    if rec is not None:
+        if ttl_s is not None:
+            rec["ttl_s"] = int(ttl_s)
+        rec["last_used"] = now
+        rec["expires"] = now + int(rec.get("ttl_s", AI_SESSION_TTL_DEFAULT_S))
+    return rec
+
+
+def _ai_key_status(provider=None, session_id="", allow_environment=True):
     provider = provider if provider in AI_PROVIDER_MODELS else AI_PROVIDER
-    env_key, env_name = _ai_environment_key(provider)
+    env_key, env_name = _ai_environment_key(provider) if allow_environment else ("", "")
+    now = time.time()
+    with AI_LOCK:
+        rec = _ai_session_record_locked(session_id, now, create=False)
+        session_key = (rec or {}).get("keys", {}).get(provider, "")
+        model = (rec or {}).get("models", {}).get(provider, AI_MODELS[provider])
+        expires_in_s = max(0, int((rec or {}).get("expires", now) - now)) if rec else 0
+        ttl_s = int((rec or {}).get("ttl_s", AI_SESSION_TTL_DEFAULT_S))
     if env_key:
         source, configured = "environment", True
+    elif session_key:
+        source, configured = "session", True
     else:
-        with AI_LOCK:
-            configured = bool(AI_SESSION_KEYS[provider])
-        source = "session" if configured else "none"
-    with AI_LOCK:
-        model = AI_MODELS[provider]
+        source, configured = "none", False
     return {"configured": configured, "source": source, "provider": provider,
             "environment_name": env_name, "model": model,
-            "local_only": True, "key_persisted": False}
+            "local_only": False, "key_persisted": False,
+            "session_isolated": True, "ttl_s": ttl_s,
+            "expires_in_s": expires_in_s}
 
 
-def _ai_get_key(provider):
-    key, _name = _ai_environment_key(provider)
+def _ai_get_key(provider, session_id="", allow_environment=True):
+    key, _name = _ai_environment_key(provider) if allow_environment else ("", "")
     if key:
         return key
+    now = time.time()
     with AI_LOCK:
-        return AI_SESSION_KEYS[provider]
+        rec = _ai_session_record_locked(session_id, now, create=False)
+        return (rec or {}).get("keys", {}).get(provider, "")
 
 
-def _ai_set_session(data):
+def _ai_set_session(data, session_id="", allow_environment=True):
     global AI_PROVIDER
+    if not _ai_session_id_valid(session_id):
+        return {"error": "valid browser session id required"}
     provider = str(data.get("provider", AI_PROVIDER))
     if provider not in AI_PROVIDER_MODELS:
         return {"error": "unsupported provider"}
+    now = time.time()
+    ttl_minutes = data.get("ttl_minutes", AI_SESSION_TTL_DEFAULT_S / 60)
+    try:
+        ttl_s = int(float(ttl_minutes) * 60)
+    except (TypeError, ValueError):
+        return {"error": "invalid session TTL"}
+    ttl_s = max(AI_SESSION_TTL_MIN_S, min(AI_SESSION_TTL_MAX_S, ttl_s))
     with AI_LOCK:
-        current_model = AI_MODELS[provider]
+        rec = _ai_session_record_locked(session_id, now, create=True, ttl_s=ttl_s)
+        current_model = rec["models"].get(provider, AI_MODELS[provider])
     model = str(data.get("model", current_model))
     if not _valid_ai_model(provider, model):
         return {"error": "unsupported model"}
@@ -728,12 +795,17 @@ def _ai_set_session(data):
         return {"error": "invalid API key format"}
     with AI_LOCK:
         AI_PROVIDER = provider
-        AI_MODELS[provider] = model
+        rec = _ai_session_record_locked(session_id, time.time(), create=True, ttl_s=ttl_s)
+        rec["models"][provider] = model
         if data.get("clear"):
-            AI_SESSION_KEYS[provider] = ""
+            rec["keys"].pop(provider, None)
         elif key_present:
-            AI_SESSION_KEYS[provider] = key or ""
-    return {"ok": 1, **_ai_key_status(provider)}
+            if key:
+                rec["keys"][provider] = key
+            else:
+                rec["keys"].pop(provider, None)
+    return {"ok": 1, **_ai_key_status(
+        provider, session_id=session_id, allow_environment=allow_environment)}
 
 
 def _ai_schema():
@@ -1020,8 +1092,7 @@ def _call_openrouter_plan(key, prompt, current, speed, language, model):
     return json.loads(content)
 
 
-def _call_ai_plan(provider, prompt, current, speed, language, model):
-    key = _ai_get_key(provider)
+def _call_ai_plan(provider, prompt, current, speed, language, model, key):
     if not key:
         raise PermissionError(f"{provider} API key is not configured")
     calls = {
@@ -1394,6 +1465,10 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return False
 
+    def _ai_session_id(self):
+        session_id = self.headers.get("X-BubbleSim-Session", "").strip()
+        return session_id if _ai_session_id_valid(session_id) else ""
+
     def do_GET(self):
         p = self.path.split("?", 1)[0]
         if p in ("/", "/app", "/app3d", "/app3d.html"):
@@ -1422,10 +1497,10 @@ class Handler(BaseHTTPRequestHandler):
             with EXP_LOCK:
                 return self._json({"list": _exp_load(), "active": ACTIVE_EXP})
         if p == "/api3d/ai/status":
-            if not self._is_local_request():
-                return self._json({"error": "AI endpoints are local-only"}, 403)
             provider = self._query(self.path).get("provider")
-            return self._json(_ai_key_status(provider))
+            return self._json(_ai_key_status(
+                provider, session_id=self._ai_session_id(),
+                allow_environment=self._is_local_request()))
         if p == "/api3d/meshes":
             with LIVE.lock:
                 dsn = dict(LIVE.designer)
@@ -1528,10 +1603,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
         if self.path.startswith("/api3d/ai/"):
-            if not self._is_local_request():
-                return self._json({"error": "AI endpoints are local-only"}, 403)
+            session_id = self._ai_session_id()
+            allow_environment = self._is_local_request()
             if self.path == "/api3d/ai/key":
-                res = _ai_set_session(data)
+                res = _ai_set_session(
+                    data, session_id=session_id,
+                    allow_environment=allow_environment)
                 return self._json(res, 400 if "error" in res else 200)
             if self.path == "/api3d/ai/plan":
                 prompt = str(data.get("prompt", "")).strip()
@@ -1552,7 +1629,11 @@ class Handler(BaseHTTPRequestHandler):
                     current, speed = dict(LIVE.designer), float(LIVE.speed)
                 started = time.perf_counter()
                 try:
-                    raw = _call_ai_plan(provider, prompt, current, speed, language, model)
+                    key = _ai_get_key(
+                        provider, session_id=session_id,
+                        allow_environment=allow_environment)
+                    raw = _call_ai_plan(
+                        provider, prompt, current, speed, language, model, key)
                     plan = normalize_ai_plan(raw, current, speed)
                 except PermissionError as e:
                     return self._json({"error": str(e)}, 401)

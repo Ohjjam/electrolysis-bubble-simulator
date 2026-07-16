@@ -229,18 +229,23 @@
 
     host.className = "box";
     host.innerHTML = `
-      <h3>유로 — 템플릿 &amp; 직접 그리기</h3>
-      <div class="lab"><span class="nm">템플릿</span><span class="un hint">불러온 뒤 자유롭게 수정</span></div>
-      <div class="pe-gal"></div>
-      <div class="ri" style="margin-top:6px">
-        <span class="hint" style="flex:none">리브</span>
-        <input class="pe-ribmm" type="number" step="0.5" min="0.1" value="2" style="width:56px">
-        <span class="hint" style="flex:none">채널</span>
-        <input class="pe-chanmm" type="number" step="0.5" min="0.1" value="4" style="width:56px">
-        <span class="hint" style="flex:none">mm</span>
+      <h3>유로 설계</h3>
+      <div class="pe-layout">
+      <div class="pe-setup">
+        <div class="lab"><span class="nm">템플릿</span><span class="un hint">선택 후 수정 가능</span></div>
+        <div class="pe-gal"></div>
+        <div class="ri" style="margin-top:6px">
+          <span class="hint" style="flex:none">리브</span>
+          <input class="pe-ribmm" type="number" step="0.5" min="0.1" value="2" style="width:56px">
+          <span class="hint" style="flex:none">채널</span>
+          <input class="pe-chanmm" type="number" step="0.5" min="0.1" value="4" style="width:56px">
+          <span class="hint" style="flex:none">mm</span>
+        </div>
+        <div class="hint pe-fit" style="margin-top:4px">–</div>
       </div>
-      <div class="hint pe-fit" style="margin-top:4px">–</div>
-      <div class="lab" style="margin-top:10px"><span class="nm">직접 그리기</span></div>
+      <div class="pe-draw">
+      <div class="pe-editor-ui">
+      <div class="lab"><span class="nm">그리기 도구</span><span class="un hint">한 칸 = 계산 복셀</span></div>
       <div class="pe-tools">
         <button class="btn pe-t" data-tool="line" title="직선 리브 — 축에 자동 정렬 (Alt = 자유각)">직선</button>
         <button class="btn pe-t" data-tool="rect" title="채워진 사각형">사각형</button>
@@ -253,18 +258,24 @@
         <span class="hint pe-brushn" style="flex:none;width:24px">2.0</span><span class="hint" style="flex:none">mm</span>
         <label class="pe-chk"><input class="pe-mirror" type="checkbox"> 좌우대칭</label>
       </div>
+      </div>
       <canvas class="pe-cv" data-nodrag width="512" height="512"></canvas>
-      <div class="pe-tools" style="margin-top:6px">
+      <button class="btn pe-big" style="width:100%;margin-top:7px;border-color:var(--accent);color:var(--accent)">
+        ✏ 큰 화면에서 유로 그리기</button>
+      <div class="pe-editor-ui">
+      <div class="pe-tools" style="margin-top:7px">
         <button class="btn pe-undo" title="Ctrl+Z">↶ 되돌리기</button>
         <button class="btn pe-redo" title="Ctrl+Y">↷ 다시</button>
-        <button class="btn pe-big">⤢ 크게</button>
       </div>
       <div class="pe-tools" style="margin-top:6px">
         <button class="btn pe-load">현재 유로 불러오기</button>
         <button class="btn pe-clear">비우기</button>
         <button class="btn pe-inv">반전</button>
       </div>
-      <div class="hint pe-stat" style="margin-top:6px">–</div>`;
+      </div>
+      <div class="hint pe-stat" style="margin-top:6px">–</div>
+      </div>
+      </div>`;
 
     if (!document.getElementById("pe-style")) {
       const st = document.createElement("style");
@@ -290,17 +301,30 @@
         .pe-gal button:hover{border-color:var(--accent);color:var(--accent)}
         .pe-gal canvas{width:100%;aspect-ratio:1;display:block;border-radius:4px;
           background:var(--cv-liq,#e9f1fa)}
+        .pe-layout{display:block}
+        #plateEd:not(.pe-expanded) .pe-editor-ui{display:none}
+        #plateEd:not(.pe-expanded) .pe-cv{cursor:zoom-in;max-height:220px;object-fit:contain}
+        #plateEd.pe-expanded .pe-big{display:none}
         #pe-overlay{position:fixed;inset:0;z-index:200;background:rgba(15,22,33,.55);
                     display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
         #pe-overlay .wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;
-                          padding:14px;box-shadow:0 20px 60px rgba(20,32,52,.25)}
-        /* clamp, not bare vmin: some embedded viewports report 0 and the canvas
-           collapses to a couple of pixels */
-        #pe-overlay canvas{width:clamp(300px, 78vmin, 900px);height:auto;aspect-ratio:1;
-                           display:block;border:1px solid var(--line);border-radius:10px;
+                          width:min(1120px,96vw);max-height:94vh;overflow:auto;padding:14px;
+                          box-shadow:0 20px 60px rgba(20,32,52,.25)}
+        #pe-overlay #plateEd{display:block!important;margin:0;border:0;padding:0;max-width:none}
+        #pe-overlay .pe-layout{display:grid;grid-template-columns:260px minmax(420px,1fr);
+                               gap:16px;align-items:start}
+        #pe-overlay .pe-gal{grid-template-columns:repeat(2,1fr)}
+        #pe-overlay .pe-cv{width:min(68vh,720px);max-width:100%;height:auto;aspect-ratio:1;
+                           display:block;margin:0 auto;border:1px solid var(--line);border-radius:10px;
                            cursor:crosshair;touch-action:none;background:var(--cv-liq,#e9f1fa)}
         #pe-overlay .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;
-                        font-size:13px;font-weight:600;gap:16px}`;
+                        font-size:13px;font-weight:600;gap:16px}
+        @media(max-width:760px){
+          #pe-overlay .wrap{width:98vw;max-height:98vh;padding:10px}
+          #pe-overlay .pe-layout{grid-template-columns:1fr}
+          #pe-overlay .pe-gal{grid-template-columns:repeat(4,1fr)}
+          #pe-overlay .pe-cv{width:min(92vw,70vh)}
+        }`;
       document.head.appendChild(st);
     }
 
@@ -428,13 +452,9 @@
       $(".pe-stat").innerHTML =
         `리브 <b style="color:var(--tx)">${(100*nLand/(NY*NZ)).toFixed(0)}%</b> · ` +
         `<b style="color:var(--tx)">${NY}×${NZ}</b> = 물리격자 그대로${mm}` +
-        (pending ? ` · <span class="pe-dirty">적용 대기…</span>` : "") +
-        (P.ff === "custom" ? "" : ` · <span style="color:var(--dim)">그리면 적용됩니다</span>`) +
-        (connected ? "" : `<br><span class="pe-warn">⚠ 입구에서 출구까지 이어진 채널이 없습니다</span>` +
-                          `<span style="color:var(--dim)"> — 유동이 흐르지 않습니다.</span>`) +
-        (jet ? `<br><span style="color:var(--gold)">입구 폭 = 0 (바닥 전체 급수)</span>` +
-               `<span style="color:var(--dim)"> — 좁은 틈으로 유량이 몰려 제트가 생깁니다. ` +
-               `포트 폭을 0.1 정도로 지정해 보세요.</span>` : "");
+        (pending ? ` · <span class="pe-dirty">적용 중…</span>` : "") +
+        (connected ? "" : `<br><span class="pe-warn">⚠ 입구–출구가 연결되지 않았습니다.</span>`) +
+        (jet ? `<br><span style="color:var(--gold)">입구 폭 0: 전체 면 급수</span>` : "");
       $(".pe-undo").disabled = !undo.length;
       $(".pe-redo").disabled = !redo.length;
     }
@@ -475,6 +495,11 @@
     }
     function wire(cv) {
       cv.addEventListener("pointerdown", e => {
+        if (!host.classList.contains("pe-expanded")) {
+          openEditor();
+          e.preventDefault();
+          return;
+        }
         if (e.button === 1) return;
         // capture is a nicety (it keeps the stroke alive outside the canvas);
         // if the browser refuses the pointer id, draw anyway rather than drop
@@ -584,8 +609,7 @@
         `실제 <b style="color:${off ? "var(--gold)" : "var(--tx)"}">리브 ${pl.ribMM.toFixed(1)} / ` +
         `채널 ${pl.chanMM.toFixed(1)} mm</b> · 주기 ${pl.pitchMM.toFixed(1)} mm · ` +
         `<b style="color:var(--tx)">${pl.nEff}</b>패스 · 한 칸 ${c.toFixed(1)} mm` +
-        (off ? `<br><span style="color:var(--dim)">격자가 셀 단위로 맞춥니다 — 더 가늘게 하려면 ` +
-               `<b>복셀 해상도</b>를 낮추세요.</span>` : "");
+        (off ? `<br><span style="color:var(--dim)">요청값은 복셀 단위로 반올림됩니다.</span>` : "");
     }
     const ribIn = $(".pe-ribmm"), chanIn = $(".pe-chanmm");
     const readMM = () => {
@@ -603,30 +627,37 @@
       else if (e.key === "y" || (e.key === "z" && e.shiftKey)) { e.preventDefault(); restore(redo, undo); }
     });
 
-    // ------------------------------------------------------------ pop-out view
-    $(".pe-big").onclick = () => {
+    // ------------------------------------------------------------ full editor
+    function openEditor() {
       if (overlay) return;
+      const marker = document.createComment("plate-editor-home");
+      host.parentNode.insertBefore(marker, host);
       overlay = document.createElement("div");
       overlay.id = "pe-overlay";
       overlay.innerHTML = `<div class="wrap">
-        <div class="hd"><span>유로 직접 그리기 — 크게 보기</span>
-        <button class="btn pe-close" style="flex:none;padding:4px 12px">닫기 (Esc)</button></div>
-        <canvas width="1024" height="1024"></canvas></div>`;
+        <div class="hd"><span>유로 그리기</span>
+        <button class="btn pe-close" style="flex:none;padding:6px 14px">적용 완료</button></div>
+        <div class="pe-modal-body"></div></div>`;
       document.body.appendChild(overlay);
-      const big = overlay.querySelector("canvas");
-      big.style.aspectRatio = `${NZ} / ${NY}`;
-      canvases.push(big); wire(big); render();
+      host.classList.add("pe-expanded");
+      overlay.querySelector(".pe-modal-body").appendChild(host);
+      $(".pe-cv").style.aspectRatio = `${NZ} / ${NY}`;
+      render();
       const esc = e => { if (e.key === "Escape") close(); };
       function close() {
-        canvases.splice(canvases.indexOf(big), 1);
-        overlay.remove(); overlay = null;
+        host.classList.remove("pe-expanded");
+        marker.parentNode.insertBefore(host, marker);
+        marker.remove();
+        overlay.remove();
+        overlay = null;
         removeEventListener("keydown", esc);
         render();
       }
       overlay.querySelector(".pe-close").onclick = close;
       overlay.onclick = e => { if (e.target === overlay) close(); };
       addEventListener("keydown", esc);
-    };
+    }
+    $(".pe-big").onclick = openEditor;
 
     // ------------------------------------------------------------------- sync
     function loadFromEngine() {

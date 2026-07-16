@@ -83,6 +83,36 @@
     background:var(--surf);color:var(--tx);font-size:19px;line-height:1;cursor:pointer}
   .zoomBtn:hover{border-color:var(--accent);background:var(--surf2);color:var(--accent)}
   .zoomBtn:active{transform:translateY(1px)}
+  #analysisDock{position:absolute;z-index:12;top:12px;right:276px;width:238px;
+    padding:9px 10px;border:1px solid rgba(180,190,205,.9);border-radius:12px;
+    background:rgba(255,255,255,.94);box-shadow:0 5px 22px rgba(20,32,52,.14);
+    backdrop-filter:blur(8px);font-variant-numeric:tabular-nums}
+  .analysisHead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    font-size:11.5px;font-weight:700;margin-bottom:6px}
+  #analysisField{width:100%;border:1px solid var(--line);border-radius:8px;
+    background:var(--surf);color:var(--tx);padding:5px 7px;font-size:11px}
+  #analysisDesc{min-height:29px;margin-top:5px;color:var(--dim);font-size:10px;line-height:1.4}
+  #analysisBar{height:11px;border-radius:5px;border:1px solid rgba(30,40,55,.22);
+    margin-top:6px;background:linear-gradient(90deg,#30123b,#2c7bb6,#49c9b0,#f9e721,#d7191c)}
+  .analysisTicks{display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-top:2px}
+  #analysisRead{margin-top:5px;padding-top:5px;border-top:1px solid var(--line);
+    color:var(--tx);font-size:10.5px;min-height:22px}
+  #modeSeg.topModes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin-bottom:10px}
+  #modeSeg.topModes button{min-width:0;background:var(--surf);color:var(--dim);
+    border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:11.5px;cursor:pointer}
+  #modeSeg.topModes button.on{color:var(--accent);border-color:var(--accent);
+    background:var(--surf2);font-weight:600}
+  #toolMenu{position:relative;min-width:0}
+  #toolMenu summary{list-style:none;height:100%;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--dim);
+    padding:6px 4px;font-size:11.5px;cursor:pointer}
+  #toolMenu summary::-webkit-details-marker{display:none}
+  #toolMenu[open] summary{border-color:var(--accent);color:var(--accent);background:var(--surf2)}
+  .toolMenuPanel{position:absolute;z-index:40;top:calc(100% + 5px);right:0;width:230px;
+    padding:7px;border:1px solid var(--line);border-radius:10px;background:var(--card);
+    box-shadow:0 12px 32px rgba(20,32,52,.18);display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .toolMenuPanel button{width:100%;min-height:34px}
+  #userExpTabs{display:contents}
   #rightRail{position:fixed;z-index:10;top:12px;right:12px;width:248px;
     max-height:calc(100vh - 24px);overflow-y:auto;overflow-x:hidden;
     display:flex;flex-direction:column;gap:8px;padding-right:2px;scrollbar-gutter:stable}
@@ -140,6 +170,8 @@
       font-size:10.5px;font-weight:650;text-shadow:0 1px 2px #fff}
     #mobileViewBar .mhint{font-weight:400;color:#6f7b91}
     #cameraDock{bottom:9px;width:min(240px,calc(100% - 20px));padding:6px 8px}
+    #analysisDock{top:42px;right:10px;width:min(214px,calc(100% - 20px));padding:7px 8px}
+    #analysisDesc{display:none}
     #rightRail{display:contents}
     #panel,#hud,.fpanel{position:relative!important;left:auto!important;right:auto!important;
       top:auto!important;bottom:auto!important;width:calc(100% - 16px)!important;max-width:none!important;
@@ -165,6 +197,8 @@
     #mobilePanelActions button{flex:1;border:1px solid var(--line);border-radius:8px;
       background:var(--surf);color:var(--dim);padding:6px 4px;font-size:10.5px}
     #velLegend{display:none!important}
+    #modeSeg.topModes{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .toolMenuPanel{position:fixed;left:10px;right:10px;top:auto;width:auto}
   }
 </style>
 </head>
@@ -173,6 +207,24 @@
 <div id="stageWrap">
   <canvas id="stage"></canvas>
   <div id="mobileViewBar"><span>3D 보기</span><span class="mhint">드래그 회전</span></div>
+  <div id="analysisDock" aria-label="3D 셀 분석">
+    <div class="analysisHead"><span>3D 셀 분석</span><span id="analysisState">꺼짐</span></div>
+    <select id="analysisField" aria-label="3D 셀 분석 항목">
+      <option value="off">분석 색상 끄기</option>
+      <option value="eps">가스 홀드업 ε</option>
+      <option value="speed">액체 유속 |u|</option>
+      <option value="j_c">음극 전류밀도 j</option>
+      <option value="j_a">양극 전류밀도 j</option>
+      <option value="theta_c">음극 기포 덮임 θ</option>
+      <option value="theta_a">양극 기포 덮임 θ</option>
+    </select>
+    <div id="analysisDesc">셀에 표시할 계산 필드를 고르세요.</div>
+    <div id="analysisScale" style="display:none">
+      <div id="analysisBar"></div>
+      <div class="analysisTicks"><span id="analysisMin">0</span><span id="analysisMax">1</span></div>
+      <div id="analysisRead">셀 색상 위에 마우스를 올리면 위치별 값이 나옵니다.</div>
+    </div>
+  </div>
   <div id="cameraDock" aria-label="3D 카메라 이동과 확대">
     <div class="cameraRow">
       <label class="cameraLabel" for="camPan">좌우 이동</label>
@@ -197,24 +249,28 @@
       <button type="button" data-language="en">English</button>
     </div>
   </div>
-  <div class="sub">진짜 3D 구조 — 유로·전극·막을 실제 치수로. 드래그=회전 · 슬라이더=좌우 이동 · 휠/±=줌</div>
+  <div class="sub">회전 · 좌우 이동 · 휠/± 줌</div>
 
-  <!-- tabs: 2D / 3D / built-in mesh experiment / user-saved experiments / save -->
-  <div class="seg" id="modeSeg" style="display:flex;flex-wrap:wrap;gap:4px">
+  <div class="topModes" id="modeSeg">
     <button data-m="2d" title="2D 패널 뷰(app.html 스타일)로 이동">📊 2D</button>
     <button data-m="live" class="on">🧊 3D</button>
-    <button data-m="exp">🧪 mesh 실험</button>
     <button data-m="ai">🤖 AI 설계</button>
-    <button data-m="eq" title="이 프로그램이 실제로 푸는 식과 그 근거">📐 수식</button>
-    <button data-m="csv" title="LSV·프로파일·CP·기포 데이터를 Excel로 내보내기">📊 데이터</button>
-    <button id="expAdd" title="지금 조건(유로·운전 전부)을 실험 탭으로 저장">＋ 실험 저장</button>
+    <details id="toolMenu">
+      <summary>실험·도구 ▾</summary>
+      <div class="toolMenuPanel">
+        <button data-m="exp">🧪 실험 뷰</button>
+        <button data-m="eq">📐 수식</button>
+        <button data-m="csv">📊 데이터</button>
+        <button id="expAdd">＋ 실험 저장</button>
+        <div id="userExpTabs"></div>
+      </div>
+    </details>
   </div>
 
   <!-- save-current-condition-as-experiment form -->
   <div class="box" id="expSaveBox" style="display:none;border-color:var(--gold)">
     <h3>현재 조건을 실험으로 저장</h3>
-    <div class="note" style="border:none;margin:0 0 6px;padding:0">유로(직접 그린 것 포함)·치수·운전·촉매
-      설정 전부가 저장됩니다. 탭을 눌러 언제든 다시 불러오고, 수정·삭제할 수 있어요.</div>
+    <div class="note" style="border:none;margin:0 0 6px;padding:0">현재 유로와 설정을 함께 저장합니다.</div>
     <input id="expName" placeholder="실험 이름 (예: 13ch 고유량 테스트)" style="width:100%;margin-bottom:5px;
       background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:6px">
     <input id="expNote" placeholder="메모 (선택)" style="width:100%;margin-bottom:7px;
@@ -589,12 +645,19 @@
         <input id="aiKey" class="aiInput" type="password" autocomplete="new-password"
           spellcheck="false" placeholder="sk-… (환경변수 OPENAI_API_KEY 권장)">
       </label>
+      <label class="aiField">자동 삭제
+        <select id="aiKeyTtl" class="aiSelect">
+          <option value="15">15분</option>
+          <option value="60" selected>1시간</option>
+          <option value="120">2시간</option>
+        </select>
+      </label>
       <div class="row">
-        <button class="btn" id="aiSaveKey" type="button">세션 키 등록</button>
-        <button class="btn" id="aiClearKey" type="button">세션 키 지우기</button>
+        <button class="btn" id="aiSaveKey" type="button">임시 키 등록</button>
+        <button class="btn" id="aiClearKey" type="button">지금 삭제</button>
       </div>
-      <div class="note">키는 HTML·localStorage·파일·응답에 저장하지 않습니다. 로컬 브라우저에서만
-        AI 호출이 허용되며 서버를 끄면 세션 키가 사라집니다.</div>
+      <div class="note">키는 이 브라우저 전용 서버 메모리에만 보관되고 선택한 시간이 지나면 자동 삭제됩니다.
+        공개 서버의 환경변수 키는 외부 사용자에게 공유되지 않습니다.</div>
     </div>
 
     <div class="box" style="border-color:rgba(31,111,235,.45)">
@@ -768,7 +831,6 @@ const P = {};
 // below are local to this page.
 const CTRL = SIM_CTRL.concat([
   ["표시 (이 화면 전용)", [
-    { k:"jmap", nm:"전극면 전류맵", seg:[["on","켜기"],["off","끄기"]], v:"on", local:1 },
     { k:"bcol", nm:"버블 색", seg:[["gas","기체 종류"],["vel","상승속도"]], v:"gas", local:1 },
     { k:"bscale", nm:"버블 표시 크기 (물리 크기는 실제)", seg:[["1","실제 ×1"],["4","×4"],["12","×12"]], v:"4", local:1 },
     { k:"bcount", nm:"3D 표시 버블 수 상한 (0=전체)", un:"개", min:0, max:9000, step:100, v:0, lo:0, hi:9000, local:1 },
@@ -780,6 +842,7 @@ const CTRL = SIM_CTRL.concat([
 const pend = {}; let ptimer = null, srvOk = false;
 function send(k, v) {
   pend[k] = v;
+  if (k === "tilt") applyCellTilt(v);
   if (!ptimer) ptimer = setTimeout(flush, 70);
 }
 function flush() {
@@ -844,13 +907,24 @@ const AI_PROVIDERS = {
 };
 
 function aiProvider() { return aiEl("aiProvider").value; }
-const AI_LOCAL_BROWSER = ["127.0.0.1", "localhost", "::1"].includes(location.hostname);
+const AI_SESSION_STORAGE = "bubblesim.ai.browser-session";
+const AI_SESSION_ID = (() => {
+  try {
+    let value = sessionStorage.getItem(AI_SESSION_STORAGE);
+    if (!value) {
+      value = crypto.randomUUID().replaceAll("-", "");
+      sessionStorage.setItem(AI_SESSION_STORAGE, value);
+    }
+    return value;
+  } catch (_) {
+    return crypto.randomUUID().replaceAll("-", "");
+  }
+})();
 
 function aiApplyAccessState() {
-  const locked = !AI_LOCAL_BROWSER;
   for (const id of ["aiKey", "aiSaveKey", "aiClearKey", "aiPrompt", "aiPlan", "aiApply"])
-    aiEl(id).disabled = locked || (id === "aiApply" && !aiLastEval);
-  return locked;
+    aiEl(id).disabled = id === "aiApply" && !aiLastEval;
+  return false;
 }
 
 function aiPopulateModels(preferred="") {
@@ -877,16 +951,17 @@ function aiSyncProviderUi() {
   const info = AI_PROVIDERS[aiProvider()];
   const english = window.SimI18n && SimI18n.getLanguage() === "en";
   aiEl("aiKeyLabel").textContent = english
-    ? `${info.name} API key · kept for this server session only`
-    : `${info.name} API 키 · 이 서버 세션에만 보관`;
+    ? `${info.name} API key · temporary for this browser only`
+    : `${info.name} API 키 · 이 브라우저에서만 임시 보관`;
   aiEl("aiKey").placeholder = english
-    ? `${info.placeholder} (environment variable ${info.env} recommended)`
-    : `${info.placeholder} (환경변수 ${info.env} 권장)`;
+    ? `${info.placeholder} (deleted automatically)`
+    : `${info.placeholder} (자동 삭제)`;
 }
 
 async function aiJson(url, body) {
-  const options = body === undefined ? {} : {
-    method:"POST", headers:{"Content-Type":"application/json"},
+  const headers = {"X-BubbleSim-Session":AI_SESSION_ID};
+  const options = body === undefined ? { headers } : {
+    method:"POST", headers:{...headers, "Content-Type":"application/json"},
     body:JSON.stringify(body),
   };
   const response = await fetch(url, options);
@@ -906,14 +981,7 @@ async function aiRefreshStatus() {
   const el = aiEl("aiKeyStatus");
   const provider = aiProvider(), info = AI_PROVIDERS[provider];
   aiConfigured = false;
-  if (aiApplyAccessState()) {
-    const english = window.SimI18n && SimI18n.getLanguage() === "en";
-    el.className = "aiStatus";
-    el.textContent = english
-      ? "AI design is available only from the simulator running on localhost. Public-cloud key entry is disabled."
-      : "AI 설계는 localhost에서 실행한 시뮬레이터에서만 사용할 수 있습니다. 공개 서버의 키 입력은 차단되어 있습니다.";
-    return;
-  }
+  aiApplyAccessState();
   try {
     const status = await aiJson(`/api3d/ai/status?provider=${encodeURIComponent(provider)}`);
     aiConfigured = !!status.configured;
@@ -921,9 +989,15 @@ async function aiRefreshStatus() {
     el.className = "aiStatus " + (status.configured ? "ok" : "bad");
     const source = status.source === "environment"
       ? (status.environment_name || "환경변수")
-      : status.source === "session" ? "서버 세션" : "없음";
+      : status.source === "session" ? "브라우저 임시 세션" : "없음";
+    const minutesLeft = Math.max(1, Math.ceil((status.expires_in_s || 0) / 60));
+    const english = window.SimI18n && SimI18n.getLanguage() === "en";
+    const left = status.expires_in_s
+      ? english ? ` · auto-delete in ${minutesLeft} min`
+                : ` · ${minutesLeft}분 후 자동 삭제`
+      : "";
     el.textContent = status.configured
-      ? `${aiT("API 키 준비됨")} · ${info.name} · ${aiT(source)} · ${status.model}`
+      ? `${aiT("API 키 준비됨")} · ${info.name} · ${aiT(source)} · ${status.model}${left}`
       : `${info.name} · ${aiT("API 키가 없습니다. 환경변수 또는 세션 키를 등록하세요.")}`;
   } catch (error) {
     aiConfigured = false;
@@ -938,18 +1012,24 @@ aiEl("aiSaveKey").onclick = async () => {
   const model = aiCurrentModel();
   if (!model) { aiWork("사용할 모델 ID를 입력하세요.", "bad"); return; }
   try {
-    await aiJson("/api3d/ai/key", { key, provider:aiProvider(), model });
+    await aiJson("/api3d/ai/key", {
+      key, provider:aiProvider(), model,
+      ttl_minutes:+aiEl("aiKeyTtl").value || 60,
+    });
     aiEl("aiKey").value = "";
-    aiWork("세션 키를 등록했습니다. 서버를 끄면 사라집니다.", "ok");
+    aiWork("임시 키를 등록했습니다. 선택한 시간이 지나면 자동 삭제됩니다.", "ok");
     await aiRefreshStatus();
   } catch (error) { aiWork(error.message, "bad"); }
 };
 aiEl("aiClearKey").onclick = async () => {
   try {
     const model = aiCurrentModel() || AI_PROVIDERS[aiProvider()].models[0][0];
-    await aiJson("/api3d/ai/key", { clear:true, provider:aiProvider(), model });
+    await aiJson("/api3d/ai/key", {
+      clear:true, provider:aiProvider(), model,
+      ttl_minutes:+aiEl("aiKeyTtl").value || 60,
+    });
     aiEl("aiKey").value = "";
-    aiWork("세션 키를 지웠습니다.", "ok");
+    aiWork("이 브라우저의 임시 키를 삭제했습니다.", "ok");
     await aiRefreshStatus();
   } catch (error) { aiWork(error.message, "bad"); }
 };
@@ -1083,9 +1163,10 @@ aiEl("aiApply").onclick = async () => {
 };
 document.addEventListener("sim-language-change", () => {
   aiSyncProviderUi();
-  if (!AI_LOCAL_BROWSER) aiRefreshStatus();
+  aiRefreshStatus();
   if (aiLastPlan) aiRenderPlan(aiLastPlan);
   if (aiLastEval) aiRenderEvaluation(aiLastEval);
+  refreshAnalysisOverlay();
 });
 aiEl("aiProvider").addEventListener("change", () => {
   aiConfigured = false; aiPopulateModels(); aiSyncProviderUi(); aiRefreshStatus();
@@ -1188,8 +1269,10 @@ addEventListener("resize", resize); resize();
 // z (width) -> Z. Through-plane (x) layout comes from the physics grid
 // (real values stay in the labels/physics) — same convention as the P1
 // designer's cross-section ("두께는 가독 위해 과장").
+const visualRoot = new THREE.Group();
 const cellGroup = new THREE.Group();
-scene.add(cellGroup);
+visualRoot.add(cellGroup);
+scene.add(visualRoot);
 let visualPreset = "internal";          // default: readable cutaway, not a black front plate
 
 function makePorousTexture() {
@@ -1301,9 +1384,7 @@ function applyLayers() {
   // its checkbox remains checked.
   if (plateMeshC) plateMeshC.visible = layers.cathode;
   if (plateMeshA) plateMeshA.visible = layers.anode;
-  const showMap = (P.jmap ?? "on") === "on";
-  if (facePlaneC) facePlaneC.visible = showMap && layers.cathode;
-  if (facePlaneA) facePlaneA.visible = showMap && layers.anode;
+  updateAnalysisVisibility();
   if (cellEdge) cellEdge.visible = visualPreset === "analysis";
   syncRibRenderStyle();
   const showDecor = visualPreset !== "analysis" && !matchMedia("(max-width:900px)").matches;
@@ -1313,9 +1394,10 @@ function applyLayers() {
   // bubble layers (her/oer) are applied in updateBubbles via the side filter
 }
 
-// electrode-face current-density colour maps (updated each poll from st.faces)
+// Selectable analysis maps painted directly on the rendered cell faces.
 let faceTexC = null, faceTexA = null, facePlaneC = null, facePlaneA = null;
 let faceNy = 0, faceNz = 0;
+let latestFaces = null, analysisData = null, analysisMode = "off";
 
 // low current (blanketed / rib-shadowed) -> blue, high (clear channel) -> red
 function turbo(t) {
@@ -1334,19 +1416,11 @@ function makeFaceTexture(ny, nz) {
   return tex;
 }
 
-// field: flat (ny*nz) current density, row-major (y outer, z inner).
-// v = -1 marks a LAND (rib) cell -> drawn as neutral dark structure so the
-// channel lines read crisply; the colour scale covers only real channel cells
-// and is blended over time so it doesn't flicker frame to frame.
-function updateFaceTexture(tex, field, ny, nz) {
+// Field is flat (ny*nz), row-major (y outer, z inner). Negative values mark
+// LAND cells and stay neutral instead of becoming false low-value data.
+function updateFaceTexture(tex, field, ny, nz, lo, hi) {
   if (!tex || !field || field.length !== ny * nz) return;
-  let lo = Infinity, hi = -Infinity;
-  for (const v of field) { if (v < 0) continue; if (v < lo) lo = v; if (v > hi) hi = v; }
-  if (!isFinite(lo)) { lo = 0; hi = 1; }
-  if (tex._lo === undefined) { tex._lo = lo; tex._hi = hi; }
-  tex._lo = 0.85 * tex._lo + 0.15 * lo;            // temporally stable scale
-  tex._hi = 0.85 * tex._hi + 0.15 * hi;
-  const span = Math.max(1e-6, tex._hi - tex._lo);
+  const span = Math.max(1e-9, hi - lo);
   const data = tex.image.data;
   for (let jy = 0; jy < ny; jy++) {
     for (let kz = 0; kz < nz; kz++) {
@@ -1360,13 +1434,200 @@ function updateFaceTexture(tex, field, ny, nz) {
       if (v < 0) {                                  // land: neutral structure
         data[o] = 38; data[o + 1] = 44; data[o + 2] = 54; data[o + 3] = 235;
       } else {
-        const [r, g, b] = turbo((v - tex._lo) / span);
+        const [r, g, b] = turbo((v - lo) / span);
         data[o] = r; data[o + 1] = g; data[o + 2] = b; data[o + 3] = 210;
       }
     }
   }
   tex.needsUpdate = true;
 }
+
+const ANALYSIS_SPECS = {
+  off: { label:"꺼짐", desc:"셀에 표시할 계산 필드를 고르세요." },
+  eps: { label:"가스 홀드업 ε", unit:"", floor:0.05,
+    desc:"관통방향 최대 가스 체적분율입니다. 0은 액체, 1은 가스입니다." },
+  speed: { label:"액체 유속 |u|", unit:"m/s", floor:0.01,
+    desc:"관통방향 최대 액체 속도입니다." },
+  j_c: { label:"음극 전류밀도 j", unit:"A/cm²",
+    desc:"기포 덮임을 반영해 재분배된 음극면 전류밀도입니다." },
+  j_a: { label:"양극 전류밀도 j", unit:"A/cm²",
+    desc:"기포 덮임을 반영해 재분배된 양극면 전류밀도입니다." },
+  theta_c: { label:"음극 기포 덮임 θ", unit:"", floor:0.1,
+    desc:"음극면에서 기포가 가린 면적 비율입니다." },
+  theta_a: { label:"양극 기포 덮임 θ", unit:"", floor:0.1,
+    desc:"양극면에서 기포가 가린 면적 비율입니다." },
+};
+
+function analysisRange(field, floor=0) {
+  let lo = Infinity, hi = -Infinity, sum = 0, n = 0;
+  for (const value of field || []) {
+    if (!Number.isFinite(value) || value < 0) continue;
+    lo = Math.min(lo, value); hi = Math.max(hi, value); sum += value; n++;
+  }
+  if (!n) return null;
+  if (floor > 0) { lo = 0; hi = Math.max(floor, hi); }
+  if (hi - lo < 1e-9) hi = lo + Math.max(1e-6, Math.abs(lo) * 0.01);
+  return { lo, hi, mean:sum / n };
+}
+
+function volumeProjection(kind) {
+  if (!gas3dCur) return null;
+  const { nx, ny, nz } = gas3dCur;
+  const field = new Array(ny * nz).fill(0);
+  const speed = kind === "speed";
+  if (speed && (!vel3dCur || !vel3dCur.u || !vel3dCur.v || !vel3dCur.w)) return null;
+  for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    let maxValue = 0;
+    for (let i = 0; i < nx; i++) {
+      const q = i * ny * nz + j * nz + k;
+      const value = speed
+        ? Math.hypot(vel3dCur.u[q] || 0, vel3dCur.v[q] || 0, vel3dCur.w[q] || 0)
+        : (gas3dCur.f[q] || 0);
+      if (value > maxValue) maxValue = value;
+    }
+    field[j * nz + k] = maxValue;
+  }
+  return { field, ny, nz };
+}
+
+function ensureAnalysisTextures(ny, nz) {
+  if (faceNy === ny && faceNz === nz && faceTexC && faceTexA) return;
+  if (faceTexC) faceTexC.dispose();
+  if (faceTexA) faceTexA.dispose();
+  faceNy = ny; faceNz = nz;
+  faceTexC = makeFaceTexture(ny, nz);
+  faceTexA = makeFaceTexture(ny, nz);
+  if (facePlaneC) {
+    facePlaneC.material.map = faceTexC;
+    facePlaneC.material.needsUpdate = true;
+  }
+  if (facePlaneA) {
+    facePlaneA.material.map = faceTexA;
+    facePlaneA.material.needsUpdate = true;
+  }
+}
+
+function updateAnalysisVisibility() {
+  const ready = analysisMode !== "off" && !!analysisData;
+  const both = analysisMode === "eps" || analysisMode === "speed";
+  if (facePlaneC) facePlaneC.visible = ready && (both || analysisMode.endsWith("_c"));
+  if (facePlaneA) facePlaneA.visible = ready && (both || analysisMode.endsWith("_a"));
+}
+
+function analysisNumber(value) {
+  if (!Number.isFinite(value)) return "–";
+  if (Math.abs(value) >= 100) return value.toFixed(0);
+  if (Math.abs(value) >= 10) return value.toFixed(1);
+  return value.toFixed(3);
+}
+
+function updateAnalysisDock(spec, range) {
+  const scale = document.getElementById("analysisScale");
+  const english = window.SimI18n && SimI18n.getLanguage() === "en";
+  document.getElementById("analysisState").textContent =
+    analysisMode === "off"
+      ? (english ? "Off" : "꺼짐")
+      : analysisData
+        ? (english ? "Showing" : "표시 중")
+        : (english ? "Waiting" : "대기");
+  document.getElementById("analysisDesc").textContent = spec.desc;
+  scale.style.display = analysisData && range ? "" : "none";
+  const read = document.getElementById("analysisRead");
+  if (!analysisData || !range) {
+    read._base = english
+      ? "Select a field, then hover over the colored cell to inspect local values."
+      : "분석 항목을 고른 뒤 셀 색상 위에 마우스를 올리면 위치별 값이 나옵니다.";
+    read.textContent = read._base;
+    return;
+  }
+  const suffix = spec.unit ? ` ${spec.unit}` : "";
+  document.getElementById("analysisMin").textContent = analysisNumber(range.lo) + suffix;
+  document.getElementById("analysisMax").textContent = analysisNumber(range.hi) + suffix;
+  read._base = english
+    ? `Mean ${analysisNumber(range.mean)}${suffix} · hover over the cell for a local value`
+    : `평균 ${analysisNumber(range.mean)}${suffix} · 셀 색상 위에 마우스를 올려 위치값 확인`;
+  read.textContent = read._base;
+  const stops = [0, .25, .5, .75, 1].map(t => {
+    const [r, g, b] = turbo(t);
+    return `rgb(${r},${g},${b}) ${Math.round(t * 100)}%`;
+  });
+  document.getElementById("analysisBar").style.background =
+    `linear-gradient(90deg,${stops.join(",")})`;
+}
+
+function refreshAnalysisOverlay() {
+  const spec = ANALYSIS_SPECS[analysisMode] || ANALYSIS_SPECS.off;
+  analysisData = null;
+  if (analysisMode === "off") {
+    updateAnalysisVisibility(); updateAnalysisDock(spec, null); return;
+  }
+  let source = null;
+  if (analysisMode === "eps" || analysisMode === "speed") {
+    source = volumeProjection(analysisMode);
+  } else if (latestFaces) {
+    const side = analysisMode.endsWith("_c") ? latestFaces.cathode : latestFaces.anode;
+    const key = analysisMode.startsWith("theta") ? "theta" : "j";
+    if (side && side[key]) source = { field:side[key], ny:side.ny, nz:side.nz };
+  }
+  if (!source) {
+    updateAnalysisVisibility(); updateAnalysisDock(spec, null); return;
+  }
+  const range = analysisRange(source.field, spec.floor || 0);
+  if (!range) {
+    updateAnalysisVisibility(); updateAnalysisDock(spec, null); return;
+  }
+  ensureAnalysisTextures(source.ny, source.nz);
+  updateFaceTexture(faceTexC, source.field, source.ny, source.nz, range.lo, range.hi);
+  updateFaceTexture(faceTexA, source.field, source.ny, source.nz, range.lo, range.hi);
+  analysisData = { ...source, range, spec };
+  updateAnalysisVisibility();
+  updateAnalysisDock(spec, range);
+}
+
+function setAnalysisMode(next) {
+  if (!ANALYSIS_SPECS[next]) next = "off";
+  analysisMode = next;
+  document.getElementById("analysisField").value = next;
+  refreshAnalysisOverlay();
+}
+document.getElementById("analysisField").addEventListener("change", event =>
+  setAnalysisMode(event.target.value));
+
+const analysisRay = new THREE.Raycaster();
+const analysisPointer = new THREE.Vector2();
+function resetAnalysisReadout() {
+  const read = document.getElementById("analysisRead");
+  if (read && read._base) read.textContent = read._base;
+}
+canvas.addEventListener("pointermove", event => {
+  if (!analysisData) return;
+  const rect = canvas.getBoundingClientRect();
+  analysisPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  analysisPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  analysisRay.setFromCamera(analysisPointer, activeCam);
+  const targets = [facePlaneC, facePlaneA].filter(object => object && object.visible);
+  const hit = analysisRay.intersectObjects(targets, false)[0];
+  if (!hit || !hit.uv) { resetAnalysisReadout(); return; }
+  const j = Math.max(0, Math.min(analysisData.ny - 1,
+    Math.floor(hit.uv.y * analysisData.ny)));
+  const k = Math.max(0, Math.min(analysisData.nz - 1,
+    Math.floor(hit.uv.x * analysisData.nz)));
+  const value = analysisData.field[j * analysisData.nz + k];
+  const read = document.getElementById("analysisRead");
+  const english = window.SimI18n && SimI18n.getLanguage() === "en";
+  if (value < 0) {
+    read.textContent = english ? "Rib area · no computed value" : "리브 영역 · 계산값 없음";
+    return;
+  }
+  const H = plateCtx ? plateCtx.H : analysisData.ny;
+  const W = plateCtx ? plateCtx.W : analysisData.nz;
+  const y = (j + .5) / analysisData.ny * H;
+  const z = ((k + .5) / analysisData.nz - .5) * W;
+  const suffix = analysisData.spec.unit ? ` ${analysisData.spec.unit}` : "";
+  read.textContent =
+    `y ${y.toFixed(1)} mm · z ${z.toFixed(1)} mm → ${analysisNumber(value)}${suffix}`;
+});
+canvas.addEventListener("pointerleave", resetAnalysisReadout);
 
 function box(w, h, d, mat, x, y, z, group) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -1427,6 +1688,17 @@ function buildAssemblyDetails(W, H, chT, coreT, baseT, tMemV) {
 let gridInfo = { nx: 6, ny: 25, nz: 25, h: 2.0, n_lay: 1 };   // from the server
 let ribSubC = null, ribSubA = null, plateCtx = null, landSig = "";
 let portGroup = null, portSig = "";
+
+function applyCellTilt(value) {
+  const deg = Math.max(0, Math.min(90, Number(value) || 0));
+  const a = deg * Math.PI / 180;
+  const cy = plateCtx ? plateCtx.H / 2 : 0;
+  // Rotate the complete rendered system (cell, bubbles and flow tracers) about
+  // the cell centre. The physics already receives the same tilt separately.
+  visualRoot.rotation.z = a;
+  visualRoot.position.set(Math.sin(a) * cy, cy * (1 - Math.cos(a)), 0);
+  visualRoot.updateMatrixWorld(true);
+}
 
 // rebuild the rib meshes FROM THE PHYSICS LAND MASK (ny x nz, row-major):
 // merges each row's solid runs into boxes and stacks identical adjacent rows,
@@ -1638,8 +1910,7 @@ function rebuildCell() {
   }
   buildAssemblyDetails(W, H, chT, coreT, baseT, tMemV);
 
-  // electrode-face current maps ON the catalyst planes (the core boundaries —
-  // exactly where the bubbles nucleate)
+  // Selectable analysis maps on the catalyst planes.
   faceTexC = makeFaceTexture(faceNy || 1, faceNz || 1);
   faceTexA = makeFaceTexture(faceNy || 1, faceNz || 1);
   const faceMat = t => new THREE.MeshBasicMaterial({ map: t, transparent: true,
@@ -1649,8 +1920,7 @@ function rebuildCell() {
   facePlaneC.rotation.y = Math.PI / 2; facePlaneC.position.set(-xFace, H / 2, 0);
   facePlaneA = new THREE.Mesh(new THREE.PlaneGeometry(W, H), faceMat(faceTexA));
   facePlaneA.rotation.y = -Math.PI / 2; facePlaneA.position.set(xFace, H / 2, 0);
-  const showMap = (P.jmap ?? "on") === "on";
-  facePlaneC.visible = facePlaneA.visible = showMap;
+  facePlaneC.visible = facePlaneA.visible = false;
   cellGroup.add(facePlaneC, facePlaneA);
 
   // NOTE: no full-width inlet/outlet BANDS here anymore. They spanned the whole
@@ -1672,6 +1942,7 @@ function rebuildCell() {
   // Zoom-button limits + clip planes track the CELL, not fixed constants.
   // Geometry edits can therefore never leave the camera outside a valid range.
   fitCameraRange(Math.max(W, H, tot));
+  applyCellTilt(P.tilt);
   if (!rebuildCell._did) {                          // first build: place camera
     camera.position.copy(camHome);
     controls.target.set(0, H / 2, 0);
@@ -1692,6 +1963,7 @@ function rebuildCell() {
     }
   }
   applyLayers();                                    // respect current layer toggles
+  refreshAnalysisOverlay();
 }
 rebuildCell();
 
@@ -1730,7 +2002,7 @@ const instAttached = new THREE.InstancedMesh(
   MAXB);
 instAttached.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
 instAttached.frustumCulled = false; instAttached.count = 0;
-scene.add(inst, instAttached);
+visualRoot.add(inst, instAttached);
 let displayedBubbleCount = null;
 const C_H2 = new THREE.Color(0x72c4e3), C_O2 = new THREE.Color(0xe9a15f);
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
@@ -1976,7 +2248,7 @@ const trInst = new THREE.InstancedMesh(
   TR_N);
 trInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TR_N * 3), 3);
 trInst.frustumCulled = false; trInst.count = 0;
-scene.add(trInst);
+visualRoot.add(trInst);
 const tracers = [];
 let trLast = 0;
 function _trSeed() {
@@ -2049,11 +2321,8 @@ window.__traceInfo = () =>
      sample: tracers.slice(0, 3).map(t => [t.x, t.y, t.z, t.age]) });
 window.__traceStep = now => renderTracers(now ?? performance.now());  // headless verify
 
-// electrode-face current-density maps from the snapshot
+// Analysis fields + geometry metadata from the snapshot.
 function updateFaces(st) {
-  const show = (P.jmap ?? "on") === "on";
-  if (facePlaneC) facePlaneC.visible = show && layers.cathode;
-  if (facePlaneA) facePlaneA.visible = show && layers.anode;
   // ribs from the PHYSICS mask (rebuild only when the geometry changes)
   if (st.land2d) {
     const sig = st.land2d.ny + "x" + st.land2d.nz + ":" + st.land2d.m.join("");
@@ -2064,21 +2333,15 @@ function updateFaces(st) {
                + ":" + st.ports.in.join("") + "|" + st.ports.out.join("");
     if (psig !== portSig) { portSig = psig; buildPorts(st.ports); }
   }
-  if (!show || !st.faces) return;
-  const c = st.faces.cathode, a = st.faces.anode;
-  if (!c || !a) return;
-  // grid changed -> rebuild textures to the new (ny,nz) and reattach
-  if (c.ny !== faceNy || c.nz !== faceNz) {
-    faceNy = c.ny; faceNz = c.nz;
-    faceTexC = makeFaceTexture(faceNy, faceNz);
-    faceTexA = makeFaceTexture(faceNy, faceNz);
-    if (facePlaneC) { facePlaneC.material.map = faceTexC; facePlaneC.material.needsUpdate = true; }
-    if (facePlaneA) { facePlaneA.material.map = faceTexA; facePlaneA.material.needsUpdate = true; }
+  if (st.faces) {
+    latestFaces = st.faces;
+    const c = latestFaces.cathode, a = latestFaces.anode;
+    if (c && a) {
+      document.getElementById("hSpread").textContent =
+        "j " + c.j_spread.toFixed(1) + "× / " + a.j_spread.toFixed(1) + "×";
+    }
   }
-  updateFaceTexture(faceTexC, c.j, faceNy, faceNz);
-  updateFaceTexture(faceTexA, a.j, faceNy, faceNz);
-  document.getElementById("hSpread").textContent =
-    "j " + c.j_spread.toFixed(1) + "× / " + a.j_spread.toFixed(1) + "×";
+  refreshAnalysisOverlay();
 }
 
 // ============================ modes / tabs =================================
@@ -2110,6 +2373,7 @@ function setPanel(m, expId) {
   if (m === "exp") expEnter();
   if (m === "ai") aiRefreshStatus();
   if (m === "user") showUserExp(expId);
+  document.getElementById("toolMenu").open = false;
   setView(viewMode, { reset: false });   // keep the user's zoom/rotation on tab switches
   drawSlice(); updateClip();
 }
@@ -2830,8 +3094,8 @@ function expReadout(res) {
 let userExps = [];
 let serverActiveExp = null;   // which experiment the RUNNING sim is set to
 function renderExpTabs() {
-  modeSeg.querySelectorAll("button[data-m='user']").forEach(b => b.remove());
-  const addBtn = document.getElementById("expAdd");
+  const host = document.getElementById("userExpTabs");
+  host.querySelectorAll("button[data-m='user']").forEach(b => b.remove());
   for (const ex of userExps) {
     const b = document.createElement("button");
     b.dataset.m = "user"; b.dataset.exp = ex.id;
@@ -2841,7 +3105,7 @@ function renderExpTabs() {
     b.title = (ex.note ? ex.note + " · " : "") + (ex.created || "");
     if (ex.id === serverActiveExp) b.style.borderColor = "var(--gold)";
     if (panelMode === "user" && activeUserExp === ex.id) b.classList.add("on");
-    modeSeg.insertBefore(b, addBtn);
+    host.appendChild(b);
   }
 }
 async function loadExperiments() {
@@ -2870,8 +3134,7 @@ function showUserExp(id) {
   if (!ex) { setPanel("live"); return; }
   document.getElementById("ueTitle").textContent = "🔬 " + ex.name;
   document.getElementById("ueNote").textContent =
-    (ex.note ? ex.note + " — " : "") + "저장: " + (ex.created || "?") +
-    " · 아래 컨트롤로 계속 조절할 수 있어요 (저장본은 덮어쓰기 전까지 그대로).";
+    (ex.note ? ex.note + " · " : "") + "저장 " + (ex.created || "?");
   const stat = document.getElementById("ueStat");
   stat.style.display = ""; stat.textContent = "저장된 조건 적용 중… (격자 재구축, 몇 초)";
   // the SERVER applies the designer and remembers this experiment as active,
@@ -2975,6 +3238,7 @@ async function poll() {
     // the server is the single source of truth: pull its state into the widgets
     // so a change made in the 2-D view shows up here (and vice versa)
     ctls.sync(st.designer, st.speed);
+    applyCellTilt(st.designer && st.designer.tilt);
     if (wantFaces) plateEd.sync(st);
     if (mode === "live") {
       ingestBubbles(st);
@@ -3357,8 +3621,7 @@ function setVisualPreset(next) {
     const on = !!presetLayers[cb.dataset.layer];
     cb.checked = on; layers[cb.dataset.layer] = on;
   });
-  const mapValue = next === "analysis" ? "on" : "off";
-  if (ctls.reg.jmap) ctls.reg.jmap(mapValue); else P.jmap = mapValue;
+  setAnalysisMode(next === "analysis" ? "eps" : "off");
   applyLayers();
   setView(next === "analysis" ? "face" : "orbit");
 }
@@ -3747,7 +4010,7 @@ window.__memoryInfo = () => ({
   lines: renderer.info.render.lines,
 });
 window.__visualInfo = () => ({
-  preset: visualPreset, view: viewMode, jmap: P.jmap,
+  preset: visualPreset, view: viewMode, analysis: analysisMode,
   plateC: !!(plateMeshC && plateMeshC.visible),
   plateA: !!(plateMeshA && plateMeshA.visible),
   ptl: !!(ptlGroup && ptlGroup.visible),
@@ -3755,6 +4018,23 @@ window.__visualInfo = () => ({
   decorA: !!(decorA && decorA.visible),
   decorCore: !!(decorCore && decorCore.visible),
   layers: {...layers},
+});
+window.__analysisInfo = () => ({
+  mode: analysisMode,
+  ready: !!analysisData,
+  range: analysisData ? {
+    min:+analysisData.range.lo.toFixed(6),
+    mean:+analysisData.range.mean.toFixed(6),
+    max:+analysisData.range.hi.toFixed(6),
+    unit:analysisData.spec.unit || "",
+  } : null,
+  faceC: !!(facePlaneC && facePlaneC.visible),
+  faceA: !!(facePlaneA && facePlaneA.visible),
+});
+window.__tiltInfo = () => ({
+  requested:+(P.tilt || 0),
+  renderedDeg:+(visualRoot.rotation.z * 180 / Math.PI).toFixed(4),
+  position:visualRoot.position.toArray().map(value => +value.toFixed(4)),
 });
 window.__contactInfo = () => {
   const bounds = object => {
