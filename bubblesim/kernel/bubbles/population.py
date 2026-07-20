@@ -166,9 +166,7 @@ class Surface:
         crit = ELECTROLYTES.get(getattr(self.op, "electrolyte", "KOH"),
                                 {}).get("c_coalesce", self.p.c_coalesce_crit)
         if self.op.c_electrolyte > crit:
-            p_merge = self.p.p_merge_inhibited
-        else:
-            p_merge = self.p.p_merge_free
+            return
         att = [b for b in self.bubbles if b.attached and not b.dead]
         sa = abs(math.sin(math.radians(self.op.contact_angle)))   # constant; hoist out of O(n^2)
         for i in range(len(att)):
@@ -179,18 +177,19 @@ class Surface:
                 c = att[k]
                 if c.dead:
                     continue
-                reach = 0.8 * (a.r * sa + c.r * sa)
+                # Sum of the two projected contact-footprint radii.  The old
+                # 0.8 overlap multiplier was an undocumented fitted constant.
+                reach = a.r * sa + c.r * sa
                 # cheap reject before the sqrt: |dx| or |dy| beyond reach => no overlap
                 # (bit-identical: brute force's hypot test would also fail, no rng drawn)
                 dx, dy = a.x - c.x, a.y - c.y
                 if dx >= reach or dx <= -reach or dy >= reach or dy <= -reach:
                     continue
                 if math.hypot(dx, dy) < reach:
-                    if self.rng.random() < p_merge:
-                        v = a.volume() + c.volume()
-                        a.r = (3.0 * v / (4.0 * math.pi)) ** (1.0 / 3.0)
-                        a.x = 0.5 * (a.x + c.x)
-                        c.dead = True
+                    v = a.volume() + c.volume()
+                    a.r = (3.0 * v / (4.0 * math.pi)) ** (1.0 / 3.0)
+                    a.x = 0.5 * (a.x + c.x)
+                    c.dead = True
         if any(b.dead for b in self.bubbles):
             self.bubbles = [b for b in self.bubbles if not b.dead]
 

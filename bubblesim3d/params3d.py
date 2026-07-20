@@ -44,16 +44,14 @@ DESIGNER_DEFAULTS = {
     "j0_cathode": 130.0,         # HER exchange current density [A/m^2]
     "j0_anode": 1.3e-7,          # OER exchange current density [A/m^2]
     "r_mem": 3.2e-6,             # area membrane resistance [ohm*m^2]
-    # Explicit MODEL parameters.  These are fitted/closure values, not universal
-    # physical constants; keeping them in the designer makes that distinction
-    # visible and keeps live + sweep calculations on the same values.
-    "fritz_scale": 0.08,         # electrolysis departure-size calibration [-]
+    # Measured system input: zero-flow single-bubble departure diameter.  This
+    # replaces the former arbitrary Fritz multiplier (0.08) in the 3-D path.
+    "departure_diameter_um": 244.0,
     "dep_grad_um": 100.0,        # DEP proxy gradient length [um]
     # 0.35 m/s: channel mean velocity. Pump flow is derived from the requested
     # physical channel cross-section, not from the coarse live voxel inlet.
     "u_flow": 0.35, "tilt": 0.0, "B": 0.0, "E": 0.0,
     "theta": 60.0, "T": 60.0, "Pbar": 1.0,
-    "drag_K": 60.0,              # bubble->flow blocking strength [1/s per void]
     # --- electrode kinetics shape + electrolyte-path convention -------------
     "alpha_a": 1.0,              # OER anodic transfer coefficient (Tafel slope lever)
     "gap_mm": 2.0,               # electrode-to-membrane electrolyte gap CONVENTION [mm]
@@ -64,7 +62,7 @@ DESIGNER_DEFAULTS = {
     "dry_cathode": 0,            # 1 = no liquid feed on the cathode side
     "n_drag": 2.5,               # electro-osmotic drag [mol H2O / mol OH-]
     "D_w_mem": 1.0e-9,           # water diffusivity in the membrane [m^2/s]
-                                 # (calibrated r_mem pairs with a gap value; keep them together)
+        # (measured/calibrated r_mem pairs with a gap value; keep them together)
     "h_mm": 2.0,                 # live-grid voxel size [mm] (smaller = finer channels, slower)
     # --- PP-mesh bubble-management interlayer (experiment tab; sweep only) --
     "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)

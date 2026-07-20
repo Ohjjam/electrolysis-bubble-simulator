@@ -28,7 +28,6 @@
     ["유동 · 기포", [
       { k:"u_flow", nm:"유량 (펌프)", un:"m/s", min:0, max:2, step:0.01, v:0.35, lo:0, hi:5 },
       { k:"theta", nm:"전극 물 접촉각 (기포 이탈)", un:"°", min:10, max:160, step:1, v:60, lo:5, hi:179 },
-      { k:"drag_K", nm:"기포 유동차단 계수 (모델)", un:"/s", min:0, max:200, step:5, v:60, lo:0, hi:1000 },
       { k:"tilt", nm:"셀 기울기", un:"°", min:0, max:90, step:1, v:0, lo:0, hi:90 },
       { k:"speed", nm:"시간 배속 (0.02=초고속카메라)", un:"×", min:0.02, max:3, step:0.02, v:1, lo:0.01, hi:5 },
     ]],
@@ -37,9 +36,9 @@
       { k:"j0_anode", nm:"양극 겉보기 j₀ (피팅값)", un:"A/m²", num:1, v:1.3e-7, lo:1e-12, hi:1e2 },
       { k:"alpha_a", nm:"양극 α (Tafel 기울기)", un:"–", min:0.3, max:1.6, step:0.01, v:1, lo:0.1, hi:2 },
       { k:"r_mem", nm:"막·접촉 면저항 (피팅값)", un:"Ω·m²", num:1, v:3.2e-6, lo:0, hi:1e-3 },
-      { k:"fritz_scale", nm:"기포 이탈크기 계수 (Fritz 기준)", un:"–",
-        min:0.02, max:0.3, step:0.01, v:0.08, lo:0.005, hi:2,
-        help:"Fritz 비등식의 이탈반경에 곱합니다. 1=원식, 0.08=전해기포 문헌 범위(반경 약 50–150 µm)에 맞춘 교정값." },
+      { k:"departure_diameter_um", nm:"무유동 이탈직경 (실측 입력)", un:"µm",
+        min:20, max:1000, step:2, v:244, lo:2, hi:10000,
+        help:"펌프 유동이 없을 때 해당 전극에서 측정한 단일 기포 이탈직경입니다. 기존의 임의 Fritz 배율 대신 사용하며, 미측정 기본값 244 µm는 정량 예측값이 아닙니다." },
       { k:"gap_mm", nm:"전해질 갭 (모델 관례, r_mem과 짝)", un:"mm", min:0.1, max:3, step:0.05, v:2, lo:0.05, hi:10 },
       { k:"C_dl_anode", nm:"양극 이중층 C_dl (EIS 전용)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
       { k:"C_dl_cathode", nm:"음극 이중층 C_dl (EIS 전용)", un:"F/m²", min:0.01, max:2, step:0.01, v:0.2, lo:0.001, hi:100 },
@@ -124,6 +123,8 @@
         V_cell: String(P.mode) !== "CA",
         n_drag: ![1, "1", true].includes(P.dry_cathode),
         D_w_mem: ![1, "1", true].includes(P.dry_cathode),
+        bcount: String(P.bview || "move") === "move",
+        trace: String(P.bview || "move") === "dist",
       };
       for (const [k, off] of Object.entries(disabled)) {
         const row = rows[k]; if (!row) continue;
@@ -272,8 +273,8 @@
    * full condition as `# key,value` comment rows, so a folder of exports is
    * self-describing and comparable. */
   g.CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
-    "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt","drag_K",
-    "fritz_scale","dep_grad_um",
+    "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt",
+    "departure_diameter_um","dep_grad_um",
     "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","C_dl_anode","C_dl_cathode",
     "t_ptl_um","void_frac","mesh_id","mesh_cover","mesh_pos","mesh_theta",
     "dry_cathode","n_drag","D_w_mem","in_face","in_z","in_w","out_face","out_z","out_w"];

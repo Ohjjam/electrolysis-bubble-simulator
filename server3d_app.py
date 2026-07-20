@@ -67,12 +67,12 @@ class LiveSim3D:
         "out_z": (0.0, 1.0), "out_w": (0.0, 1.0),
         "j": (0.0, 10.0), "V_cell": (0.0, 5.0), "c_mol": (0.01, 20.0),
         "j0_cathode": (1e-12, 1e5), "j0_anode": (1e-12, 1e2),
-        "r_mem": (0.0, 1e-3), "fritz_scale": (0.005, 2.0),
+        "r_mem": (0.0, 1e-3), "departure_diameter_um": (2.0, 10000.0),
         "dep_grad_um": (1.0, 1e6), "u_flow": (0.0, 5.0),
         "tilt": (0.0, 90.0), "B": (0.0, 20.0), "E": (0.0, 50.0),
         # saturation_pressure currently uses the 1--100 C Antoine range.
         "theta": (1.0, 179.0), "T": (0.0, 100.0), "Pbar": (0.1, 200.0),
-        "drag_K": (0.0, 1000.0), "alpha_a": (0.1, 2.0),
+        "alpha_a": (0.1, 2.0),
         "gap_mm": (0.05, 10.0), "C_dl_anode": (1e-3, 100.0),
         "C_dl_cathode": (1e-3, 100.0), "dry_cathode": (0.0, 1.0),
         "n_drag": (0.0, 10.0), "D_w_mem": (1e-12, 1e-7),
@@ -98,8 +98,8 @@ class LiveSim3D:
     def __init__(self):
         self.lock = threading.Lock()
         self.designer = dict(DESIGNER_DEFAULTS)
-        # Model closures such as fritz_scale are copied from DESIGNER_DEFAULTS
-        # by _apply_params instead of being hidden in this constructor.
+        # Measured/material parameters are copied from DESIGNER_DEFAULTS by
+        # _apply_params instead of being hidden in this constructor.
         self.params = Params()
         self.speed = 1.0
         self.paused = False
@@ -131,7 +131,8 @@ class LiveSim3D:
         p.anode.j0_ref = max(1e-12, self._f(d, "j0_anode", 1.3e-7))
         p.anode.alpha_a = min(2.0, max(0.1, self._f(d, "alpha_a", 1.0)))
         p.r_membrane_area = max(0.0, self._f(d, "r_mem", 3.2e-6))
-        p.fritz_scale = self._f(d, "fritz_scale", 0.08)
+        p.r_departure_ref = 0.5e-6 * self._f(
+            d, "departure_diameter_um", 244.0)
         p.dep_gradient_length = self._f(d, "dep_grad_um", 100.0) * 1e-6
         # Double-layer capacitance is used by the EIS path only. The live CP
         # state is algebraic and has no hidden RC relaxation.
@@ -145,7 +146,6 @@ class LiveSim3D:
         op = operating_from_designer(designer)
         sim = CellSim3D(op, params, cfg.grid_dims(), h=cfg.h,
                         cap=cfg.cap_parcels, tilt=cfg.tilt, seed=0, cfg=cfg)
-        sim.ns.drag_K = float(designer["drag_K"])
         return params, cfg, sim
 
     def _build(self):
@@ -248,7 +248,6 @@ class LiveSim3D:
                 self.designer = candidate
                 self._apply_params()                # catalyst / membrane R
                 self.sim.set_operating(op, tilt=float(self.designer.get("tilt", 0.0)))
-                self.sim.ns.drag_K = float(self.designer["drag_K"])
             return {"ok": 1, "accepted": accepted, "rejected": rejected}
 
     def reset(self):
@@ -314,14 +313,14 @@ _sweep_cache = {}
 _SWEEP_KEYS = ("W_cm", "H_cm", "ff", "n_ch", "w_ch_mm", "d_ch_mm", "u_flow",
                "electrolyte", "c_mol", "T", "Pbar", "theta",
                "j0_cathode", "j0_anode", "alpha_a", "r_mem", "gap_mm", "void_frac",
-               "mesh_id", "mesh_cover", "mesh_pos", "mesh_theta", "fritz_scale",
+               "mesh_id", "mesh_cover", "mesh_pos", "mesh_theta", "departure_diameter_um",
                # dry cathode (anolyte-only AEM) membrane water transport
                "dry_cathode", "n_drag", "D_w_mem", "t_mem_um")
 
 
 def _sweep_params(d: dict) -> Params:
     return Params(
-        fritz_scale=max(0.005, float(d.get("fritz_scale", 0.08))),
+        r_departure_ref=0.5e-6 * max(2.0, float(d.get("departure_diameter_um", 244.0))),
         anode=ElectrodeParams("OER", j0_ref=max(1e-12, float(d.get("j0_anode", 1.3e-7))),
                               alpha_a=min(2.0, max(0.1, float(d.get("alpha_a", 1.0)))),
                               Ea_j0=50.0e3),
@@ -629,7 +628,7 @@ AI_ENUM_KEYS = {
 # fitted number into an apparently fundamental property.
 AI_MODEL_PARAMETERS = {
     "j0_cathode", "j0_anode", "alpha_a", "r_mem",
-    "fritz_scale", "dep_grad_um", "drag_K", "gap_mm",
+    "departure_diameter_um", "dep_grad_um", "gap_mm",
     "C_dl_anode", "C_dl_cathode", "n_drag", "D_w_mem",
     "void_frac",
 }
@@ -649,14 +648,13 @@ AI_SETTING_NOTES = {
     "j0_anode": "apparent OER exchange-current fitted parameter [A/m2]",
     "alpha_a": "OER anodic transfer coefficient model parameter",
     "r_mem": "area membrane/contact resistance, often fitted [ohm m2]",
-    "fritz_scale": "bubble departure-size closure/calibration factor",
+    "departure_diameter_um": "measured zero-flow bubble departure diameter [um]",
     "dep_grad_um": "DEP proxy gradient length, model closure [um]",
     "u_flow": "mean channel liquid velocity [m/s]",
     "tilt": "cell tilt from vertical [deg]", "B": "magnetic field [T]",
     "E": "reference electric field for DEP proxy [MV/m]",
     "theta": "electrode water contact angle [deg]",
     "T": "temperature [degC]", "Pbar": "pressure [bar]",
-    "drag_K": "bubble-to-flow blocking closure [1/s per void]",
     "gap_mm": "electrolyte path-length convention paired with fitted resistance [mm]",
     "C_dl_anode": "anode double-layer capacitance model input [F/m2]",
     "C_dl_cathode": "cathode double-layer capacitance model input [F/m2]",

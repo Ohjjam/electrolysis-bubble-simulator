@@ -42,7 +42,14 @@ def departure_radius(op, props, j):
     d_rho = props["d_rho"]
     rho_l = props["rho_l"]
 
-    r_d0 = fritz_radius(sigma, d_rho, op.contact_angle) * props.get("fritz_scale", 1.0)
+    # A measured zero-flow departure size is the preferred system input.  The
+    # Fritz scale remains only as a backward-compatible fallback for older 2-D
+    # clients; the 3-D designer supplies r_departure_ref directly and therefore
+    # no longer hides surface pinning in an arbitrary 0.08 multiplier.
+    r_ref = props.get("r_departure_ref")
+    r_d0 = (float(r_ref) if r_ref is not None and float(r_ref) > 0.0
+            else fritz_radius(sigma, d_rho, op.contact_angle)
+                 * props.get("fritz_scale", 1.0))
     buoy_coeff = (4.0 / 3.0) * math.pi * d_rho * G          # F_b = buoy_coeff * r^3
     # surface-tension adhesion acts along the contact line: F_adh = A_adh * r
     # (proportional to the footprint radius and sigma; Oguz & Prosperetti 1993,

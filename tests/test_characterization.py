@@ -35,15 +35,18 @@ REL = 1e-9   # pure refactors are bit-identical; this catches real logic drift
 # viscosity is super-linear (0.89 mPa.s base + 0.035 c^2), and the bubble rise
 # velocity uses the Schiller-Naumann Re-aware drag. j therefore drops slightly
 # (transport penalty), theta/eps rise (truer coverage + slower rise), r_d is
-# unchanged (departure physics untouched at E_ext=0). See the physics-audit roadmap.
+# unchanged (departure physics untouched at E_ext=0). Re-baselined again after
+# removing the arbitrary residual 0.05/0.9 coalescence probabilities: above the
+# measured critical coalescence concentration, this reduced model now reports
+# inhibited coalescence instead of silently forcing 5% of contacts to merge.
 GOLDEN_STEADY_V2 = {
-    "j":         0.5715435778153322,
-    "I":         0.5715435778153323,
-    "theta":     0.14754969285441522,
-    "eps":       0.3766586945798243,
+    "j":         0.325306765267687,
+    "I":         0.325306765267687,
+    "theta":     0.561085984477363,
+    "eps":       0.5639091737443952,
     "r_d":       0.0015241237104220628,
-    "n_bub":     36.538666666666664,
-    "eta_ohmic": 0.22919900960981776,
+    "n_bub":     69.0,
+    "eta_ohmic": 0.22126650917029692,
 }
 
 # solve_current_density(Operating(V_cell=V), props, theta, eps) -> j [A/m^2]

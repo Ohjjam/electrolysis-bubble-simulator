@@ -2,6 +2,8 @@
 import math
 
 from bubblesim import Params
+from bubblesim.kernel.bubbles.forces import departure_radius
+from bubblesim.kernel.context import build_context
 from bubblesim.kernel.sources import faradaic_gas_rate
 from bubblesim3d.cell3d import CellSim3D
 from bubblesim3d.params3d import (DESIGNER_DEFAULTS, cell_config_from_designer,
@@ -13,8 +15,18 @@ def _cell(**overrides):
     d = dict(DESIGNER_DEFAULTS); d.update(overrides)
     cfg = cell_config_from_designer(d)
     op = operating_from_designer(d)
-    p = Params(fritz_scale=d["fritz_scale"])
+    p = Params(r_departure_ref=0.5e-6 * d["departure_diameter_um"])
     return CellSim3D(op, p, cfg.grid_dims(), h=cfg.h, cfg=cfg), cfg, op
+
+
+def test_measured_zero_flow_departure_size_overrides_fritz_scaling():
+    d = {**DESIGNER_DEFAULTS, "u_flow": 0.0, "B": 0.0, "E": 0.0,
+         "departure_diameter_um": 300.0}
+    op = operating_from_designer(d)
+    p = Params(fritz_scale=1.9, r_departure_ref=150.0e-6)
+    ctx = build_context(op, p)
+    assert math.isclose(departure_radius(op, ctx, 5000.0), 150.0e-6,
+                        rel_tol=2e-3)
 
 
 def test_oer_stoichiometry_is_applied_once_in_cell_gas_total():

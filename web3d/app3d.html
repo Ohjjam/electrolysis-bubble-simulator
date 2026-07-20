@@ -487,9 +487,11 @@
       <div class="eq-h">이탈 크기 (힘 평형)</div>
       <div class="eq">부력 F<sub>b</sub> = (4/3)πr³Δρg &nbsp;vs&nbsp; 부착 F<sub>s</sub> ~ σ·r<sub>d0</sub>²
         &nbsp;+ 항력 F<sub>d</sub>(u) &nbsp;→&nbsp; r<sub>dep</sub></div>
-      <div class="eq-n">Fritz 상관식(<b>비등</b> 유래)은 전해기포를 과대예측해서
-        <code>fritz_scale=0.08</code>로 축소 — 그래야 문헌값(반경 50~150 µm)이 나옵니다.
-        <b>중요</b>: 이탈하는 기포는 수십 µm 크기라 <b>벽면 전단층</b> 안에 있으므로,
+      <div class="eq-n">비등에서 유도된 Fritz 상관식에 임의 배율을 곱하던 방식은 제거했습니다.
+        이제 <b>무유동 이탈직경</b>을 해당 전극의 실측값으로 넣고, 유동 중에는
+        <b>벽면 전단층의 국소 유속 u<sub>eff</sub></b>으로 힘 평형을 다시 풉니다.
+        이 값을 측정하지 않았다면 기본 244 µm는 예시 입력이며 정량 예측값이 아닙니다.
+        <b>중요</b>: 이탈하는 기포는 벽면 전단층 안에 있으므로,
         벌크 유속이 아니라 <b>국소 유속 u<sub>eff</sub></b>로 힘 평형을 다시 풉니다
         (안 그러면 u≥0.2 m/s에서 전부 최소크기로 붙어버림).
         접촉각 θ가 여기서 작동 — θ 30/60/120° → 51/87/129 µm.
@@ -508,10 +510,10 @@
         (예전엔 그냥 물리가 빠져서 그랬음).</div>
 
       <div class="eq-h">합체 (Prince–Blanch)</div>
-      <div class="eq">ω = n·S·Δv &nbsp;·&nbsp; λ = exp(−t<sub>drain</sub>/t<sub>contact</sub>)
-        &nbsp;·&nbsp; P<sub>merge</sub> = ω·λ·p</div>
-      <div class="eq-n">농전해질(KOH &gt; 0.3 M)은 <b>salting-out</b>으로 막배수를 막아 합체를 억제 —
-        그래서 6 M KOH에서는 기포가 잘 안 합쳐집니다.</div>
+      <div class="eq">N<sub>coll</sub> = NᵢNⱼ·π(rᵢ+rⱼ)²·|uᵢ−uⱼ|·Δt/V
+        &nbsp;·&nbsp; λ = exp(−t<sub>drain</sub>/t<sub>contact</sub>)</div>
+      <div class="eq-n">가까운 가중 parcel 쌍의 실제 반경·상대속도·국소 체적으로 충돌량을 계산합니다.
+        전해질별 임계합체농도 이상에서는 합체를 억제하며, 임의의 0.05/0.9 확률은 사용하지 않습니다.</div>
     </div>
 
     <div class="box"><h3>④ 유동 — 3-D Navier–Stokes</h3>
@@ -519,9 +521,8 @@
         − <b>K<sub>drag</sub>·ε·u</b> &nbsp;,&nbsp; ∇·u = 0</div>
       <div class="eq-n"><b>MAC 엇갈림 격자 + Chorin 투영</b>(반-Lagrangian 이류, red-black SOR).
         비엇갈림(collocated) 격자는 체커보드 모드가 남아서 MAC이 <b>필수</b>였습니다.<br>
-        <b>Boussinesq 부력</b>: 기포가 있는 셀은 가벼워져 위로 떠오름 → <b>자가교반이 창발</b>.<br>
-        <b>Brinkman 상간 항력</b> K<sub>drag</sub>: 가스가 찬 셀은 액체 운동량을 뺏겨서,
-        투영이 흐름을 <b>기포 커튼을 피해</b> 재배치합니다 — “기포가 유로를 막는다”가 여기서 나옴.<br>
+        <b>상간 운동량 교환</b>: parcel에서 복셀별 α<sub>g</sub>·d<sub>32</sub>·u<sub>g</sub>를 만들고,
+        Schiller–Naumann C<sub>D</sub>(Re)로 액체에 전달되는 힘을 계산합니다. 임의 K<sub>drag</sub>는 없습니다.<br>
         리브/랜드는 <b>고체 마스크</b>로 들어가고, 기포는 축별 <b>충돌 판정</b>으로 벽을 타고 미끄러집니다.
         <span class="src">bubblesim3d/ns3d.py · geometry.py</span></div>
     </div>
@@ -740,6 +741,10 @@
     <span><span class="dot" style="background:#d98420"></span>O₂ (양극)</span>
   </div>
   <div class="leg">
+    <span>◐ 전극 부착·성장</span>
+    <span>● 이탈·이동</span>
+  </div>
+  <div class="leg">
     <span><span class="dot" style="background:#0f8a63"></span>입구</span>
     <span><span class="dot" style="background:#c9333f"></span>출구</span>
   </div>
@@ -752,7 +757,10 @@
   <div class="k">sim 시간</div><div class="v" id="hT">–</div>
   <div class="k">격자</div><div class="v small" id="hGrid">–</div>
   <div class="k">모델 유효성</div><div class="v small" id="hValid">확인 중…</div>
-  <div class="k">버블 수 (표시/실제)</div><div class="v" id="hN">–</div>
+  <div class="k">부착 대표 마커</div><div class="v small" id="hAttached">–</div>
+  <div class="k">자유 분포 표본</div><div class="v small" id="hDistribution">–</div>
+  <div class="k">이동 트레이서</div><div class="v small" id="hTracked">–</div>
+  <div class="k">실제 기포 추정</div><div class="v small" id="hReal">–</div>
   <div class="k">이탈 반경 r_dep</div><div class="v small" id="hRdep">–</div>
   <div class="k">전류 불균일 (음/양극)</div><div class="v small" id="hSpread">–</div>
   <div class="k">속도 (×실시간)</div><div class="v small" id="hSp">–</div>
@@ -802,8 +810,8 @@
 
 <div id="velLegend" style="display:none;position:fixed;bottom:12px;left:12px;background:var(--glass);
   border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:11px;color:var(--dim)">
-  상승속도 u<sub>p</sub>&nbsp; 0 <span id="velGrad" style="display:inline-block;width:110px;height:9px;
-  vertical-align:middle;border-radius:3px;margin:0 5px"></span> 0.25 m/s
+  기포 이동속도 |u<sub>b</sub>|&nbsp; 0 <span id="velGrad" style="display:inline-block;width:110px;height:9px;
+  vertical-align:middle;border-radius:3px;margin:0 5px"></span> <span id="velMax">0.25 m/s</span>
 </div>
 
 <script src="/web3d/i18n_catalog.js"></script>
@@ -831,10 +839,15 @@ const P = {};
 // below are local to this page.
 const CTRL = SIM_CTRL.concat([
   ["표시 (이 화면 전용)", [
-    { k:"bcol", nm:"버블 색", seg:[["gas","기체 종류"],["vel","상승속도"]], v:"gas", local:1 },
-    { k:"bscale", nm:"버블 표시 크기 (물리 크기는 실제)", seg:[["1","실제 ×1"],["4","×4"],["12","×12"]], v:"4", local:1 },
-    { k:"bcount", nm:"3D 표시 버블 수 상한 (0=전체)", un:"개", min:0, max:9000, step:100, v:0, lo:0, hi:9000, local:1 },
-    { k:"trace", nm:"흐름 궤적 트레이서 개수 (계산된 속도장)", seg:[["off","끄기"],["300","300"],["700","700"],["1400","1400"]], v:"700", local:1 },
+    { k:"bview", nm:"3D 버블 표시", seg:[["move","이동 보기"],["dist","분포 보기"],["both","분포+경로"]], v:"move", local:1,
+      help:"이동 보기는 부착 기포와 계속 흐르는 트레이서만 표시합니다. 분포 보기는 통계적 대표 표본을 표시합니다." },
+    { k:"bcol", nm:"색상 기준", seg:[["gas","기체 종류"],["vel","기포 이동속도 |uᵦ|"]], v:"gas", local:1,
+      help:"기포가 3D 공간에서 이동하는 전체 속도입니다. 액체 유동과 부력 미끄럼을 함께 포함합니다." },
+    { k:"bscale", nm:"버블 표시 배율", seg:[["1","실제 ×1"],["2","×2"],["4","×4"]], v:"1", local:1,
+      help:"부착·분포·이동 버블에 같은 배율을 적용합니다. ×1이 계산된 실제 크기입니다." },
+    { k:"bcount", nm:"분포 표본 수 상한 (0=전체)", un:"개", min:0, max:9000, step:100, v:0, lo:0, hi:9000, local:1 },
+    { k:"trace", nm:"이동 트레이서 수", seg:[["off","끄기"],["300","300"],["700","700"],["1400","1400"]], v:"700", local:1,
+      help:"화면에 표시한 부착 대표 마커는 이탈 시 같은 위치에서 이동 경로로 이어집니다. 이동 슬롯 수 안에서 대표 경로만 표시합니다." },
   ]],
 ]);
 
@@ -1167,6 +1180,7 @@ document.addEventListener("sim-language-change", () => {
   if (aiLastPlan) aiRenderPlan(aiLastPlan);
   if (aiLastEval) aiRenderEvaluation(aiLastEval);
   refreshAnalysisOverlay();
+  updateBubbleHud();
 });
 aiEl("aiProvider").addEventListener("change", () => {
   aiConfigured = false; aiPopulateModels(); aiSyncProviderUi(); aiRefreshStatus();
@@ -1990,6 +2004,11 @@ function bubbleMaterial(opacity, roughness) {
   return material;
 }
 const bubbleGeometry = new THREE.SphereGeometry(1, 24, 18);
+// Attached and moving bubbles share one material and the exact same gas
+// colours. Their motion/state, rather than a different tint, distinguishes them.
+const movingBubbleMaterial = new THREE.MeshStandardMaterial({
+  color:0xffffff, roughness:0.25, metalness:0,
+});
 const inst = new THREE.InstancedMesh(
   bubbleGeometry,
   bubbleMaterial(0.72, 0.10),
@@ -1998,12 +2017,21 @@ inst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 
 inst.frustumCulled = false; inst.count = 0;
 const instAttached = new THREE.InstancedMesh(
   bubbleGeometry,
-  bubbleMaterial(0.80, 0.16),
+  movingBubbleMaterial,
   MAXB);
 instAttached.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
 instAttached.frustumCulled = false; instAttached.count = 0;
-visualRoot.add(inst, instAttached);
-let displayedBubbleCount = null;
+const MERGE_MAX = 256;
+const mergeMaterial = bubbleMaterial(0.62, 0.08);
+mergeMaterial.depthWrite = false;
+const mergeInst = new THREE.InstancedMesh(bubbleGeometry, mergeMaterial, MERGE_MAX);
+mergeInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MERGE_MAX * 3), 3);
+mergeInst.frustumCulled = false; mergeInst.count = 0;
+visualRoot.add(inst, instAttached, mergeInst);
+let displayedAttachedCount = 0;
+let displayedDistributionCount = 0;
+let availableDistributionCount = 0;
+let displayedTracerCount = 0;
 const C_H2 = new THREE.Color(0x72c4e3), C_O2 = new THREE.Color(0xe9a15f);
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
 
@@ -2016,6 +2044,12 @@ let lastState = null;
 // without this the poll cadence shows as the "뚝뚝 끊김" stutter.
 const _col = new THREE.Color();
 let bubPrev = null, bubCur = null;
+let mergeAnimations = [], lastMergeSeq = 0;
+// In Movement/Distribution+paths views, every attached marker that is shown
+// owns one future tracer slot. This guarantees that a visible growing bubble
+// can detach continuously instead of disappearing when the tracer pool is full.
+const trackedAttachedIds = new Set();
+const bubbleTrackKey = (side, rawId) => `${side}:${rawId}`;
 
 // ---- position-continuity render pool -------------------------------------
 // The free-bubble parcels are a Monte-Carlo SAMPLE of the real swarm, re-drawn
@@ -2044,9 +2078,11 @@ function _updateVisPool(st, now) {
   }
   const CELL = 0.004;                              // 4 mm hash buckets (metres)
   const hash = new Map();
+  const rawIdIndex = new Map();
   for (let i = 0; i < visPool.length; i++) {
     const v = visPool[i];
     if (v.dying) continue;
+    if (v.rawId != null) rawIdIndex.set(`${v.side}:${v.rawId}`, i);
     const k = ((v.sx / CELL) | 0) + "," + ((v.sy / CELL) | 0) + "," + ((v.sz / CELL) | 0);
     let a = hash.get(k); if (!a) { a = []; hash.set(k, a); } a.push(i);
   }
@@ -2054,22 +2090,33 @@ function _updateVisPool(st, now) {
   for (let q = 0; q < n; q++) {
     const o = q * 7;
     const x = b[o], y = b[o + 1], z = b[o + 2], r = b[o + 3];
-    const side = b[o + 4], att = b[o + 5] > 0.5;
+    const side = b[o + 4], att = b[o + 5] > 0.5, rawId = b[o + 6];
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0, cz = (z / CELL) | 0;
     let best = -1, bd = MATCH2;
-    for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) for (let az = -1; az <= 1; az++) {
-      const a = hash.get((cx + ax) + "," + (cy + ay) + "," + (cz + az));
-      if (!a) continue;
-      for (const i of a) {
-        const v = visPool[i];
-        if (v.claimed || v.side !== side || v.att !== att) continue;
-        const dx = v.sx - x, dy = v.sy - y, dz = v.sz - z, d = dx * dx + dy * dy + dz * dz;
-        if (d < bd) { bd = d; best = i; }
+    // Stable server IDs are authoritative, especially for electrode-attached
+    // bubbles: nearest-neighbour matching could otherwise move one several mm
+    // to another nucleation site at the next poll.
+    const exact = rawIdIndex.get(`${side}:${rawId}`);
+    if (exact != null && !visPool[exact].claimed) best = exact;
+    // Free bubbles are a statistical sample, so nearest matching stabilises
+    // their distribution. A new attached ID is a new nucleation site and must
+    // never inherit a different attached marker several millimetres away.
+    if (best < 0 && !att) {
+      for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) for (let az = -1; az <= 1; az++) {
+        const a = hash.get((cx + ax) + "," + (cy + ay) + "," + (cz + az));
+        if (!a) continue;
+        for (const i of a) {
+          const v = visPool[i];
+          if (v.claimed || v.side !== side || v.att !== att) continue;
+          const dx = v.sx - x, dy = v.sy - y, dz = v.sz - z, d = dx * dx + dy * dy + dz * dz;
+          if (d < bd) { bd = d; best = i; }
+        }
       }
     }
     if (best >= 0) {                               // continue an existing bubble
       const v = visPool[best];
       v.claimed = true; v.dying = false;
+      v.rawId = rawId; v.att = att;
       v.tx = x; v.ty = y; v.tz = z; v.tr = r; v.t0 = now; v.t1 = nextT;
       if (dtSim > 0) {
         const dx = x - v.sx, dy = y - v.sy, dz = z - v.sz;
@@ -2077,7 +2124,7 @@ function _updateVisPool(st, now) {
       }
     } else if (visPool.length < MAXB) {            // a genuine newcomer: fade in
       visPool.push({ sx: x, sy: y, sz: z, sr: r * 0.3, tx: x, ty: y, tz: z, tr: r,
-        side, att, key: (Math.random() * 4294967296) | 0, spd: 0,
+        side, att, rawId, key: (Math.random() * 4294967296) | 0, spd: 0,
         t0: now, t1: nextT, dying: false, claimed: true });
     }
   }
@@ -2108,9 +2155,13 @@ function ingestBubbles(st) {
       if (prev) {
         const dx = cur[0] - prev[0], dy = cur[1] - prev[1], dz = cur[2] - prev[2];
         cur[6] = Math.sqrt(dx * dx + dy * dy + dz * dz) / dt;
+        if (prev[5] > 0.5 && cur[5] <= 0.5
+            && trackedAttachedIds.has(bubbleTrackKey(cur[4], id)))
+          queueTracerHandoff(prev, cur, id);
       }
     }
   }
+  ingestMergeEvents(st, now);
   _updateVisPool(st, now);            // feed the smooth render pool (uses prev bubCur)
   bubPrev = bubCur;
   bubCur = { t: now, simT: st.t, map, grid: st.grid };
@@ -2139,39 +2190,76 @@ function renderBubbles(now) {
   const Lm = [g.nx * g.h_mm, g.ny * g.h_mm, g.nz * g.h_mm].map(v => v / 1000);
   const cut = slabOnly ? slicePos * Lm[sliceAxis] : 0;
   const slabW = 0.10 * Lm[sliceAxis];
+  const bubbleView = P.bview || "move";
+  const showFreeDistribution = bubbleView !== "move";
+  inst.visible = showFreeDistribution;
+  inst.material.opacity = bubbleView === "both" ? 0.18 : 0.72;
   const requestedLimit = Math.max(0, Math.floor(+P.bcount || 0));
-  // 0 means all available Monte-Carlo markers. Local microscope mode also
-  // keeps the complete pool so its tracked focus bubble cannot be capped out.
-  const displayLimit = zoomed || requestedLimit === 0
-    ? MAXB : Math.min(MAXB, requestedLimit);
+  // The count limit applies only to the statistical FREE-bubble distribution.
+  // Attached markers always remain visible: their stationary state is physical
+  // (nucleation/growth on the electrode), not a failed trajectory.
+  const displayLimit = zoomed || requestedLimit === 0 ? MAXB : Math.min(MAXB, requestedLimit);
   const eligible = v => {
     if (v.side < 0.5 ? !layers.her : !layers.oer) return false;
     if (!slabOnly) return true;
     const s = _lerpNow(v, now);
     return Math.abs([s[0], s[1], s[2]][sliceAxis] - cut) <= slabW;
   };
-  let eligibleCount = 0;
-  for (const v of visPool) if (eligible(v)) eligibleCount++;
-  const renderTarget = Math.min(displayLimit, eligibleCount);
-  let eligibleSeen = 0;
+  const reserveAttachedSlots = bubbleView !== "dist" && wantedTracerCount() > 0;
+  if (reserveAttachedSlots) {
+    const attachedNow = new Map();
+    for (const v of visPool)
+      if (v.att && !v.dying && eligible(v))
+        attachedNow.set(bubbleTrackKey(v.side, v.rawId), v);
+    for (const key of [...trackedAttachedIds])
+      if (!attachedNow.has(key)) trackedAttachedIds.delete(key);
+    const reservationLimit = Math.max(0, wantedTracerCount()
+      - Math.min(wantedTracerCount(), tracers.length) - tracerHandoffs.length);
+    for (const key of [...trackedAttachedIds]) {
+      if (trackedAttachedIds.size <= reservationLimit) break;
+      trackedAttachedIds.delete(key);
+    }
+    let room = Math.max(0, reservationLimit - trackedAttachedIds.size);
+    // Prefer small/newly growing bubbles so a viewer can watch their complete
+    // growth-to-detachment sequence, not only the final instant before release.
+    const candidates = [...attachedNow.entries()]
+      .filter(([key]) => !trackedAttachedIds.has(key))
+      .sort((a, b) => a[1].sr - b[1].sr);
+    for (const [key] of candidates) {
+      if (room-- <= 0) break;
+      trackedAttachedIds.add(key);
+    }
+  } else {
+    trackedAttachedIds.clear();
+  }
+  let eligibleFree = 0;
+  for (const v of visPool) if (eligible(v) && !v.att) eligibleFree++;
+  availableDistributionCount = eligibleFree;
+  const freeRenderTarget = showFreeDistribution ? Math.min(displayLimit, eligibleFree) : 0;
+  let freeSeen = 0;
   let freeCount = 0, attachedCount = 0;
   for (const v of visPool) {
     if (!eligible(v)) continue;
-    // Pick exactly renderTarget bubbles at even intervals across the complete
-    // eligible pool. This avoids a cap such as 300 selecting only the first
-    // species/free-bubble block in visPool and preserves population ratios.
-    const bucketBefore = Math.floor(eligibleSeen * renderTarget / Math.max(1, eligibleCount));
-    eligibleSeen++;
-    const bucketAfter = Math.floor(eligibleSeen * renderTarget / Math.max(1, eligibleCount));
-    if (bucketAfter === bucketBefore) continue;
+    if (v.att && reserveAttachedSlots
+        && !trackedAttachedIds.has(bubbleTrackKey(v.side, v.rawId))) continue;
+    if (!v.att) {
+      // Pick exactly freeRenderTarget markers at even intervals across the
+      // statistical distribution. Movement mode intentionally hides this
+      // cloud so every visible detached marker has a persistent trajectory.
+      const bucketBefore = Math.floor(freeSeen * freeRenderTarget / Math.max(1, eligibleFree));
+      freeSeen++;
+      const bucketAfter = Math.floor(freeSeen * freeRenderTarget / Math.max(1, eligibleFree));
+      if (bucketAfter === bucketBefore) continue;
+    }
     const s = _lerpNow(v, now);                     // smooth pose from the pool
     const px = s[0], py = s[1], pz = s[2], pr = s[3];
     let x = px * 1000 - gridLx / 2;
     const y = py * 1000;
     const z = pz * 1000 - (g.nz * g.h_mm) / 2;      // grid frame, same as the ribs
-    // physical radius x the DISPLAY scale the user picked (실제 ×1 shows true
-    // 50-150 um bubbles — use 국소 확대 to see them; ×4/×12 for the far view)
-    const r = Math.max(0.02, pr * 1000 * (+P.bscale || 1));
+    // One user-selected display scale applies to every lifecycle stage.
+    // ×1 is the calculated physical radius; the 0.02 mm floor is render-only.
+    const r = Math.max(0.02, pr * 1000 * Math.max(1, +P.bscale || 1));
+    let orientation = _q;
     if (v.att) {
       // The physics centre remains untouched in visPool. Rendering compresses
       // only the electrode-normal axis and shifts the visual centre by the
@@ -2184,21 +2272,20 @@ function renderBubbles(now) {
     } else {
       // Free bubbles remain almost spherical; only a restrained rise-direction
       // elongation is allowed, based on the already measured parcel speed.
-      const elong = 1 + Math.min(0.10, Math.max(0, (v.spd || 0) / VEL_SCALE) * 0.08);
-      const transverse = 1 / Math.sqrt(elong);
-      _s.set(r * transverse, r * elong, r * transverse);
+      const shape = freeBubbleTransform(pr, r);
+      _s.set(...shape.scale);
+      orientation = shape.quaternion;
     }
     _p.set(x, y, z);
-    _m.compose(_p, _q, _s);
+    _m.compose(_p, orientation, _s);
     if (P.bcol === "vel") {
-      // CFD-paper style: colour by rise speed u_p (attached ~0 -> blue)
-      const [cr, cg, cb] = turbo(Math.min(1, (v.spd || 0) / VEL_SCALE));
+      // CFD-paper style: colour by total bubble speed |u_b|
+      // (attached bubbles remain near zero and therefore blue).
+      const [cr, cg, cb] = turbo(Math.min(1, (v.spd || 0) / velocityScale));
       _col.setRGB(cr / 255, cg / 255, cb / 255);
     } else {
-      // Muted gas-family tint; transparent body + shader rim carries shape.
-      const base = v.side < 0.5 ? C_H2 : C_O2;
-      const jitter = 0.90 + 0.10 * ((v.key >>> 8) & 255) / 255;
-      _col.copy(base).multiplyScalar(v.att ? jitter * 0.92 : jitter);
+      // Use the exact same H2/O2 colour as the moving bubble markers.
+      _col.copy(v.side < 0.5 ? C_H2 : C_O2);
     }
     const target = v.att ? instAttached : inst;
     const index = v.att ? attachedCount++ : freeCount++;
@@ -2207,7 +2294,8 @@ function renderBubbles(now) {
   }
   inst.count = freeCount;
   instAttached.count = attachedCount;
-  displayedBubbleCount = freeCount + attachedCount;
+  displayedDistributionCount = freeCount;
+  displayedAttachedCount = attachedCount;
   inst.instanceMatrix.needsUpdate = true;
   instAttached.instanceMatrix.needsUpdate = true;
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
@@ -2219,7 +2307,115 @@ function renderBubbles(now) {
     document.getElementById("velLegend").style.display = wantLegend ? "" : "none";
   }
 }
-const VEL_SCALE = 0.25;                             // colourbar max [m/s]
+let velocityScale = 0.25;                          // live colourbar max [m/s]
+let velocityScaleUpdated = 0;
+
+function niceVelocityMax(value) {
+  value = Math.max(0.005, Math.min(1.0, value));
+  const power = 10 ** Math.floor(Math.log10(value));
+  const scaled = value / power;
+  const nice = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10;
+  return nice * power;
+}
+
+function ingestMergeEvents(st, now) {
+  const events = st.merge_events || [];
+  const pollPeriod = bubCur && bubCur.t ? Math.max(60, now - bubCur.t) : 110;
+  for (const event of events) {
+    const seq = +event.seq || 0;
+    if (seq <= lastMergeSeq || !event.a || !event.b) continue;
+    mergeAnimations.push({ ...event, start:now, end:now + 2 * pollPeriod });
+    lastMergeSeq = Math.max(lastMergeSeq, seq);
+  }
+  if (mergeAnimations.length > MERGE_MAX) mergeAnimations.splice(0, mergeAnimations.length - MERGE_MAX);
+}
+
+const bubbleUp = new THREE.Vector3(0, 1, 0);
+const bubbleAxis = new THREE.Vector3();
+const bubbleQuaternion = new THREE.Quaternion();
+function freeBubbleTransform(radiusM, displayRadiusMm) {
+  const model = lastState && lastState.diag && lastState.diag.bubble_slip_model;
+  const dRho = model && +model.d_rho_kg_m3;
+  const gravity = model && +model.g_m_s2;
+  const sigma = model && +model.sigma_N_m;
+  const eo = dRho > 0 && gravity > 0 && sigma > 0
+    ? dRho * gravity * (2 * radiusM) ** 2 / sigma : 0;
+  // Wellek et al. oblate-bubble aspect ratio. Volume is kept equal to the
+  // calculated spherical bubble volume; this affects rendering only.
+  const aspect = 1 / (1 + 0.163 * Math.max(0, eo) ** 0.757);
+  const transverse = displayRadiusMm * aspect ** (-1 / 3);
+  const axial = displayRadiusMm * aspect ** (2 / 3);
+  const tilt = ((lastState && lastState.op && +lastState.op.tilt) || 0) * Math.PI / 180;
+  bubbleAxis.set(Math.sin(tilt), Math.cos(tilt), 0).normalize();
+  bubbleQuaternion.setFromUnitVectors(bubbleUp, bubbleAxis);
+  return { scale:[transverse, axial, transverse], quaternion:bubbleQuaternion };
+}
+
+function renderMergeEvents(now) {
+  if (mode !== "live" || !bubGrid) { mergeInst.count = 0; return; }
+  mergeAnimations = mergeAnimations.filter(event => now < event.end);
+  const g = bubGrid, gridLx = g.nx * g.h_mm;
+  const displayScale = Math.max(1, +P.bscale || 1);
+  let count = 0;
+  const place = (position, radius, side) => {
+    if (count >= MERGE_MAX) return;
+    const x = position[0] * 1000 - gridLx / 2;
+    const y = position[1] * 1000;
+    const z = position[2] * 1000 - g.nz * g.h_mm / 2;
+    const rr = Math.max(0.02, radius * 1000 * displayScale);
+    _p.set(x, y, z); _s.set(rr, rr, rr); _m.compose(_p, _q, _s);
+    mergeInst.setMatrixAt(count, _m);
+    mergeInst.setColorAt(count, side < 0.5 ? C_H2 : C_O2);
+    count++;
+  };
+  for (const event of mergeAnimations) {
+    if (event.side < 0.5 ? !layers.her : !layers.oer) continue;
+    const progress = Math.min(1, Math.max(0, (now - event.start) / Math.max(1, event.end - event.start)));
+    const centre = event.a.map((value, axis) =>
+      (value * (+event.ra || 0) ** 3 + event.b[axis] * (+event.rb || 0) ** 3)
+      / Math.max(Number.EPSILON, (+event.ra || 0) ** 3 + (+event.rb || 0) ** 3));
+    if (progress < 0.58 && !event.attached) {
+      const q = progress / 0.58;
+      const ease = q * q * (3 - 2 * q);
+      const pa = event.a.map((value, axis) => value + (centre[axis] - value) * ease);
+      const pb = event.b.map((value, axis) => value + (centre[axis] - value) * ease);
+      place(pa, +event.ra || +event.r, event.side);
+      place(pb, +event.rb || +event.r, event.side);
+    } else {
+      const q = event.attached ? progress : (progress - 0.58) / 0.42;
+      const startRadius = Math.max(+event.ra || 0, +event.rb || 0);
+      place(centre, startRadius + ((+event.r || startRadius) - startRadius) * Math.max(0, q), event.side);
+    }
+  }
+  mergeInst.count = count;
+  mergeInst.instanceMatrix.needsUpdate = true;
+  if (mergeInst.instanceColor) mergeInst.instanceColor.needsUpdate = true;
+}
+
+function updateVelocityScale(now) {
+  if (now - velocityScaleUpdated < 800) return;
+  velocityScaleUpdated = now;
+  const view = P.bview || "move";
+  const speeds = [];
+  if (view !== "move") {
+    for (const bubble of visPool)
+      if (!bubble.att && !bubble.dying && Number.isFinite(bubble.spd) && bubble.spd > 0)
+        speeds.push(bubble.spd);
+  }
+  if (view !== "dist") {
+    for (const tracer of tracers)
+      if (Number.isFinite(tracer.spd) && tracer.spd > 0) speeds.push(tracer.spd);
+  }
+  if (speeds.length) {
+    speeds.sort((a, b) => a - b);
+    velocityScale = niceVelocityMax(speeds[Math.min(speeds.length - 1,
+      Math.floor(0.95 * (speeds.length - 1)))]);
+  }
+  const text = velocityScale >= 0.1 ? velocityScale.toFixed(2)
+             : velocityScale >= 0.01 ? velocityScale.toFixed(3)
+             : velocityScale.toFixed(4);
+  document.getElementById("velMax").textContent = `${text} m/s`;
+}
 
 function pickZoomFocus() {
   let best = null;
@@ -2238,48 +2434,180 @@ function pickZoomFocus() {
 // that is a sampling artifact, not a physics error: the measured riser speed
 // is ~70 mm/s). These tracers restore the visible transport honestly: each one
 // is advected client-side by vel3d — the SAME solved liquid velocity the
-// parcels feel — plus the ~3 mm/s terminal slip; the standard CFD
-// particle-trace visualisation. They seed at real bubble positions and expire
-// after a few seconds (or at the vent), so their paths ARE the flow field.
+// parcels feel — plus radius-dependent terminal slip. They also use the same
+// voxel mask and half-cell collision substeps as Parcels._advect. They seed at
+// real bubble positions and remain continuous until they reach the outlet.
 const TR_N = 1400;                       // capacity; the drawn count follows P.trace
 const trInst = new THREE.InstancedMesh(
   new THREE.SphereGeometry(1, 14, 10),
-  new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0 }),
+  movingBubbleMaterial,
   TR_N);
 trInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TR_N * 3), 3);
 trInst.frustumCulled = false; trInst.count = 0;
 visualRoot.add(trInst);
 const tracers = [];
+const tracerHandoffs = [];
 let trLast = 0;
+let tracerLand2d = null;
+let tracerPorts = null;
+let tracerCollisionBlocks = 0, tracerSolidReseeds = 0;
+let tracerHandoffsQueued = 0, tracerHandoffsShown = 0;
+let tracerHandoffsSkipped = 0, tracerHandoffStartFallbacks = 0;
+
+function tracerMaskReady(g) {
+  return !!(g && tracerLand2d && tracerLand2d.m
+    && tracerLand2d.ny === g.ny && tracerLand2d.nz === g.nz
+    && tracerLand2d.m.length === g.ny * g.nz);
+}
+
+// Reconstruct the exact solid mask used by geometry.voxelize from the cached
+// physics land footprint + n_lay. No visual/CAD dimensions enter this test.
+function tracerPointInSolid(g, x, y, z) {
+  if (!tracerMaskReady(g)) return false;
+  if (![x, y, z].every(Number.isFinite)) return true;
+  const h = g.h_mm / 1000;
+  if (!(x >= 0 && x < g.nx * h && y >= 0 && y < g.ny * h
+        && z >= 0 && z < g.nz * h)) return false;
+  const i = Math.min(g.nx - 1, Math.max(0, (x / h) | 0));
+  const j = Math.min(g.ny - 1, Math.max(0, (y / h) | 0));
+  const k = Math.min(g.nz - 1, Math.max(0, (z / h) | 0));
+  const nLay = Math.max(1, Math.min(g.n_lay || gridInfo.n_lay || 1,
+    Math.floor((g.nx - 1) / 2)));
+  if (i >= nLay && i < g.nx - nLay) return true;  // PTL + membrane core
+  return !!tracerLand2d.m[j * g.nz + k];           // channel rib/land
+}
+
+function tracerOnPort(g, face, y, z) {
+  if (!tracerPorts || tracerPorts.out_face !== face || !tracerPorts.out) return false;
+  const h = g.h_mm / 1000;
+  const coord = (face === "top" || face === "bottom") ? z : y;
+  const count = (face === "top" || face === "bottom") ? g.nz : g.ny;
+  const k = Math.min(count - 1, Math.max(0, (coord / h) | 0));
+  return !!tracerPorts.out[k];
+}
+
+function tracerAtOutlet(g, x, y, z) {
+  const h = g.h_mm / 1000, margin = 0.2 * h;
+  const Ly = g.ny * h, Lz = g.nz * h;
+  if (!tracerPorts) return y > Ly - margin;          // safe legacy fallback
+  if (tracerPorts.out_face === "top")
+    return y > Ly - margin && tracerOnPort(g, "top", y, z);
+  if (tracerPorts.out_face === "left")
+    return z < margin && tracerOnPort(g, "left", y, z);
+  if (tracerPorts.out_face === "right")
+    return z > Lz - margin && tracerOnPort(g, "right", y, z);
+  return false;
+}
+
+function tracerMoveBlocked(g, x, y, z) {
+  if (tracerPointInSolid(g, x, y, z)) return true;
+  const h = g.h_mm / 1000, margin = 0.2 * h;
+  const Lx = g.nx * h, Ly = g.ny * h, Lz = g.nz * h;
+  if (x < 0 || x >= Lx || y < 0) return true;
+  if (y > Ly - margin && !tracerOnPort(g, "top", y, z)) return true;
+  if (z < margin && !tracerOnPort(g, "left", y, z)) return true;
+  if (z > Lz - margin && !tracerOnPort(g, "right", y, z)) return true;
+  return false;
+}
+
+function tracerFromBubble(c, handoff=false, sourceId=null) {
+  return { x:c[0], y:c[1], z:c[2], r:c[3], side:c[4], spd:c[6] || 0,
+    age:0,
+    sourceId:handoff ? sourceId : null,
+    handoffAt:handoff ? performance.now() : 0 };
+}
+
+function queueTracerHandoff(previous, current, sourceId) {
+  if (!previous || !current || current[5] > 0.5) return;
+  // Start at the last position actually shown while attached. The current
+  // server snapshot may already be one poll downstream, which used to look
+  // like the bubble jumped to an unrelated location at detachment.
+  let start = previous;
+  if (tracerPointInSolid(bubGrid, start[0], start[1], start[2])) {
+    start = current; tracerHandoffStartFallbacks++;
+  }
+  if (tracerPointInSolid(bubGrid, start[0], start[1], start[2])) return;
+  const seed = [start[0], start[1], start[2], current[3], current[4], 0, current[6]];
+  tracerHandoffs.push(tracerFromBubble(seed, true, sourceId));
+  if (tracerHandoffs.length > TR_N) tracerHandoffs.shift();
+  tracerHandoffsQueued++;
+}
+
 function _trSeed() {
   if (!bubCur || !bubCur.map.size) return null;
   const arr = [...bubCur.map.values()];
-  for (let tries = 0; tries < 8; tries++) {
+  for (let tries = 0; tries < 24; tries++) {
     const c = arr[(Math.random() * arr.length) | 0];
     if (c[5] > 0.5) continue;                      // attached: not a riser
-    return { x: c[0], y: c[1], z: c[2], r: c[3], side: c[4],
-             age: Math.random(), life: 2.0 + Math.random() * 2.0 };
+    if (tracerPointInSolid(bubGrid, c[0], c[1], c[2])) continue;
+    return tracerFromBubble(c);
   }
   return null;
 }
+
+function wantedTracerCount() {
+  return P.trace === "off" ? 0 : Math.min(TR_N, +P.trace > 0 ? +P.trace : 700);
+}
+
+// Same Schiller-Naumann terminal-velocity correlation as parcels.py. The
+// server supplies the current electrolyte density/viscosity context, so this
+// visual trajectory changes with bubble radius and operating conditions instead
+// of adding the former hard-coded 3 mm/s to every marker.
+function terminalSlipMps(radius) {
+  const model = lastState && lastState.diag && lastState.diag.bubble_slip_model;
+  const fallback = lastState && lastState.diag;
+  if (!model || !(radius > 0)) {
+    return fallback && fallback.v_term_mm_s != null
+      ? Math.max(0, +fallback.v_term_mm_s / 1000) : 0.003;
+  }
+  const dRho = +model.d_rho_kg_m3, mu = +model.mu_Pa_s;
+  const rho = +model.rho_l_kg_m3, gravity = +model.g_m_s2;
+  if (!(dRho > 0 && mu > 0 && rho > 0 && gravity > 0)) return 0.003;
+  let speed = (2 / 9) * dRho * gravity * radius * radius / mu;
+  for (let iteration = 0; iteration < 20; iteration++) {
+    const reynolds = Math.max(1e-9, 2 * radius * speed * rho / mu);
+    const drag = (24 / reynolds) * (1 + 0.15 * reynolds ** 0.687);
+    const next = Math.sqrt(Math.max(0, (8 / 3) * dRho * gravity * radius / (drag * rho)));
+    speed = 0.5 * (speed + next);
+  }
+  return Number.isFinite(speed) ? speed : 0.003;
+}
+
 function renderTracers(now) {
   const dtW = trLast ? Math.min(0.1, (now - trLast) / 1000) : 0;
   trLast = now;
-  // P.trace is the wanted COUNT ("off" | "300" | "700" | "1400"; legacy "on" -> 700)
-  const want = P.trace === "off" ? 0
-             : Math.min(TR_N, +P.trace > 0 ? +P.trace : 700);
+  // Distribution mode deliberately hides trajectories. Movement mode is the
+  // default: its visible detached markers all have a persistent path.
+  const want = (P.bview || "move") === "dist" ? 0 : wantedTracerCount();
   if (!want || mode !== "live" || !bubGrid || !vel3dCur) {
-    trInst.count = 0; return;
+    trInst.count = 0; displayedTracerCount = 0; return;
   }
   const g = bubGrid, h = g.h_mm / 1000;
   const Lx = g.nx * h, Ly = g.ny * h, Lz = g.nz * h;
   const rate = (lastState && lastState.speed_actual) || 1;
   const dt = dtW * rate;                            // SIM seconds this frame
   if (tracers.length > want) tracers.length = want;
-  while (tracers.length < want) {
+  // Keep part of the requested capacity free for genuine attached->free
+  // handoffs. Filling every slot with random background markers forced each
+  // new handoff to teleport an unrelated moving marker across the cell.
+  const reservedForLifecycle = trackedAttachedIds.size + tracerHandoffs.length;
+  const backgroundTarget = Math.max(0, Math.min(
+    Math.floor(want * 0.65), want - reservedForLifecycle));
+  while (tracers.length < backgroundTarget) {
     const t = _trSeed(); if (!t) break; tracers.push(t);
   }
+  // Append exact handoffs only into a free slot. Never replace a moving marker
+  // mid-channel: replacement was the remaining source of visible teleporting.
+  while (tracerHandoffs.length && want) {
+    const handoff = tracerHandoffs.shift();
+    if (tracerPointInSolid(g, handoff.x, handoff.y, handoff.z)) continue;
+    if (tracers.length >= want) { tracerHandoffsSkipped++; continue; }
+    tracers.push(handoff);
+    tracerHandoffsShown++;
+  }
   const { u, v, w } = vel3dCur;
+  const tiltRad = ((lastState && lastState.op && +lastState.op.tilt) || 0) * Math.PI / 180;
+  const upX = Math.sin(tiltRad), upY = Math.cos(tiltRad);
   const idx = (x, y, z) => {
     const i = Math.min(g.nx - 1, Math.max(0, (x / h) | 0));
     const j = Math.min(g.ny - 1, Math.max(0, (y / h) | 0));
@@ -2292,43 +2620,100 @@ function renderTracers(now) {
   let n = 0;
   for (let q = 0; q < tracers.length; q++) {
     let t = tracers[q];
+    // A geometry rebuild may make an old visual tracer invalid. Never draw it
+    // in a solid cell; reseed it from the server's current free-bubble sample.
+    if (tracerPointInSolid(g, t.x, t.y, t.z)) {
+      tracers.splice(q, 1); q--;
+      tracerSolidReseeds++;
+      continue;
+    }
     const f = idx(t.x, t.y, t.z);
-    t.x += (u[f] || 0) * dt;
-    t.y += ((v[f] || 0) + 0.003) * dt;              // + terminal slip ~3 mm/s
-    t.z += (w[f] || 0) * dt;
+    const slip = terminalSlipMps(t.r);
+    const vx = (u[f] || 0) + slip * upX;
+    const vy = (v[f] || 0) + slip * upY;
+    const vz = (w[f] || 0);
+    const x0 = t.x, y0 = t.y, z0 = t.z;
+    // Match Parcels._advect: split motion into <= half-cell steps and cancel
+    // only the component that would enter a solid. The other components remain,
+    // so tracers slide along a rib until they reach the real turn gap.
+    const dx = vx * dt, dy = vy * dt, dz = vz * dt;
+    const nSub = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz))
+      / Math.max(1e-12, 0.5 * h)));
+    const sx = dx / nSub, sy = dy / nSub, sz = dz / nSub;
+    let blockedAny = false;
+    for (let step = 0; step < nSub; step++) {
+      const cx = t.x + sx;
+      if (!tracerMoveBlocked(g, cx, t.y, t.z)) t.x = cx;
+      else blockedAny = true;
+      const cy = t.y + sy;
+      if (!tracerMoveBlocked(g, t.x, cy, t.z)) t.y = cy;
+      else blockedAny = true;
+      const cz = t.z + sz;
+      if (!tracerMoveBlocked(g, t.x, t.y, cz)) t.z = cz;
+      else blockedAny = true;
+    }
+    if (blockedAny) tracerCollisionBlocks++;
+    t.spd = dt > 0 ? Math.hypot(t.x - x0, t.y - y0, t.z - z0) / dt
+                   : Math.hypot(vx, vy, vz);
     t.age += dt;
-    if (t.age > t.life || t.y > Ly - 0.5 * h
-        || t.x < 0 || t.x > Lx || t.z < 0 || t.z > Lz) {
-      const s = _trSeed(); if (s) tracers[q] = t = s; else continue;
+    // Do not expire a path after an arbitrary 2-4 s lifetime: that caused a
+    // bubble to vanish in the middle of a channel and teleport to a new seed.
+    // A tracer now ends only after it reaches the cell boundary/outlet.
+    if (tracerAtOutlet(g, t.x, t.y, t.z)) {
+      tracers.splice(q, 1); q--;
+      continue;
     }
     if (t.side < 0.5 ? !layers.her : !layers.oer) continue;
     if (slabOnly && Math.abs([t.x, t.y, t.z][sliceAxis] - cut) > slabW) continue;
     const px = t.x * 1000 - gridLx / 2, py = t.y * 1000,
           pz = t.z * 1000 - (g.nz * g.h_mm) / 2;
-    const r = Math.max(0.05, t.r * 1000 * (+P.bscale || 1)) * 1.15;
-    _p.set(px, py, pz); _s.set(r, r, r);
-    _m.compose(_p, _q, _s); trInst.setMatrixAt(n, _m);
-    _col.copy(t.side < 0.5 ? C_H2 : C_O2).multiplyScalar(1.4);   // brighter = tracer
+    // Moving bubbles use the same display scale as attached/distribution
+    // bubbles. Thus the detached handoff keeps its size instead of shrinking.
+    const r = Math.max(0.02, t.r * 1000 * Math.max(1, +P.bscale || 1));
+    const shape = freeBubbleTransform(t.r, r);
+    _p.set(px, py, pz); _s.set(...shape.scale);
+    _m.compose(_p, shape.quaternion, _s); trInst.setMatrixAt(n, _m);
+    if (P.bcol === "vel") {
+      const [cr, cg, cb] = turbo(Math.min(1, t.spd / velocityScale));
+      _col.setRGB(cr / 255, cg / 255, cb / 255);
+    } else {
+      _col.copy(t.side < 0.5 ? C_H2 : C_O2);
+    }
     trInst.setColorAt(n, _col);
     n++;
   }
   trInst.count = n;
+  displayedTracerCount = n;
   trInst.instanceMatrix.needsUpdate = true;
   if (trInst.instanceColor) trInst.instanceColor.needsUpdate = true;
 }
 window.__traceInfo = () =>
-  ({ n: trInst.count, pool: tracers.length,
-     sample: tracers.slice(0, 3).map(t => [t.x, t.y, t.z, t.age]) });
+  ({ mode:P.bview || "move", n:trInst.count, pool:tracers.length,
+     speedScale:velocityScale, solidReady:tracerMaskReady(bubGrid),
+     inSolid:tracers.reduce((n, t) => n + (tracerPointInSolid(bubGrid, t.x, t.y, t.z) ? 1 : 0), 0),
+     collisionBlocks:tracerCollisionBlocks, solidReseeds:tracerSolidReseeds,
+     markerScale:"physical", pendingHandoffs:tracerHandoffs.length,
+     handoffsQueued:tracerHandoffsQueued, handoffsShown:tracerHandoffsShown,
+     handoffsSkipped:tracerHandoffsSkipped,
+     handoffStartFallbacks:tracerHandoffStartFallbacks,
+     attachedSlotsReserved:trackedAttachedIds.size,
+     activeHandoffs:tracers.reduce((n, t) => n + (t.sourceId != null ? 1 : 0), 0),
+     outletFace:tracerPorts && tracerPorts.out_face,
+     sample:tracers.slice(0, 3).map(t => [t.x, t.y, t.z, t.age, t.spd,
+       tracerPointInSolid(bubGrid, t.x, t.y, t.z)]) });
 window.__traceStep = now => renderTracers(now ?? performance.now());  // headless verify
 
 // Analysis fields + geometry metadata from the snapshot.
 function updateFaces(st) {
   // ribs from the PHYSICS mask (rebuild only when the geometry changes)
   if (st.land2d) {
+    tracerLand2d = { ny:st.land2d.ny, nz:st.land2d.nz, m:st.land2d.m.slice() };
     const sig = st.land2d.ny + "x" + st.land2d.nz + ":" + st.land2d.m.join("");
     if (sig !== landSig) { landSig = sig; buildMaskRibs(st.land2d); }
   }
   if (st.ports) {
+    tracerPorts = { in_face:st.ports.in_face, out_face:st.ports.out_face,
+      in:st.ports.in.slice(), out:st.ports.out.slice() };
     const psig = st.ports.nz + "/" + st.ports.ny + ":" + st.ports.in_face + st.ports.out_face
                + ":" + st.ports.in.join("") + "|" + st.ports.out.join("");
     if (psig !== portSig) { portSig = psig; buildPorts(st.ports); }
@@ -2752,8 +3137,8 @@ document.getElementById("exCpClr").onclick = () => { cpRec = []; expDrawCp(); };
 // rows, so a folder of exports is self-describing and comparable. UTF-8 BOM so
 // Excel opens Korean text correctly instead of mojibake.
 const CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
-  "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt","drag_K",
-  "j0_cathode","j0_anode","alpha_a","r_mem","gap_mm","t_mem_um","t_ptl_um",
+  "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt",
+  "j0_cathode","j0_anode","alpha_a","r_mem","departure_diameter_um","dep_grad_um","gap_mm","t_mem_um","t_ptl_um",
   "void_frac","mesh_id","mesh_cover","mesh_pos","mesh_theta","dry_cathode","n_drag","D_w_mem",
   "in_face","in_z","in_w","out_face","out_z","out_w"];
 
@@ -3195,6 +3580,37 @@ document.getElementById("bCam").onclick = () => {
 
 // ============================ polling ======================================
 let pollN = 0;
+function updateBubbleHud() {
+  const dg = (lastState && lastState.diag) || {};
+  const english = window.SimI18n && SimI18n.getLanguage() === "en";
+  const number = value => Math.max(0, Math.round(+value || 0)).toLocaleString(english ? "en-US" : "ko-KR");
+  const view = P.bview || "move";
+  const attached = bubGrid ? displayedAttachedCount : (+dg.n_attached || 0);
+  const distributionAvailable = bubGrid ? availableDistributionCount : (+dg.n_free || 0);
+  document.getElementById("hAttached").textContent = english
+    ? `${number(attached)} shown · attached/growing`
+    : `${number(attached)}개 표시 · 부착·성장 중`;
+  document.getElementById("hDistribution").textContent = view === "move"
+    ? (english
+        ? `hidden · ${number(distributionAvailable)} statistical markers available`
+        : `숨김 · 통계 표본 ${number(distributionAvailable)}개`)
+    : (english
+        ? `${number(displayedDistributionCount)} statistical markers shown`
+        : `통계 표본 ${number(displayedDistributionCount)}개 표시`);
+  document.getElementById("hTracked").textContent = view === "dist"
+    ? (english
+        ? `hidden · ${number(wantedTracerCount())} configured`
+        : `숨김 · ${number(wantedTracerCount())}개 설정`)
+    : (english
+        ? `${number(displayedTracerCount)} moving markers shown`
+        : `이동 마커 ${number(displayedTracerCount)}개 표시`);
+  const real = dg.n_real_est == null ? "–" : `~${number(dg.n_real_est)}`;
+  const mult = dg.mult == null ? "" : (english
+    ? ` · 1 representative ≈ ${number(dg.mult)} real`
+    : ` · 대표 1개≈실제 ${number(dg.mult)}개`);
+  document.getElementById("hReal").textContent = real + mult;
+}
+
 async function poll() {
   let dt = 110;                      // fast polls + 60fps interpolation = smooth
   try {
@@ -3214,12 +3630,25 @@ async function poll() {
                    h: st.grid.h_mm, n_lay: st.grid.n_lay || 1 };
     if (["nx","ny","nz","h","n_lay"].some(k => gnew[k] !== gridInfo[k])) {
       gridInfo = gnew;
+      tracerLand2d = null;
+      tracerPorts = null;
+      tracers.length = 0;
+      tracerHandoffs.length = 0;
+      trInst.count = 0;
+      mergeAnimations.length = 0;
+      mergeInst.count = 0;
+      lastMergeSeq = 0;
+      tracerCollisionBlocks = tracerSolidReseeds = 0;
+      tracerHandoffsQueued = tracerHandoffsShown = 0;
+      tracerHandoffsSkipped = tracerHandoffStartFallbacks = 0;
       rebuildCell();
     }
     const dg = st.diag || {};
     const validity = [];
     if (dg.grid_coarsened) validity.push(`격자 ${dg.h_requested_mm.toFixed(2)}→${dg.h_mm.toFixed(2)} mm`);
     if (dg.flow_ok === false) validity.push("입구-출구 단절");
+    if (dg.dispersed_bubble_valid === false)
+      validity.push(`기체 과충전 셀 ${dg.alpha_g_overfilled_cells}개 (분산기포 모델 범위 초과)`);
     if (dg.H_achieved_mm != null &&
         (Math.abs(dg.H_achieved_mm-dg.H_requested_mm) > .05*dg.H_requested_mm ||
          Math.abs(dg.W_achieved_mm-dg.W_requested_mm) > .05*dg.W_requested_mm))
@@ -3227,11 +3656,8 @@ async function poll() {
     const hv = document.getElementById("hValid");
     hv.textContent = validity.length ? validity.join(" · ") : "범위 내 · 표면반응 모델";
     hv.style.color = validity.length ? "var(--gold)" : "var(--grn)";
-    const shownBubbles = displayedBubbleCount == null ? st.n_bub : displayedBubbleCount;
-    document.getElementById("hN").textContent = dg.n_real_est != null
-      ? `${shownBubbles} / ~${dg.n_real_est.toLocaleString()}` : shownBubbles;
     if (dg.r_dep_um != null) document.getElementById("hRdep").textContent =
-      `${dg.r_dep_um.toFixed(0)} µm · 1개≈${(dg.mult ?? 1).toFixed(0)}개 실제`;
+      `${dg.r_dep_um.toFixed(0)} µm`;
     if (dg.V_cell != null) document.getElementById("hVJ").textContent =
       `${dg.V_cell.toFixed(2)} V · ${(dg.j_Acm2 ?? 0).toFixed(2)} A/cm²`;
     document.getElementById("hSp").textContent = st.speed_actual.toFixed(2) + "×";
@@ -3248,6 +3674,7 @@ async function poll() {
       drawSlice();
       drawProfile();
     }
+    updateBubbleHud();
   } catch {
     srvOk = false;
     document.getElementById("hSrv").innerHTML = `<span class="st bad"></span>연결 끊김`;
@@ -3866,7 +4293,9 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   fps = 0.9 * fps + 0.1 / Math.max(1e-3, dt);
   if (mode === "live") renderBubbles(now);   // 60 fps interpolated bubble motion
+  renderMergeEvents(now);                    // server-confirmed pair coalescence
   renderTracers(now);                        // flow-field particle trace overlay
+  updateVelocityScale(now);                  // current-view P95 -> readable colour scale
   // Self-heal if a view transition leaves controls steering the non-rendered camera.
   if (controls.object !== activeCam) controls.object = activeCam;
   controls.update();
@@ -3877,6 +4306,7 @@ function loop(now) {
   if (now - hudT > 400) {
     hudT = now;
     document.getElementById("hFps").textContent = fps.toFixed(0);
+    updateBubbleHud();
   }
   requestAnimationFrame(loop);
 }
@@ -3939,11 +4369,26 @@ window.__renderNow = () => {
   renderBubbles(performance.now());
   return inst.count + instAttached.count;
 };
+function instanceScaleSample(mesh) {
+  if (!mesh.count) return null;
+  const matrix = new THREE.Matrix4(), position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion(), scale = new THREE.Vector3();
+  mesh.getMatrixAt(0, matrix); matrix.decompose(position, rotation, scale);
+  return scale.toArray().map(value => +value.toFixed(5));
+}
 window.__bubbleStyleInfo = () => ({
-  free: inst.count, attached: instAttached.count,
+  view: P.bview || "move", free: inst.count, freeVisible:inst.visible,
+  freeAvailable:availableDistributionCount, attached: instAttached.count,
+  tracked:trInst.count,
   displayed: inst.count + instAttached.count,
+  displayScale: Math.max(1, +P.bscale || 1),
+  attachedAndMovingShareMaterial: instAttached.material === trInst.material,
+  gasColors: { h2:C_H2.getHexString(), o2:C_O2.getHexString() },
+  attachedScaleSample: instanceScaleSample(instAttached),
+  movingScaleSample: instanceScaleSample(trInst),
   requestedLimit: Math.max(0, Math.floor(+P.bcount || 0)),
-  pool: visPool.length, meshes: 2, maxInstances: MAXB,
+  pool: visPool.length, meshes: 3, mergeAnimations:mergeAnimations.length,
+  mergeVisible:mergeInst.count, maxInstances: MAXB,
   attachedNormalScaleAtTheta: +(0.48 + 0.18 * (Math.max(1, Math.min(179, +P.theta || 60)) / 179)).toFixed(3),
 });
 window.__ribInfo = () => {

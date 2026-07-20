@@ -78,26 +78,7 @@ from bubblesim.constants import G
 from bubblesim.properties import ELECTROLYTES
 from bubblesim.kernel.sources import faradaic_gas_rate
 from bubblesim.kernel.bubbles import forces
-
-
-def terminal_velocity(r, d_rho, mu, rho_l, iters=20):
-    """Vectorized bubble rise speed [m/s] (Schiller-Naumann drag balance).
-
-    Identical scheme to population.Surface._terminal_velocity over an array of
-    radii: Stokes seed, then damped fixed-point on Cd = 24/Re (1 + 0.15 Re^0.687).
-    20 sweeps land within 3e-4 of the kernel over 1 um - 3 mm (40 gave 1e-4 for
-    twice the cost, and this is called twice per bubble step).
-    """
-    r = np.asarray(r, dtype=np.float64)
-    if r.size == 0:
-        return r
-    U = (2.0 / 9.0) * d_rho * G * r * r / mu
-    for _ in range(iters):
-        Re = np.maximum(1e-9, 2.0 * r * U * rho_l / mu)
-        Cd = (24.0 / Re) * (1.0 + 0.15 * Re ** 0.687)
-        U_new = np.sqrt(np.maximum(0.0, (8.0 / 3.0) * d_rho * G * r / (Cd * rho_l)))
-        U = 0.5 * (U + U_new)
-    return U
+from .interphase import terminal_velocity
 
 
 class Parcels:
@@ -115,8 +96,6 @@ class Parcels:
     N_SITES = 140           # TRACKED attached slots per face (each represents
                             # `mult` real nucleation sites — see module docstring)
     FREE_TARGET = 1400      # tracked free risers to keep (adaptively thinned)
-    WOBBLE = 0.35           # lateral meander amplitude of rising bubbles [-]
-
     SUB_FRAC = 0.25         # max share of one growth-to-departure cycle's gas
                             # per wall substep (see _wall_substeps)
     MAX_SUB = 32
@@ -133,10 +112,6 @@ class Parcels:
 
     # --- free-swarm coalescence (Prince & Blanch, AIChE J. 36, 1990) ---------
     H0, HF = 1.0e-4, 1.0e-8   # initial / critical film thickness [m]
-    EPS_MAX = 0.62            # random close packing: the near-wall layer cannot
-                              # hold more gas than this, whatever the smearing says
-    LAYER_CAP = 40.0          # max concentration factor h/(2 y_w) (see _n_local)
-
     CONF_FRAC = 0.45        # a bubble cannot exceed ~90% of the channel gap in
                             # diameter: beyond that it bridges the channel (slug
                             # flow) rather than growing as a free sphere
@@ -186,9 +161,14 @@ class Parcels:
         self.p_touch = z0()               # P(a neighbour lies within reach) so far
         self.n_merge = 0                  # wall coalescence events (diagnostic)
         self.n_merge_free = 0             # swarm coalescence events (diagnostic)
+        self.n_merge_real = 0.0           # represented real-bubble pair events
+        self.merge_events = []            # bounded event stream for the renderer
+        self._merge_seq = 0
         self.ids = np.zeros(0, dtype=np.int64)
         self._next_id = 1
         self._t = 0.0
+        self.alpha_raw_max = 0.0
+        self.alpha_overfilled_cells = 0
         self.produced_cum = 0.0
         self.vented_cum = 0.0
         self._pending = [0.0, 0.0]        # gas that found no home this pass
@@ -200,6 +180,19 @@ class Parcels:
 
     def _face_area(self):
         return self.g.Ly * self.g.Lz
+
+    def _record_merge(self, a, b, radius, side, attached, radius_a=None, radius_b=None):
+        self._merge_seq += 1
+        self.merge_events.append({
+            "seq": self._merge_seq, "t": float(self._t),
+            "a": [float(v) for v in a], "b": [float(v) for v in b],
+            "r": float(radius), "side": int(side),
+            "ra": float(radius if radius_a is None else radius_a),
+            "rb": float(radius if radius_b is None else radius_b),
+            "attached": bool(attached),
+        })
+        if len(self.merge_events) > 128:
+            del self.merge_events[:-128]
 
     def _gap(self):
         """Physical electrode-to-plate channel depth [m]."""
@@ -523,17 +516,17 @@ class Parcels:
 
     # ----------------------------------------------------------- coalescence
     def p_merge(self):
-        """Merge probability on contact, from the electrolyte (kernel rule).
+        """Whether the medium is below its measured coalescence threshold.
 
-        Above the salting-out threshold (KOH: 0.3 M) dissolved ions suppress
-        film drainage, so touching bubbles bounce apart instead of merging.
+        This deliberately returns 0 or 1 instead of the former fitted 0.05/0.9
+        probabilities. Collision frequency and film-drainage efficiency are
+        calculated separately; the electrolyte database supplies only its
+        empirical critical coalescence concentration.
         """
         p = self.params
         crit = ELECTROLYTES.get(getattr(self.op, "electrolyte", "KOH"), {}).get(
             "c_coalesce", getattr(p, "c_coalesce_crit", 0.3) if p else 0.3)
-        inhib = getattr(p, "p_merge_inhibited", 0.05) if p else 0.05
-        free = getattr(p, "p_merge_free", 0.9) if p else 0.9
-        return inhib if getattr(self.op, "c_electrolyte", 0.0) > crit else free
+        return 0.0 if getattr(self.op, "c_electrolyte", 0.0) > crit else 1.0
 
     def _p_touch(self, r, mult):
         """P(at least one real neighbour within reach) for a Poisson site field.
@@ -541,89 +534,110 @@ class Parcels:
         The real neighbours of a tracked bubble are its own `mult` siblings, at
         number density n = mult * N_SITES / A_face. For a 2-D Poisson field the
         chance one lies inside radius d is 1 - exp(-pi n d^2), with the contact
-        reach d = 0.8 * 2 r sin(beta) (the kernel's overlap test).
+        reach d = 2 r sin(beta), the sum of two equal footprint radii.
         """
         sinb = abs(np.sin(np.radians(self.op.contact_angle)))
         n = mult * self.N_SITES / self._face_area()
-        d = 1.6 * r * sinb
+        d = 2.0 * r * sinb
         return 1.0 - np.exp(-np.pi * n * d * d)
 
-    def _n_local(self, ns, pos, r, y_w):
-        """Real bubbles per m^3 around each free bubble.
-
-        CLOSURE (stated because it is a closure, not a derivation): the void
-        fraction `ns.gas` is smeared over 2 mm cells, but the free bubbles live
-        in a ~2*y_w thick sheet against the electrode. Concentrating the cell
-        average into that sheet gives the density the bubbles actually see:
-            eps_layer = min(eps_cell * h / (2 y_w), EPS_MAX)
-            n         = eps_layer / V(r)
-        Without the concentration factor the collision rate is ~25x too low; with
-        no cap it exceeds close packing. Both bounds are documented, not tuned.
-        """
-        g = self.g
-        ci = np.clip((pos / g.h).astype(np.int64), 0, [g.nx - 1, g.ny - 1, g.nz - 1])
-        eps_cell = ns.gas[ci[:, 0], ci[:, 1], ci[:, 2]]
-        conc = np.minimum(self.LAYER_CAP, g.h / np.maximum(2.0 * y_w, 1e-9))
-        eps_layer = np.minimum(self.EPS_MAX, eps_cell * conc)
-        return eps_layer / np.maximum(self._vol(r), 1e-30)
-
     def _coalesce_free(self, ns, dt, ctx):
-        """Coalescence inside the rising swarm (Prince & Blanch collision kernel).
+        """Shima-style weighted pair collisions in each Eulerian flow cell.
 
-        Collision frequency per bubble  w = n * S * dv
-            S  = (pi/4)(d_i + d_j)^2 = 4 pi r^2   (equal-size neighbours)
-            dv = shear across the standoff spread + the slip difference the
-                 departure-size spread produces
-        Coalescence efficiency (film drainage)
-            lambda = exp(-t_drain / t_contact)
-            t_drain   = sqrt(r_ij^3 rho / (16 sigma)) ln(h0/hf),  r_ij = r/4
-            t_contact ~ 1/gamma_dot   (the laminar analogue of Prince-Blanch's
-                        turbulent r^(2/3)/eps^(1/3); this cell is laminar,
-                        Re ~ 4e2, so no dissipation rate is available)
-        and the electrolyte's salting-out inhibition multiplies it. The draw is
-        against 1 - exp(-rate*dt), so the merge count does not depend on dt.
-
-        A merge fuses two real bubbles: mult halves, r grows 2^(1/3), W is
-        untouched. Bridging pairs (r beyond the channel gap) cannot fuse.
+        Random pairing represents every possible parcel pair through the exact
+        combinatorial factor ``N_pair_all/N_pair_sampled``.  The collision
+        kernel is geometric cross-section times physical approach speed and a
+        Prince--Blanch film-drainage efficiency.  A collision changes the two
+        existing weighted cohorts in place, so the tracked-particle count does
+        not grow with the number of outer time steps.
         """
-        free = np.nonzero((~self.attached) & (self.mult >= 2.0))[0]
-        if len(free) == 0 or self.op.u_flow <= 0:
+        free = np.nonzero((~self.attached) & (self.mult > 0.0))[0]
+        if len(free) < 2 or self.p_merge() <= 0.0:
             return
-        r = self.r[free]
         pos = self.pos[free]
-        y_w, _ = self._wall_dist(pos[:, 0], self.side[free])
-        y_w = np.maximum(y_w, r)
-        v_s = terminal_velocity(r, ctx["d_rho"], ctx["mu"], ctx["rho_l"])
-        gdot = self.shear_rate(y_w)
+        velocity = self.bubble_velocity(ns, ctx)[free]
+        cells = np.clip((pos / self.g.h).astype(np.int64),
+                        0, [self.g.nx - 1, self.g.ny - 1, self.g.nz - 1])
+        buckets = {}
+        for local, cell in enumerate(cells):
+            key = (int(self.side[free[local]]), int(cell[0]), int(cell[1]), int(cell[2]))
+            buckets.setdefault(key, []).append(local)
 
-        n = self._n_local(ns, pos, r, y_w)
-        dv = gdot * self.DETACH_SPREAD * y_w + 2.0 * self.DETACH_SPREAD * v_s
-        S = 4.0 * np.pi * r * r
-        omega = n * S * dv                                   # collisions / s
+        rho = float(ctx["rho_l"])
+        sigma = float(ctx["sigma"])
+        tiny = np.finfo(float).tiny
+        changed = False
+        for members in buckets.values():
+            count = len(members)
+            sampled_pairs = count // 2
+            if sampled_pairs == 0:
+                continue
+            shuffled = self.rng.permutation(members)
+            # Number of all unordered parcel pairs represented by each sampled
+            # pair.  This is exact combinatorics, not an efficiency parameter.
+            pair_factor = count * (count - 1) / (2.0 * sampled_pairs)
+            for q in range(sampled_pairs):
+                local_i, local_j = int(shuffled[2*q]), int(shuffled[2*q + 1])
+                i, j = int(free[local_i]), int(free[local_j])
+                mi, mj = float(self.mult[i]), float(self.mult[j])
+                if mi <= 0.0 or mj <= 0.0:
+                    continue
+                ri, rj = float(self.r[i]), float(self.r[j])
+                relative = float(np.linalg.norm(velocity[local_i] - velocity[local_j]))
+                yi, _ = self._wall_dist(self.pos[[i], 0], self.side[[i]])
+                yj, _ = self._wall_dist(self.pos[[j], 0], self.side[[j]])
+                shear = 0.5 * (float(self.shear_rate(yi)[0])
+                               + float(self.shear_rate(yj)[0]))
+                approach = relative + shear * (ri + rj)
+                if approach <= 0.0:
+                    continue
 
-        rho, sig = float(ctx["rho_l"]), float(ctx.get("sigma", 0.072))
-        r_ij = 0.25 * r
-        t_drain = np.sqrt(r_ij ** 3 * rho / (16.0 * sig)) * np.log(self.H0 / self.HF)
-        t_contact = 1.0 / np.maximum(gdot, v_s / np.maximum(r, 1e-12))
-        lam = np.exp(-t_drain / np.maximum(t_contact, 1e-12))
+                reduced = 0.5 / (1.0 / max(ri, tiny) + 1.0 / max(rj, tiny))
+                t_drain = (np.sqrt(reduced ** 3 * rho / (16.0 * sigma))
+                           * np.log(self.H0 / self.HF))
+                t_contact = (ri + rj) / approach
+                efficiency = float(np.exp(-t_drain / max(t_contact, tiny)))
+                kernel = np.pi * (ri + rj) ** 2 * approach * efficiency
+                probability = (max(mi, mj) * kernel * float(dt)
+                               / self.g.cell_volume * pair_factor)
+                gamma = int(np.floor(probability))
+                if self.rng.random() < probability - gamma:
+                    gamma += 1
+                if gamma <= 0:
+                    continue
 
-        rate = omega * lam * self.p_merge()
-        hit = self.rng.random(len(free)) < -np.expm1(-rate * dt)   # 1-exp(-rate dt)
-        grown = r * 2.0 ** (1.0 / 3.0)
-        hit &= grown <= self.r_conf()                        # a bridging pair cannot fuse
-        if not hit.any():
-            return
-        idx = free[hit]
-        self.r[idx] = self.r[idx] * 2.0 ** (1.0 / 3.0)
-        self.mult[idx] = self.mult[idx] * 0.5                # W = mult*V(r) preserved
-        self.n_merge_free += int(hit.sum())
-        # a merged bubble is 26% bigger: its surface would now poke INTO the
-        # electrode it was skimming, so nudge the centre back out to one radius
-        d, nrm = self._wall_dist(self.pos[idx, 0], self.side[idx])
-        short = d < self.r[idx]
-        if short.any():
-            sel = idx[short]
-            self.pos[sel, 0] += (self.r[idx] - d)[short] * nrm[short]
+                # The lower-multiplicity cohort receives gamma partner volumes;
+                # the higher cohort loses exactly the corresponding real-bubble
+                # count.  This is the super-droplet update and conserves gas.
+                small, large = (i, j) if mi <= mj else (j, i)
+                m_small, m_large = float(self.mult[small]), float(self.mult[large])
+                max_gamma = int(np.floor(m_large / m_small))
+                if max_gamma <= 0:
+                    continue
+                gamma = min(gamma, max_gamma)
+                r_small, r_large = float(self.r[small]), float(self.r[large])
+                r_new = (r_small ** 3 + gamma * r_large ** 3) ** (1.0 / 3.0)
+                if r_new > self.r_conf():
+                    continue
+                before_small = self.pos[small].copy()
+                before_large = self.pos[large].copy()
+                v_small, v_large = self._vol(r_small), self._vol(r_large)
+                self.pos[small] = ((v_small * before_small + gamma * v_large * before_large)
+                                   / (v_small + gamma * v_large))
+                self.r[small] = r_new
+                self.r_dep[small] = max(float(self.r_dep[small]), r_new)
+                self.mult[large] = max(0.0, m_large - gamma * m_small)
+                merged_real = gamma * m_small
+                self.n_merge_free += 1
+                self.n_merge_real += merged_real
+                self._record_merge(before_small, before_large, r_new,
+                                   int(self.side[small]), False,
+                                   r_small, r_large)
+                changed = True
+
+        if changed:
+            self.W = self.mult * self._vol(self.r)
+            self._filter(self.mult > np.finfo(float).eps)
 
     def _coalesce(self):
         """Merge wall bubbles that have grown into a neighbour.
@@ -649,6 +663,8 @@ class Parcels:
         if not hit.any():
             return
         idx = np.nonzero(att)[0][hit]
+        event_pos = self.pos[idx].copy()
+        event_radius = self.r[idx].copy()
         self.r[idx] = self.r[idx] * 2.0 ** (1.0 / 3.0)
         self.mult[idx] = self.mult[idx] * 0.5      # W = mult*V(r) preserved
         # halved neighbour density + bigger reach -> recompute, no cascade
@@ -662,6 +678,10 @@ class Parcels:
             self.pos[idx, 0] = np.where(self.side[idx] == 0, xc - off, xa + off)
         else:
             self.pos[idx, 0] = np.where(self.side[idx] == 0, off, self.g.Lx - off)
+        for q, parcel_index in enumerate(idx):
+            self._record_merge(event_pos[q], event_pos[q], self.r[parcel_index],
+                               self.side[parcel_index], True,
+                               event_radius[q], event_radius[q])
 
     def _detach(self, ctx, j_A_m2):
         """Release attached bubbles that reached their departure radius."""
@@ -704,6 +724,30 @@ class Parcels:
         live[kept] = True
         self._filter(live)
 
+    def bubble_velocity(self, ns, ctx):
+        """Instantaneous representative-bubble velocity [m/s].
+
+        Attached bubbles are stationary. Free bubbles use the solved liquid
+        velocity plus Schiller--Naumann terminal slip and the published
+        Tomiyama/Antal wall-normal force balance. Artificial sinusoidal wobble
+        and random crawl are intentionally absent from the physical trajectory.
+        """
+        velocity = np.zeros((len(self.r), 3), dtype=np.float64)
+        free = ~self.attached
+        if not free.any():
+            return velocity
+        p = self.pos[free]
+        r = self.r[free]
+        uf, vf, wf = ns.sample_velocity(p)
+        slip = terminal_velocity(r, ctx["d_rho"], ctx["mu"], ctx["rho_l"])
+        side = self.side[free]
+        y_w, nrm = self._wall_dist(p[:, 0], side)
+        vn = self.wall_normal_velocity(r, slip, y_w, ctx)
+        velocity[free, 0] = uf + slip * ns.up[0] + vn * nrm
+        velocity[free, 1] = vf + slip * ns.up[1]
+        velocity[free, 2] = wf + slip * ns.up[2]
+        return velocity
+
     def _advect(self, ns, dt, ctx):
         """Rise the freed bubbles (flow + buoyant slip + lateral meander); vent
         those that reach the outlet. Attached bubbles stay put."""
@@ -713,22 +757,14 @@ class Parcels:
         if free.any():
             p = self.pos[free]
             r_f = self.r[free]
-            uf, vf, wf = ns.sample_velocity(p)
-            vs = terminal_velocity(r_f, ctx["d_rho"], ctx["mu"], ctx["rho_l"])
-            up = ns.up
+            velocity = self.bubble_velocity(ns, ctx)[free]
             # gentle lateral meander (organic, not a straight column)
-            mw = self.WOBBLE * vs * np.sin(6.0 * p[:, 1] / self.g.Ly * np.pi
-                                           + self.phase[free])
             # WALL-NORMAL force balance (Tomiyama lift vs Antal wall lubrication).
             # For these sizes the lift wins at every standoff >= r, so the drift
             # is inward and the bubbles stay pinned to the electrode — the model
             # now SAYS that instead of merely omitting the physics.
             side_f = self.side[free]
-            y_w, nrm = self._wall_dist(p[:, 0], side_f)
-            vn = self.wall_normal_velocity(r_f, vs, y_w, ctx)
-            d = np.stack([(uf + vs * up[0] + vn * nrm) * dt,
-                          (vf + vs * up[1]) * dt,
-                          (wf + vs * up[2] + mw) * dt], axis=1)
+            d = velocity * dt
             # axis-wise obstacle collision, SUBSTEPPED so a fast bubble can
             # never tunnel through a land in one step (the displacement is cut
             # into <= half-cell moves; an endpoint-only check let jet-riding
@@ -737,7 +773,6 @@ class Parcels:
             max_disp = float(np.abs(d).max()) if len(d) else 0.0
             n_sub = max(1, int(np.ceil(max_disp / (0.5 * self.g.h))))
             ds = d / n_sub
-            rise_blocked = np.zeros(len(p), dtype=bool)
             y_top = self.g.Ly - (self.r[free] + 0.2 * self.g.h)
             for _ in range(n_sub):
                 for ax in range(3):
@@ -749,18 +784,10 @@ class Parcels:
                         # gas that reaches it is trapped and must find the port
                         blocked |= (cand[:, 1] > y_top) & ~self._at_top_vent(cand[:, 2])
                     p[~blocked, ax] = cand[~blocked, ax]
-                    if ax == 1:
-                        rise_blocked |= blocked
             # trapped-bubble crawl: a riser pinned under a land (rise blocked)
             # wanders slowly sideways until it finds the turn gap — the
             # contact-line wobble real trapped bubbles show, and it keeps the
             # dead corners from collecting permanent residents
-            if rise_blocked.any():
-                cand = p.copy()
-                crawl = 0.4 * vs * dt * self.rng.choice([-1.0, 1.0], size=len(p))
-                cand[:, 2] += crawl
-                ok = rise_blocked & (~self._in_solid(ns, cand))
-                p[ok, 2] = cand[ok, 2]
             # the bubble surface cannot enter the electrode: its centre stops at
             # one radius from the catalyst plane (where the wall force diverges)
             y_w, nrm = self._wall_dist(p[:, 0], side_f)
@@ -797,12 +824,46 @@ class Parcels:
         self.ids = self.ids[keep]
 
     # --------------------------------------------------------------- deposit
+    def interphase_fields(self, ns, ctx):
+        """Deposit void, Sauter diameter and gas velocity on flow cells.
+
+        ``d32 = 6 alpha_g / a_i`` follows directly from dispersed-sphere volume
+        and interfacial area. Deposits include parcel multiplicity, so thinning
+        changes sampling noise but not phase volume or area.
+        """
+        gas = self.g.field()
+        area = self.g.field()
+        momentum = np.zeros((3,) + self.g.shape, dtype=np.float64)
+        if len(self.r):
+            inv_cell = 1.0 / self.g.cell_volume
+            void_weight = self.W * inv_cell
+            area_weight = self.mult * (4.0 * np.pi * self.r * self.r) * inv_cell
+            velocity = self.bubble_velocity(ns, ctx)
+            self.g.deposit27(gas, self.pos, void_weight)
+            self.g.deposit27(area, self.pos, area_weight)
+            for axis in range(3):
+                self.g.deposit27(momentum[axis], self.pos,
+                                 void_weight * velocity[:, axis])
+        gas_velocity = np.zeros_like(momentum)
+        occupied = gas > np.finfo(float).tiny
+        for axis in range(3):
+            gas_velocity[axis, occupied] = momentum[axis, occupied] / gas[occupied]
+        diameter = np.zeros_like(gas)
+        surfaced = area > np.finfo(float).tiny
+        diameter[surfaced] = 6.0 * gas[surfaced] / area[surfaced]
+        self.alpha_raw_max = float(gas.max()) if gas.size else 0.0
+        self.alpha_overfilled_cells = int(np.count_nonzero(gas > 1.0))
+        # A phase fraction cannot exceed one. The epsilon-sized gap only keeps
+        # alpha_l positive in the momentum equation; it is not a packing fit.
+        gas = np.minimum(gas, 1.0 - np.sqrt(np.finfo(float).eps))
+        return gas, gas_velocity, diameter
+
     def deposit_void(self):
         """Scatter bubble gas volume -> grid void fraction (3x3x3 smear)."""
         gas = self.g.field()
         if len(self.r):
             self.g.deposit27(gas, self.pos, self.W / self.g.cell_volume)
-        return np.minimum(gas, 0.8)
+        return np.minimum(gas, 1.0 - np.sqrt(np.finfo(float).eps))
 
     # ------------------------------------------------------------ diagnostics
     def resident_gas(self):

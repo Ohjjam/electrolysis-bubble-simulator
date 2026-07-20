@@ -28,14 +28,15 @@ def test_model_parameter_is_labeled_and_validated():
     })
     raw["numeric_changes"] = [
         {"key": "u_flow", "value": 0.5, "reason": "increase flushing"},
-        {"key": "fritz_scale", "value": 0.1, "reason": "closure sensitivity"},
+        {"key": "departure_diameter_um", "value": 260.0,
+         "reason": "measured zero-flow departure diameter"},
     ]
     plan = normalize_ai_plan(raw, dict(DESIGNER_DEFAULTS), 1.0)
     by_key = {item["key"]: item for item in plan["changes"]}
     assert by_key["u_flow"]["classification"] == "physical_or_operating"
-    assert by_key["fritz_scale"]["classification"] == "model_or_fitted"
+    assert by_key["departure_diameter_um"]["classification"] == "model_or_fitted"
     assert plan["apply"]["u_flow"] == 0.5
-    assert plan["apply"]["fritz_scale"] == 0.1
+    assert plan["apply"]["departure_diameter_um"] == 260.0
     assert any("Model/material/fitted" in warning for warning in plan["warnings"])
 
 

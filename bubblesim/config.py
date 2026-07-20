@@ -102,7 +102,8 @@ class ElectrodeParams:
 class Params:
     """Model coefficients and numerics (calibrate against data, then leave)."""
     # --- lumped electrode kinetics (both half-reactions folded into one Tafel) ---
-    fritz_scale: float = 1.0     # calibration factor on the Fritz departure radius [-]
+    fritz_scale: float = 1.0     # legacy fallback for clients without a measured reference
+    r_departure_ref: "float | None" = None  # measured zero-flow departure radius [m]
     j0: float = 1.0              # exchange current density [A/m^2]
     tafel_b: float = 0.15        # decadic Tafel slope [V/decade]
     j_lim: float = 4.0e4         # mass-transport limiting current density [A/m^2]
@@ -169,5 +170,3 @@ class Params:
 
     # --- coalescence ---
     c_coalesce_crit: float = 0.3 # electrolyte conc above which coalescence is inhibited [mol/L]
-    p_merge_inhibited: float = 0.05  # residual merge probability when inhibited [-]
-    p_merge_free: float = 0.9        # merge probability when not inhibited [-]

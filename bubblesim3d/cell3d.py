@@ -17,6 +17,7 @@ from .grid import Grid3D
 from .ns3d import NS3D
 from .parcels import Parcels
 from . import faceredist
+from bubblesim.constants import G
 from bubblesim.kernel.context import build_context
 from bubblesim.solvers.zerod import ZeroDTwoElectrodeSolver
 
@@ -140,6 +141,7 @@ class CellSim3D:
         # counterpart; with nu present it goes.
         self.ns.nu = float(self.ctx["mu"]) / float(self.ctx["rho_l"])
         self.ns.buoy = float(self.ctx["d_rho"]) / max(float(self.ctx["rho_l"]), 1e-12)
+        self.ns.set_fluid_properties(self.ctx["rho_l"], self.ctx["mu"])
         self.ns.damp = 0.0
         self._resolve()
 
@@ -151,6 +153,7 @@ class CellSim3D:
         self.ctx = build_context(self.op, self.params)
         self.ns.nu = float(self.ctx["mu"]) / float(self.ctx["rho_l"])  # T, c dependent
         self.ns.buoy = float(self.ctx["d_rho"]) / max(float(self.ctx["rho_l"]), 1e-12)
+        self.ns.set_fluid_properties(self.ctx["rho_l"], self.ctx["mu"])
         p = self.parcels
         if len(p.r):
             stubs = [_Stub(p.coverage(0), p.void_near_wall(0)),
@@ -201,8 +204,11 @@ class CellSim3D:
             self._resolve()
         self._n += 1
         j = self.cell_current_A_m2()
-        # two-way coupling: bubbles -> void -> buoyancy
-        self.ns.gas = self.parcels.deposit_void()
+        # Two-way coupling from parcel-derived phase fraction, Sauter diameter
+        # and gas velocity. NS3D derives the exchange rate from local physics;
+        # there is no fitted global drag strength.
+        gas, gas_velocity, diameter = self.parcels.interphase_fields(self.ns, self.ctx)
+        self.ns.set_interphase(gas, gas_velocity, diameter)
         self.ns.step(dt, proj_iters, tol=self.PROJ_TOL if tol is None else tol)
         # bubble lifecycle (nucleate -> grow -> detach -> rise) in one call
         self.parcels.step(self.ns, j, dt, self.ctx)
@@ -288,6 +294,16 @@ class CellSim3D:
             "sites_per_mm2": round(sites_m2 * 1e-6, 3),
             "rate_um3_ms": round(rate_m3_s * 1e15, 4),   # um^3 per ms per site
             "v_term_mm_s": round(v_term * 1e3, 3),       # riser speed at r_dep
+            # Read-only context for the browser's visual trajectory particles.
+            # It lets the renderer use the SAME radius-dependent
+            # Schiller-Naumann slip as Parcels without changing solver state.
+            "bubble_slip_model": {
+                "d_rho_kg_m3": float(self.ctx["d_rho"]),
+                "mu_Pa_s": float(self.ctx["mu"]),
+                "rho_l_kg_m3": float(self.ctx["rho_l"]),
+                "g_m_s2": float(G),
+                "sigma_N_m": float(self.ctx["sigma"]),
+            },
             "r_nuc_um": round(p.R_NUC * 1e6, 2),
             "spread": p.DETACH_SPREAD,
             "n_bub": int(len(p.r)),
@@ -299,6 +315,13 @@ class CellSim3D:
             "p_merge": round(p.p_merge(), 3),        # coalescence on contact
             "n_merge": int(p.n_merge),               # on the wall
             "n_merge_free": int(p.n_merge_free),     # in the rising swarm
+            "n_merge_real": float(p.n_merge_real),
+            "interphase_model": "Schiller-Naumann local d32/slip",
+            "interphase_rate_max_s": round(float(self.ns.interphase_rate_max), 4),
+            "interphase_re_max": round(float(self.ns.interphase_re_max), 4),
+            "alpha_g_raw_max": round(float(p.alpha_raw_max), 4),
+            "alpha_g_overfilled_cells": int(p.alpha_overfilled_cells),
+            "dispersed_bubble_valid": bool(p.alpha_overfilled_cells == 0),
             "r_exit_um": round(self._exit_radius() * 1e6, 1),
             "sweeps": int(getattr(self.ns, "sweeps", 0)),
             "flow_ok": bool(self.flow_connected),
@@ -402,6 +425,7 @@ class CellSim3D:
                      "Lx_mm": self.grid.Lx * 1e3, "Ly_mm": self.grid.Ly * 1e3,
                      "Lz_mm": self.grid.Lz * 1e3},
             "bubbles": self.parcels.snapshot_flat(),
+            "merge_events": list(self.parcels.merge_events),
             "n_bub": int(len(self.parcels.r)),
             "diag": self.diagnostics(),
         }

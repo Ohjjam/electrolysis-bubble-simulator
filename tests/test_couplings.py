@@ -110,8 +110,7 @@ def test_cdl_coverage_keeps_apex_frequency_grows_diameter():
 
 # ============================================================ F  coalescence
 def test_coalescence_threshold_is_electrolyte_specific():
-    """At c=0.15 M, KOH (crit 0.3 -> free, p=0.9) merges more than H2SO4
-    (crit 0.07 -> inhibited, p=0.05)."""
+    """At 0.15 M, KOH is below its CCC and H2SO4 is above its CCC."""
     from bubblesim.kernel.bubbles.bubble import Bubble
 
     def merges(electrolyte):
@@ -176,7 +175,7 @@ def test_simulator_supersaturation_differs_from_empirical():
     h_emp = Simulator(base, seed=0).run(t_end=0.5, dt=5e-4)
     h_ss = Simulator(_replace(base, nucleation="supersaturation"), seed=0).run(t_end=0.5, dt=5e-4)
     assert max(h_ss["n_bub"]) > 0 and h_ss["j"][-1] > 0.0
-    assert max(h_ss["n_bub"]) != max(h_emp["n_bub"])
+    assert h_ss["n_bub"] != h_emp["n_bub"]
 
 
 def test_pressure_suppresses_nucleation_end_to_end():

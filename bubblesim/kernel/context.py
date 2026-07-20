@@ -31,6 +31,7 @@ def build_context(op, params) -> dict:
         "rho_g": prop.gas_density(op.electrode, op.T, op.P),
         "mu": prop.liquid_viscosity_med(med, op.c_electrolyte, op.T),
         "fritz_scale": params.fritz_scale,
+        "r_departure_ref": params.r_departure_ref,
         "j0": params.j0,
         "tafel_b": params.tafel_b,
         "j_lim_eff": params.j_lim * (1.0 + params.flow_jlim * op.u_flow),
