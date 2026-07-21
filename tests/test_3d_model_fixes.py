@@ -9,7 +9,7 @@ from bubblesim.kernel.sources import faradaic_gas_rate
 from bubblesim3d.cell3d import CellSim3D
 from bubblesim3d.params3d import (DESIGNER_DEFAULTS, cell_config_from_designer,
                                   operating_from_designer)
-from server3d_app import LiveSim3D
+from server3d_app import LiveSim3D, mesh_catalog_status
 
 
 APP3D_HTML = Path(__file__).parents[1] / "web3d" / "app3d.html"
@@ -110,6 +110,29 @@ def test_analysis_spectrum_is_visual_only_and_can_show_raw_voxels():
     assert "if (analysisSmooth)" in html
     assert "sourceGrid: analysisData" in html
     assert "textureSize: faceTexC" in html
+
+
+def test_mesh2_ui_exposes_hydrophobic_only_mode():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert 'id="exMeshMode"' in html
+    assert 'data-v="hydrophobic"' in html
+    assert "mesh_mode: expMeshMode()" in html
+    assert '"mesh_mode","dry_cathode"' in html
+    assert "두께의 유체역학 효과 제외" in html
+
+
+def test_mesh2_catalog_does_not_reject_mesh_thicker_than_channel():
+    base = {**DESIGNER_DEFAULTS, "d_ch_mm": 0.9, "theta": 60,
+            "mesh_theta": 150}
+    physical = {m["id"]: m for m in mesh_catalog_status(base)}
+    mesh2 = {m["id"]: m for m in mesh_catalog_status(
+        {**base, "mesh_mode": "hydrophobic"})}
+    assert not physical["pp_094x094"]["fits"]
+    assert mesh2["pp_094x094"]["fits"]
+    assert mesh2["pp_094x094"]["hydraulic_mode"] == "hydrophobic_only"
+    assert mesh2["pp_094x094"]["obstruction"] == 0.0
+    assert mesh2["pp_094x094"]["u_boost"] == 1.0
+    assert mesh2["pp_094x094"]["dp_ratio"] == 1.0
 
 
 def test_quantitative_color_modes_have_viewport_legends():

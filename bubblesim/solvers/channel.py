@@ -213,6 +213,7 @@ class ChannelSolver:
             fields.update({
                 "mesh_on": True, "mesh_cover": mesh_cover,
                 "mesh_pos": getattr(op, "mesh_pos", "outlet"),
+                "mesh_mode": getattr(op, "mesh_mode", "physical"),
                 "mesh_bubble_d_mm": round(mf["bubble_d_mm"], 4),
                 "mesh_contact_prob": round(mf["contact_prob"], 4),
                 "mesh_wetting_drive": round(mf["wetting_drive"], 4),
@@ -224,6 +225,7 @@ class ChannelSolver:
                 "mesh_active_area_blocking_mode": mf["active_area_blocking_mode"],
                 "mesh_electrode_angle": round(mf["electrode_angle_deg"], 1),
                 "mesh_contact_angle": round(mf["mesh_angle_deg"], 1),
+                "mesh_hydraulic_mode": mf["hydraulic_mode"],
                 "mesh_warn": mf["warn"],
                 "mesh_mask_frac": float(mmask.mean()),
             })

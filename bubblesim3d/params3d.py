@@ -68,7 +68,8 @@ DESIGNER_DEFAULTS = {
     "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)
     "mesh_cover": 1.0,           # fraction of the flow path covered (1 = full)
     "mesh_pos": "outlet",        # partial-cover anchor: inlet | middle | outlet
-    "mesh_theta": 105.8,          # untreated PP apparent water contact angle [deg]
+    "mesh_theta": 105.8,         # untreated PP apparent water contact angle [deg]
+    "mesh_mode": "physical",     # physical | hydrophobic (Mesh 2: no hydraulic thickness)
     "void_frac": 0.82,           # void_ohmic_frac for the polarization sweep
                                  # (fraction of the electrolyte path the channel
                                  # void obstructs; calibrated on the pristine cell)
@@ -198,6 +199,8 @@ def sweep_operating(d: dict, j_macm2: float) -> Operating:
         op.mesh_contact_angle = _num(d, "mesh_theta")
         op.mesh_cover = min(1.0, max(0.0, _num(d, "mesh_cover")))
         op.mesh_pos = str(d.get("mesh_pos", "outlet"))
+        op.mesh_mode = ("hydrophobic" if str(d.get("mesh_mode", "physical")) == "hydrophobic"
+                        else "physical")
     return op
 
 

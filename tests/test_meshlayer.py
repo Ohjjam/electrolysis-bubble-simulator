@@ -45,6 +45,22 @@ def test_mesh_thicker_than_channel_cannot_mount():
     assert not f["fits"] and f["warn"]
 
 
+def test_mesh2_ignores_hydraulic_thickness_but_keeps_surface_transfer():
+    common = dict(open_frac=0.45, d_ch_mm=0.9, bubble_d_mm=0.23,
+                  electrode_angle_deg=60, mesh_angle_deg=150, hydraulic=False)
+    thin = mesh_factors(2.4, t_mm=0.2, **common)
+    thick = mesh_factors(2.4, t_mm=2.03, **common)
+    for result in (thin, thick):
+        assert result["fits"]
+        assert result["hydraulic_mode"] == "hydrophobic_only"
+        assert result["obstruction"] == 0.0
+        assert result["flow_open_frac"] == result["retention_factor"] == 1.0
+        assert result["u_boost"] == result["dp_ratio"] == 1.0
+        assert result["capture_eff"] > 0.0 and result["theta_factor"] < 1.0
+    assert thin["capture_eff"] == thick["capture_eff"]
+    assert thin["theta_factor"] == thick["theta_factor"]
+
+
 def test_contact_probability_is_smooth_and_finer_is_higher():
     kw = dict(open_frac=0.5, t_mm=0.483, d_ch_mm=0.9,
               bubble_d_mm=0.23, electrode_angle_deg=60, mesh_angle_deg=105.8)
@@ -118,6 +134,19 @@ def test_unfit_mesh_changes_nothing():
     b = _solve(_channel_op(1500, mesh_cover=1.0,
                            mesh_hole_mm=2.4, mesh_open=0.45, mesh_t_mm=2.03))
     assert abs(a.V - b.V) < 1e-12 and "mesh_on" not in b.fields
+
+
+def test_mesh2_channel_keeps_thick_mesh_active_without_flow_boost():
+    mesh2 = dict(mesh_hole_mm=2.4, mesh_open=0.45, mesh_t_mm=2.03,
+                 mesh_contact_angle=150, mesh_cover=1.0,
+                 mesh_mode="hydrophobic", contact_angle=60)
+    st = _solve(_channel_op(1500, **mesh2))
+    assert st.fields["mesh_on"]
+    assert st.fields["mesh_mode"] == "hydrophobic"
+    assert st.fields["mesh_hydraulic_mode"] == "hydrophobic_only"
+    assert st.fields["mesh_obstruction"] == 0.0
+    assert st.fields["mesh_u_boost"] == st.fields["mesh_dp_ratio"] == 1.0
+    assert st.fields["mesh_capture_eff"] > 0.0
 
 
 if __name__ == "__main__":

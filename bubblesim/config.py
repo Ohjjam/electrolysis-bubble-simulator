@@ -76,6 +76,7 @@ class Operating:
     mesh_contact_angle: float = 105.8 # untreated PP apparent water angle [deg]
     mesh_cover: float = 0.0           # fraction of the flow path covered [0..1] (1 = full)
     mesh_pos: str = "outlet"          # partial-cover anchor: "inlet" | "middle" | "outlet"
+    mesh_mode: str = "physical"       # physical | hydrophobic (ignore hydraulic thickness)
 
 
 @dataclass

@@ -374,8 +374,15 @@
         <b>질문</b>: 소수성 PP mesh를 양극 위에 올리면 기포 배출이 좋아져 고전류 전압이
         내려가는가? 어떤 mesh를, 어디에 덮는 게 최적인가?<br>
         <b>방법</b>: pristine 실측 곡선으로만 캘리브레이션(점선 대비 ●) → 전극 접촉각으로
-        이탈기포 크기를 계산하고, 그물코 접촉확률·전극/PP 젖음성 차이·유로 폐색으로
+        이탈기포 크기와 그물코 접촉확률·전극/PP 젖음성 차이를 계산하고, Mesh 1에서만 유로 폐색까지 반영해
         <b>순수 예측</b>(실측 mesh 분극 데이터 미사용).</div>
+    </div>
+    <div class="box" style="border-color:#3d5a80"><h3>Mesh 계산 방식</h3>
+      <div class="seg mini" id="exMeshMode">
+        <button data-v="physical" class="on">Mesh 1 · 형상+소수성</button>
+        <button data-v="hydrophobic">Mesh 2 · 소수성만</button>
+      </div>
+      <div id="exMeshModeNote" class="note" style="margin-top:6px"></div>
     </div>
     <div class="box" style="border-color:#4a5f2c"><h3>✓ dry cathode(물 투과) — 이 프리셋은 켜서 캘리브레이션됨</h3>
       <div class="note" style="border:none;margin:0;padding:0;font-size:11px;line-height:1.55">
@@ -411,7 +418,7 @@
       <div id="exQnote" class="note" style="margin-top:4px">–</div>
     </div>
     <div class="box"><h3>② PP mesh 선택 · 배치</h3>
-      <div class="ctl"><div class="lab"><span class="nm">mesh (두께&gt;채널깊이 = 장착불가)</span></div>
+      <div class="ctl"><div class="lab"><span class="nm" id="exMeshLabel">mesh (두께&gt;채널깊이 = 장착불가)</span></div>
         <select id="exMesh" style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
           <option value="">— mesh 없음 (pristine) —</option>
         </select></div>
@@ -608,12 +615,13 @@
         <span class="src">solvers/channel.py</span></div>
     </div>
 
-    <div class="box"><h3>⑥ PP mesh — 기포 크기·접촉각·유로 폐색</h3>
+    <div class="box"><h3>⑥ PP mesh — Mesh 1 형상효과 / Mesh 2 소수성 분리</h3>
       <div class="eq">P<sub>contact,UB</sub> = 1 − φ·max(1−d<sub>b</sub>/L<sub>x</sub>,0)·max(1−d<sub>b</sub>/L<sub>y</sub>,0)</div>
       <div class="eq">P<sub>wet</sub> = max[0, (cosθ<sub>e</sub>−cosθ<sub>m</sub>)/(1+cosθ<sub>e</sub>)]
         &nbsp;·&nbsp; P<sub>transfer,UB</sub> = P<sub>contact,UB</sub>P<sub>wet</sub></div>
       <div class="eq">χ = (1−φ)t<sub>m</sub>/d<sub>ch</sub> &nbsp;·&nbsp;
         u<sub>boost</sub> = 1/(1−χ) &nbsp;·&nbsp; ΔP/ΔP₀ ≈ u<sub>boost</sub><sup>3</sup></div>
+      <div class="eq"><b>Mesh 2:</b> χ = 0 · u<sub>boost</sub> = 1 · ΔP/ΔP₀ = 1 · retention = 1</div>
       <div class="eq-n">d<sub>b</sub>는 전극 접촉각과 국소 벽면 유속으로 계산한 이탈기포 직경입니다.
         <b>버블 중심은 직사각형 단위 셀 전체 어디서든 균일하게 생길 수 있으며, 구멍 중앙에 고정하지 않습니다.</b>
         메시가 전극에 거의 붙어 있다는 상한 가정에서, 버블 전체가 L<sub>x</sub>×L<sub>y</sub> 개구 안에 들어가는 중심 영역만
@@ -621,7 +629,8 @@
         Young 식 기반 전달 구동력이 생깁니다. χ는 메시 고체가 차지한 채널 체적비라 유속·압력강하 추정에만 씁니다.
         촉매 차단 손실은 메시-전극 간격·압착·측면 액 접근 데이터가 없어 전압식에 임의로 넣지 않습니다.<br>
         <b style="color:var(--gold)">L<sub>ref</sub>, 0.6, 0.5, 0.3 상수는 제거</b>했습니다. 접촉각 이력·거칠기·실제
-        woven mesh 압력손실은 아직 실측이 필요합니다.
+        woven mesh 압력손실은 아직 실측이 필요합니다. <b>Mesh 2는 이 불확실한 두께 효과를 전부 끄고</b>
+        같은 P<sub>contact,UB</sub>·P<sub>wet</sub>만 남기는 분리 실험입니다.
         <span class="src">kernel/meshlayer.py</span></div>
     </div>
 
@@ -2968,7 +2977,26 @@ const EXP_MEAS = [[10,1.48294],[20,1.4937],[50,1.5184],[100,1.55191],[200,1.6049
 let expCatalogLoaded = false, expLast = null, expCatalog = [];
 let expCatalogRequest = 0, expCatalogTimer = null;
 
+function expMeshMode() {
+  return document.getElementById("exMeshMode").querySelector(".on")?.dataset.v || "physical";
+}
+
+function expUpdateMeshModeUI() {
+  const hydrophobic = expMeshMode() === "hydrophobic";
+  document.getElementById("exMeshLabel").textContent = hydrophobic
+    ? "mesh (두께는 유로 계산에서 제외)"
+    : "mesh (두께>채널깊이 = 장착불가)";
+  document.getElementById("exMeshModeNote").innerHTML = hydrophobic
+    ? `<b>Mesh 2 · 소수성만</b>: mesh 두께는 카탈로그 정보로만 남습니다. ` +
+      `유로 단면·유속·체류시간·압력손실은 pristine과 같고, ` +
+      `<b>그물코 접촉확률 × 입력한 접촉각의 Young 구동력</b> 만 전극 기포 덮임에 반영합니다. ` +
+      `접촉각은 임의값으로 고정하지 않습니다. 완전 소수성 가정은 mesh 접촉각을 179°로 입력해 확인할 수 있습니다.`
+    : `<b>Mesh 1 · 형상+소수성</b>: 소수성 기포 전달과 함께 mesh 고체 체적이 ` +
+      `유로 단면을 줄이는 효과를 유속·체류시간·압력손실에 반영합니다.`;
+}
+
 async function expEnter() {
+  expUpdateMeshModeUI();
   if (!expCatalogLoaded) await expLoadCatalog();
   expUpdateAngleRead();
   expDrawMeshGeometry();
@@ -2979,7 +3007,7 @@ async function expLoadCatalog() {
     const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
     const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
     const req = ++expCatalogRequest;
-    const q = new URLSearchParams({ theta: te, mesh_theta: tm });
+    const q = new URLSearchParams({ theta: te, mesh_theta: tm, mesh_mode: expMeshMode() });
     const r = await (await fetch("/api3d/meshes?" + q)).json();
     if (req !== expCatalogRequest) return;           // discard an older angle response
     expCatalog = r.catalog || [];
@@ -3114,10 +3142,22 @@ function expDrawMeshGeometry(override) {
     (pc != null ? ` · P<sub>contact,UB</sub> ${(+pc).toFixed(3)}` : "") +
     (pw != null ? ` · P<sub>wet</sub> ${(+pw).toFixed(3)}` : "") +
     `<br><b>버블 중심은 가운데 고정이 아니라 단위 셀 전체 어디서든 균일하게 시작</b>한다고 가정합니다. ` +
-    `파란 원은 가능한 위치의 예시이며, 계산은 몇 개 점이 아니라 전체 면적을 적분한 식입니다.`;
+    `파란 원은 가능한 위치의 예시이며, 계산은 몇 개 점이 아니라 전체 면적을 적분한 식입니다.` +
+    (expMeshMode() === "hydrophobic"
+      ? `<br><b style="color:var(--accent)">Mesh 2에서는 위 두께를 유로 단면·유속·압력손실 계산에 사용하지 않습니다.</b>`
+      : "");
 }
 
 document.getElementById("exMesh").addEventListener("change", () => expDrawMeshGeometry());
+document.getElementById("exMeshMode").querySelectorAll("button").forEach(button => {
+  button.addEventListener("click", () => {
+    document.getElementById("exMeshMode").querySelectorAll("button")
+      .forEach(other => other.classList.toggle("on", other === button));
+    expUpdateMeshModeUI();
+    expCatalogLoaded = false;
+    expLoadCatalog();
+  });
+});
 for (const id of ["exElecTheta", "exMeshTheta"]) {
   document.getElementById(id).addEventListener("input", () => {
     expUpdateAngleRead(); expDrawMeshGeometry();
@@ -3157,6 +3197,7 @@ async function expSweep() {
     mesh_id: document.getElementById("exMesh").value,
     mesh_cover: (+document.getElementById("exCover").value) / 100,
     mesh_pos: pos,
+    mesh_mode: expMeshMode(),
     theta: +document.getElementById("exElecTheta").value,
     mesh_theta: +document.getElementById("exMeshTheta").value,
   };
@@ -3201,7 +3242,8 @@ function expOverlayAdd(res, body) {
     const posKo = { inlet: "입구쪽", middle: "중간", outlet: "출구쪽" };
     const cover = Math.round((s.mesh_cover ?? 1) * 100);
     const full = (res.mesh_info && res.mesh_info.name) || s.mesh_id;
-    label += ` + ${full.split(" — ")[0]} ${cover}%` +
+    const mode = s.mesh_mode === "hydrophobic" ? "M2 소수성만" : "M1 형상+소수성";
+    label += ` · ${mode} + ${full.split(" — ")[0]} ${cover}%` +
       (cover < 100 ? `(${posKo[s.mesh_pos] || s.mesh_pos})` : "");
   } else {
     label += " (mesh 없음)";
@@ -3305,7 +3347,7 @@ document.getElementById("exCpClr").onclick = () => { cpRec = []; expDrawCp(); };
 const CSV_KEYS = ["ff","n_ch","W_cm","H_cm","w_ch_mm","d_ch_mm","w_land_mm","h_mm",
   "mode","j","V_cell","u_flow","electrolyte","c_mol","T","Pbar","theta","tilt",
   "j0_cathode","j0_anode","alpha_a","r_mem","departure_diameter_um","dep_grad_um","gap_mm","t_mem_um","t_ptl_um",
-  "void_frac","mesh_id","mesh_cover","mesh_pos","mesh_theta","dry_cathode","n_drag","D_w_mem",
+  "void_frac","mesh_id","mesh_cover","mesh_pos","mesh_theta","mesh_mode","dry_cathode","n_drag","D_w_mem",
   "in_face","in_z","in_w","out_face","out_z","out_w"];
 
 function csvCell(v) {
@@ -3606,12 +3648,15 @@ function expReadout(res) {
   let html = `<b>전압차 mesh − pristine (음수=개선)</b><br>${rows.join(" · ")}<br>` +
     `최대전류 기액비 ≈ ${gl}:1 (출구 ε ${eo.toFixed(2)})`;
   if (res.mesh_info) {
-    html += `<br>mesh 물리: 이탈기포 ${(+res.mesh_info.bubble_d_mm).toFixed(3)} mm · ` +
+    const mesh2 = res.mesh_info.hydraulic_mode === "hydrophobic_only";
+    html += `<br>${mesh2 ? "Mesh 2 소수성 물리" : "Mesh 1 형상+소수성 물리"}: ` +
+      `이탈기포 ${(+res.mesh_info.bubble_d_mm).toFixed(3)} mm · ` +
       `접촉확률 상한 ${(100*(+res.mesh_info.contact_prob)).toFixed(1)}% · ` +
       `젖음성 구동 ${(100*(+res.mesh_info.wetting_drive)).toFixed(1)}% · ` +
       `전달지수 상한 ${(100*(+res.mesh_info.capture_eff)).toFixed(1)}%<br>` +
       `유로 폐색 ${(100*(+res.mesh_info.obstruction)).toFixed(1)}% · 국소유속 ×${(+res.mesh_info.u_boost).toFixed(2)} · ` +
-      `층류 ΔP 추정 ×${(+res.mesh_info.dp_ratio).toFixed(2)}`;
+      `층류 ΔP 추정 ×${(+res.mesh_info.dp_ratio).toFixed(2)}` +
+      (mesh2 ? ` <b style="color:var(--accent)">— 두께의 유체역학 효과 제외</b>` : "");
   }
   // dry cathode: where is the water-supply wall, and did the cell hit it?
   const w = res.water;

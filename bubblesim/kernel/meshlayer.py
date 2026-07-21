@@ -35,6 +35,12 @@ all.  This module instead keeps the mechanisms separate and dimensionless:
    catalyst-area blockage: that requires the mesh/electrode spacing,
    compression and lateral electrolyte access, none of which is specified.
 
+``hydraulic=False`` selects the Mesh 2 isolation experiment.  It retains the
+measured geometry for contact probability and the entered contact angles for
+the Young driving force, but sets obstruction to zero and all hydraulic
+multipliers to one.  Mesh thickness is therefore catalog metadata only; it
+cannot narrow the channel or alter velocity, residence time, or pressure loss.
+
 The model still does not resolve dynamic contact-angle hysteresis, capillary
 bridging, or a woven-mesh CFD pressure loss.  Those need measurements; the
 returned diagnostics keep that limitation visible.
@@ -75,13 +81,15 @@ def _clip_angle(value):
 def mesh_factors(hole_mm, open_frac, t_mm, d_ch_mm, *, bubble_d_mm=0.0,
                  electrode_angle_deg=DEFAULT_ELECTRODE_ANGLE,
                  mesh_angle_deg=DEFAULT_PP_ANGLE,
-                 hole_x_mm=None, hole_y_mm=None):
+                 hole_x_mm=None, hole_y_mm=None, hydraulic=True):
     """Return mesh factors from explicit geometry, bubble size, and wettability.
 
     ``hole_mm`` remains the backward-compatible mean opening.  Catalog entries
     pass ``hole_x_mm`` and ``hole_y_mm`` so rectangular openings are evaluated
     directly.  Angles are apparent water contact angles in degrees, measured
-    through the liquid phase.
+    through the liquid phase.  ``hydraulic=False`` is the Mesh 2 isolation
+    experiment: physical thickness remains reported but cannot shrink the
+    channel, boost velocity, change residence time, or add pressure loss.
     """
     db = max(0.0, float(bubble_d_mm))
     theta_e = _clip_angle(electrode_angle_deg)
@@ -96,13 +104,14 @@ def mesh_factors(hole_mm, open_frac, t_mm, d_ch_mm, *, bubble_d_mm=0.0,
         obstruction=0.0, flow_open_frac=1.0, u_boost=1.0, dp_ratio=1.0,
         theta_factor=1.0, retention_factor=1.0, blocking_fraction=0.0,
         active_area_blocking_mode="not_modelled",
+        hydraulic_mode="physical" if hydraulic else "hydrophobic_only",
     )
     if t_mm <= 0.0 or hole_mm <= 0.0:
         return neutral
 
     d = max(1e-6, float(d_ch_mm))
     t = max(0.0, float(t_mm))
-    if t >= d:
+    if hydraulic and t >= d:
         out = dict(neutral)
         out["fits"] = False
         out["warn"] = "mesh 두께가 채널 깊이 이상이라 장착할 수 없음"
@@ -122,7 +131,8 @@ def mesh_factors(hole_mm, open_frac, t_mm, d_ch_mm, *, bubble_d_mm=0.0,
     p_wet = max(0.0, min(1.0, (ce - cm) / max(1e-9, 1.0 + ce)))
     capture = p_contact * p_wet
 
-    obstruction = min(0.99, max(0.0, (1.0 - phi) * (t / d)))
+    obstruction = (min(0.99, max(0.0, (1.0 - phi) * (t / d)))
+                   if hydraulic else 0.0)
     flow_open = 1.0 - obstruction
     u_boost = 1.0 / flow_open
     dp_ratio = u_boost ** 3
@@ -149,6 +159,7 @@ def mesh_factors(hole_mm, open_frac, t_mm, d_ch_mm, *, bubble_d_mm=0.0,
         # separately as a hydraulic diagnostic.
         blocking_fraction=0.0,
         active_area_blocking_mode="not_modelled",
+        hydraulic_mode="physical" if hydraulic else "hydrophobic_only",
     )
 
 
@@ -166,6 +177,7 @@ def operating_mesh_factors(op, props, j):
         electrode_angle_deg=float(getattr(op, "contact_angle", DEFAULT_ELECTRODE_ANGLE)),
         mesh_angle_deg=float(getattr(op, "mesh_contact_angle", DEFAULT_PP_ANGLE)),
         hole_x_mm=hx, hole_y_mm=hy,
+        hydraulic=str(getattr(op, "mesh_mode", "physical")) != "hydrophobic",
     )
 
 

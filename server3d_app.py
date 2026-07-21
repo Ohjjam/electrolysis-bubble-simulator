@@ -85,6 +85,7 @@ class LiveSim3D:
         "in_face": {"bottom", "left", "right"},
         "out_face": {"top", "left", "right"},
         "mesh_pos": {"inlet", "middle", "outlet"},
+        "mesh_mode": {"physical", "hydrophobic"},
     }
 
     DT = 3.0e-3              # sim step [s] (semi-Lagrangian is unconditionally stable)
@@ -313,7 +314,8 @@ _sweep_cache = {}
 _SWEEP_KEYS = ("W_cm", "H_cm", "ff", "n_ch", "w_ch_mm", "d_ch_mm", "u_flow",
                "electrolyte", "c_mol", "T", "Pbar", "theta",
                "j0_cathode", "j0_anode", "alpha_a", "r_mem", "gap_mm", "void_frac",
-               "mesh_id", "mesh_cover", "mesh_pos", "mesh_theta", "departure_diameter_um",
+               "mesh_id", "mesh_cover", "mesh_pos", "mesh_theta", "mesh_mode",
+               "departure_diameter_um",
                # dry cathode (anolyte-only AEM) membrane water transport
                "dry_cathode", "n_drag", "D_w_mem", "t_mem_um")
 
@@ -364,6 +366,7 @@ def _sweep_one(d: dict, with_mesh: bool):
                                      "mesh_wetting_drive", "mesh_capture_eff",
                                      "mesh_obstruction", "mesh_u_boost",
                                      "mesh_dp_ratio", "mesh_blocking_fraction",
+                                     "mesh_hydraulic_mode",
                                      "mesh_electrode_angle", "mesh_contact_angle")
                            if k in st.fields}
     return out
@@ -423,8 +426,10 @@ def mesh_catalog_status(designer: dict) -> list:
                   "contact_prob": round(f["contact_prob"], 3),
                   "wetting_drive": round(f["wetting_drive"], 3),
                   "capture_eff": round(f["capture_eff"], 3),
+                  "obstruction": round(f["obstruction"], 4),
                   "u_boost": round(f["u_boost"], 2),
-                  "dp_ratio": round(f["dp_ratio"], 2)})
+                  "dp_ratio": round(f["dp_ratio"], 2),
+                  "hydraulic_mode": f["hydraulic_mode"]})
         out.append(e)
     return out
 
@@ -664,6 +669,7 @@ AI_SETTING_NOTES = {
     "h_mm": "live 3D voxel size [mm]; smaller is slower",
     "mesh_cover": "fraction of path covered by mesh",
     "mesh_theta": "mesh water contact angle [deg]",
+    "mesh_mode": "physical=mesh thickness changes hydraulics; hydrophobic=Mesh 2 wettability-only isolation",
     "void_frac": "calibrated fraction of electrolyte path obstructed by channel void",
     "speed": "visual simulation time scale; does not change polarization physics",
     "mesh_id": "mesh catalog identifier; empty string means no mesh",
@@ -1516,6 +1522,8 @@ class Handler(BaseHTTPRequestHandler):
                         dsn[k] = min(179.0, max(1.0, v))
                 except (TypeError, ValueError):
                     pass
+            if q.get("mesh_mode") in ("physical", "hydrophobic"):
+                dsn["mesh_mode"] = q["mesh_mode"]
             return self._json({"catalog": mesh_catalog_status(dsn)})
         if p == "/api3d/manifest":
             return self._run_json(self.path, "manifest.json")
