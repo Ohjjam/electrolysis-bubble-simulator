@@ -795,7 +795,8 @@
     <label class="sliceChk"><input type="checkbox" data-layer="membrane" checked> 막(membrane)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="ptl" checked> 다공층(PTL)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="walls" checked> 유로 벽(리브)</label>
-    <label class="sliceChk"><input type="checkbox" data-layer="mesh" checked> PP mesh</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="mesh" checked>
+      <span id="meshLayerLabel">PP mesh</span></label>
   </div>
 
   <div style="font-size:11.5px;color:var(--dim);margin:7px 0 3px">시각 프리셋</div>
@@ -1435,6 +1436,12 @@ const MAT = {
   memEdge: new THREE.MeshStandardMaterial({ color:0xd5e7ff, metalness:0.0, roughness:0.32 }),
   mesh: new THREE.MeshPhysicalMaterial({ color:0xe8eef5, transparent:true, opacity:0.78,
                                          roughness:0.66, metalness:0.0, clearcoat:0.12 }),
+  // Mesh 2 is a wettability/contact map, not a hydraulic solid.  A bright,
+  // double-sided zero-thickness sheet keeps it visible without implying that
+  // the catalog thickness narrows the channel.
+  mesh2: new THREE.MeshBasicMaterial({ color:0x2ed4c4, transparent:true, opacity:0.88,
+                                       side:THREE.DoubleSide, depthWrite:false,
+                                       polygonOffset:true, polygonOffsetFactor:-2 }),
 };
 const RIB_EDGE = new THREE.LineBasicMaterial({ color:0x17222d, transparent:true, opacity:0.42 });
 const SHARED_RENDER_MATERIALS = new Set([...Object.values(MAT), RIB_EDGE]);
@@ -2039,27 +2046,63 @@ function buildMesh3D(mesh) {
   if (!meshGroup) return;
   disposeObjectGeometry(meshGroup, SHARED_RENDER_MATERIALS);
   meshGroup.clear();
-  if (!mesh || !plateCtx) { applyLayers(); return; }
+  const layerLabel = document.getElementById("meshLayerLabel");
+  if (!mesh || !plateCtx) {
+    if (layerLabel) layerLabel.textContent = "PP mesh";
+    meshGroup.userData.physics = null;
+    meshGroup.userData.render = null;
+    applyLayers(); return;
+  }
   const W = plateCtx.W;
   const x = mesh.x_axis - gridInfo.nx * gridInfo.h / 2;
   const y0 = mesh.y0, y1 = mesh.y1;
   const r = Math.max(0.001, mesh.strand_radius);
   const py = Math.max(0.001, mesh.pitch_y), pz = Math.max(0.001, mesh.pitch_z);
   const yLen = Math.max(0, y1 - y0);
-  // Exact catalog radius and physics-derived pitch: this is the collector
-  // surface used by Parcels, not a decorative screen.
-  for (let z = 0, guard = 0; z <= W + 1e-8 && guard < 2000; z += pz, guard++) {
-    const strand = new THREE.Mesh(new THREE.CylinderGeometry(r, r, yLen, 12), MAT.mesh);
-    strand.position.set(x, y0 + yLen / 2, z - W / 2);
-    meshGroup.add(strand);
-  }
-  for (let y = y0, guard = 0; y <= y1 + 1e-8 && guard < 2000; y += py, guard++) {
-    const strand = new THREE.Mesh(new THREE.CylinderGeometry(r, r, W, 12), MAT.mesh);
-    strand.rotation.x = Math.PI / 2;
-    strand.position.set(x, y, 0);
-    meshGroup.add(strand);
+  const mesh2 = mesh.mode === "hydrophobic";
+  if (mesh2) {
+    // Mesh 2 deliberately removes out-of-plane thickness.  The selected
+    // catalog's openings and open fraction still set pitch and in-plane ribbon
+    // width, so every size remains distinguishable in 3-D.  PlaneGeometry has
+    // exactly zero depth and therefore cannot look like a channel obstruction.
+    const surfaceX = x - mesh.strand_radius + 0.002; // 2 um display offset: avoid z-fighting
+    const ribbonZ = Math.max(0.006, pz - Math.max(0, mesh.hole_z || 0));
+    const ribbonY = Math.max(0.006, py - Math.max(0, mesh.hole_y || 0));
+    for (let z = 0, guard = 0; z <= W + 1e-8 && guard < 2000; z += pz, guard++) {
+      const strand = new THREE.Mesh(new THREE.PlaneGeometry(ribbonZ, yLen), MAT.mesh2);
+      strand.rotation.y = Math.PI / 2;
+      strand.position.set(surfaceX, y0 + yLen / 2, z - W / 2);
+      meshGroup.add(strand);
+    }
+    for (let y = y0, guard = 0; y <= y1 + 1e-8 && guard < 2000; y += py, guard++) {
+      const strand = new THREE.Mesh(new THREE.PlaneGeometry(W, ribbonY), MAT.mesh2);
+      strand.rotation.y = Math.PI / 2;
+      strand.position.set(surfaceX, y, 0);
+      meshGroup.add(strand);
+    }
+    meshGroup.renderOrder = 7;
+    if (layerLabel) layerLabel.textContent = "PP mesh · Mesh 2 접촉면 (유로 무영향)";
+  } else {
+    // Mesh 1 shows the measured catalog thickness as physical cylinders.
+    for (let z = 0, guard = 0; z <= W + 1e-8 && guard < 2000; z += pz, guard++) {
+      const strand = new THREE.Mesh(new THREE.CylinderGeometry(r, r, yLen, 12), MAT.mesh);
+      strand.position.set(x, y0 + yLen / 2, z - W / 2);
+      meshGroup.add(strand);
+    }
+    for (let y = y0, guard = 0; y <= y1 + 1e-8 && guard < 2000; y += py, guard++) {
+      const strand = new THREE.Mesh(new THREE.CylinderGeometry(r, r, W, 12), MAT.mesh);
+      strand.rotation.x = Math.PI / 2;
+      strand.position.set(x, y, 0);
+      meshGroup.add(strand);
+    }
+    if (layerLabel) layerLabel.textContent = "PP mesh · Mesh 1 실제 두께";
   }
   meshGroup.userData.physics = { ...mesh };
+  meshGroup.userData.render = {
+    mode: mesh2 ? "mesh2_zero_thickness" : "mesh1_physical_thickness",
+    hydraulicThicknessMm: mesh2 ? 0 : 2 * r,
+    pitchYmm: py, pitchZmm: pz,
+  };
   applyLayers();
 }
 
@@ -3034,9 +3077,35 @@ const EXP_MEAS = [[10,1.48294],[20,1.4937],[50,1.5184],[100,1.55191],[200,1.6049
   [2250,2.78376]];
 let expCatalogLoaded = false, expLast = null, expCatalog = [];
 let expCatalogRequest = 0, expCatalogTimer = null;
+let expMeshPreviewTimer = null;
+let expMeshSelectionInitialized = false;
 
 function expMeshMode() {
   return document.getElementById("exMeshMode").querySelector(".on")?.dataset.v || "physical";
+}
+
+function expMeshDesignerPayload() {
+  const pos = document.getElementById("exPos").querySelector(".on")?.dataset.v || "outlet";
+  const { waterE, waterM } = expBubbleAngles();
+  return {
+    mesh_id: document.getElementById("exMesh").value,
+    mesh_cover: (+document.getElementById("exCover").value) / 100,
+    mesh_pos: pos,
+    mesh_mode: expMeshMode(),
+    theta: waterE,
+    mesh_theta: waterM,
+  };
+}
+
+function expSyncMeshPreview(delay = 100) {
+  clearTimeout(expMeshPreviewTimer);
+  expMeshPreviewTimer = setTimeout(() => {
+    // send() batches the fields into one server update.  Geometry inputs rebuild
+    // the live cell once, so selecting a catalog size immediately changes 3-D;
+    // the separate LSV button remains for the expensive comparison sweep.
+    const payload = expMeshDesignerPayload();
+    for (const key in payload) send(key, payload[key]);
+  }, delay);
 }
 
 function expBubbleAngles() {
@@ -3062,7 +3131,8 @@ function expUpdateMeshModeUI() {
     ? `<b>Mesh 2 · 소수성만</b>: mesh 두께는 카탈로그 정보로만 남습니다. ` +
       `유로 단면·유속·체류시간·압력손실은 pristine과 같고, ` +
       `<b>그물코 접촉확률 × 실측 가스버블 접촉각의 Young 구동력</b> 만 전극 기포 덮임에 반영합니다. ` +
-      `가스버블 각도는 물 접촉각으로 변환해 계산하며, PP의 더 작은 각도가 기체 선호 방향입니다.`
+      `가스버블 각도는 물 접촉각으로 변환해 계산하며, PP의 더 작은 각도가 기체 선호 방향입니다. ` +
+      `<b style="color:#2ed4c4">3D에서는 유로를 막지 않는 청록색 무두께 접촉면으로 표시합니다.</b>`
     : `<b>Mesh 1 · 형상+소수성</b>: 소수성 기포 전달과 함께 mesh 고체 체적이 ` +
       `유로 단면을 줄이는 효과를 유속·체류시간·압력손실에 반영합니다.`;
 }
@@ -3083,16 +3153,24 @@ async function expLoadCatalog() {
     if (req !== expCatalogRequest) return;           // discard an older angle response
     expCatalog = r.catalog || [];
     const sel = document.getElementById("exMesh");
-    const wanted = sel.value || "pp_040x053";
+    const wanted = expMeshSelectionInitialized ? sel.value : (sel.value || "pp_040x053");
     sel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
     for (const m of expCatalog) {
       const o = document.createElement("option");
       o.value = m.id;
       o.textContent = (m.fits ? "" : "🚫 ") + m.name + (m.fits ? "" : " — 장착불가");
       o.disabled = !m.fits;
-      if (m.id === wanted) o.selected = true;
       sel.appendChild(o);
     }
+    // A Mesh 2-only thick catalog item may become unmountable when returning
+    // to Mesh 1. Never leave a disabled option selected (that made live 3-D
+    // correctly remove the mesh but looked like a renderer failure).
+    const keepPristine = expMeshSelectionInitialized && wanted === "";
+    const selected = keepPristine ? null : (expCatalog.find(m => m.id === wanted && m.fits)
+      || expCatalog.find(m => m.id === "pp_040x053" && m.fits)
+      || expCatalog.find(m => m.fits));
+    sel.value = selected ? selected.id : "";
+    expMeshSelectionInitialized = true;
     expCatalogLoaded = true;
     expDrawMeshGeometry();
   } catch {}
@@ -3218,14 +3296,17 @@ function expDrawMeshGeometry(override) {
       : "");
 }
 
-document.getElementById("exMesh").addEventListener("change", () => expDrawMeshGeometry());
+document.getElementById("exMesh").addEventListener("change", () => {
+  expDrawMeshGeometry();
+  expSyncMeshPreview();
+});
 document.getElementById("exMeshMode").querySelectorAll("button").forEach(button => {
   button.addEventListener("click", () => {
     document.getElementById("exMeshMode").querySelectorAll("button")
       .forEach(other => other.classList.toggle("on", other === button));
     expUpdateMeshModeUI();
     expCatalogLoaded = false;
-    expLoadCatalog();
+    expLoadCatalog().then(() => expSyncMeshPreview());
   });
 });
 for (const id of ["exElecTheta", "exMeshTheta"]) {
@@ -3233,15 +3314,18 @@ for (const id of ["exElecTheta", "exMeshTheta"]) {
     expUpdateAngleRead(); expDrawMeshGeometry();
     clearTimeout(expCatalogTimer);
     expCatalogTimer = setTimeout(expLoadCatalog, 180); // refresh d_b for the new electrode angle
+    expSyncMeshPreview(240);
   });
 }
 
 document.getElementById("exCover").addEventListener("input", e => {
   document.getElementById("exCovLbl").textContent = e.target.value + "%";
+  expSyncMeshPreview(180);
 });
 document.getElementById("exPos").querySelectorAll("button").forEach(b => b.onclick = () => {
   document.getElementById("exPos").querySelectorAll("button").forEach(x => x.classList.remove("on"));
   b.classList.add("on");
+  expSyncMeshPreview();
 });
 
 document.getElementById("exPreset").onclick = () => {
@@ -3262,16 +3346,7 @@ document.getElementById("exGo").onclick = expSweep;
 async function expSweep() {
   const go = document.getElementById("exGo");
   go.disabled = true; go.textContent = "계산 중…";
-  const pos = document.getElementById("exPos").querySelector(".on").dataset.v;
-  const { waterE, waterM } = expBubbleAngles();
-  const body = {
-    mesh_id: document.getElementById("exMesh").value,
-    mesh_cover: (+document.getElementById("exCover").value) / 100,
-    mesh_pos: pos,
-    mesh_mode: expMeshMode(),
-    theta: waterE,
-    mesh_theta: waterM,
-  };
+  const body = expMeshDesignerPayload();
   // keep the shared designer in sync so app2d / state agree with the sweep
   for (const k in body) send(k, body[k]);
   try {
@@ -4688,6 +4763,7 @@ window.__meshInfo = () => ({
   visible: !!(meshGroup && meshGroup.visible),
   strands: meshGroup ? meshGroup.children.length : 0,
   physics: meshGroup ? meshGroup.userData.physics || null : null,
+  render: meshGroup ? meshGroup.userData.render || null : null,
   heldBubbles: instMesh.count,
 });
 window.__visInfo = () => {

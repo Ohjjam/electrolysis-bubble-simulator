@@ -119,6 +119,11 @@ def test_mesh2_ui_exposes_hydrophobic_only_mode():
     assert "mesh_mode: expMeshMode()" in html
     assert '"mesh_mode","dry_cathode"' in html
     assert "두께의 유체역학 효과 제외" in html
+    assert "mesh2_zero_thickness" in html
+    assert "new THREE.PlaneGeometry" in html
+    assert "expSyncMeshPreview" in html
+    assert "hydraulicThicknessMm: mesh2 ? 0" in html
+    assert "m.id === wanted && m.fits" in html
 
 
 def test_mesh_experiment_defaults_to_measured_gas_bubble_angles():

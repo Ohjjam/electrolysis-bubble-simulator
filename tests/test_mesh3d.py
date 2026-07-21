@@ -3,15 +3,18 @@ import math
 import numpy as np
 
 from bubblesim.config import Params
+from bubblesim3d.cell3d import CellSim3D
 from bubblesim3d.grid import Grid3D
-from bubblesim3d.params3d import DESIGNER_DEFAULTS, operating_from_designer
+from bubblesim3d.params3d import (DESIGNER_DEFAULTS, MESH_CATALOG,
+                                 cell_config_from_designer,
+                                 operating_from_designer)
 from bubblesim3d.parcels import Parcels
 
 
-def mesh_parcels(concentration=1.0):
+def mesh_parcels(concentration=1.0, mesh_id="pp_040x053", mesh_mode="physical"):
     designer = dict(DESIGNER_DEFAULTS)
-    designer.update(mesh_id="pp_040x053", c_mol=concentration,
-                    mesh_cover=1.0, mesh_pos="outlet")
+    designer.update(mesh_id=mesh_id, mesh_mode=mesh_mode,
+                    c_mol=concentration, mesh_cover=1.0, mesh_pos="outlet")
     op = operating_from_designer(designer)
     grid = Grid3D(6, 6, 6, 1.0e-3)
     return Parcels(grid, op, np.random.default_rng(4), params=Params(),
@@ -43,6 +46,34 @@ def test_live_operating_carries_catalog_mesh_geometry():
     assert math.isclose(geom["hole_y"], 1.346e-3)
     assert math.isclose(geom["strand_radius"], 0.483e-3 / 2)
     assert math.isclose(geom["pitch_z"], 1.016e-3 / math.sqrt(0.5))
+
+
+def test_every_mesh2_catalog_size_reaches_the_live_3d_snapshot():
+    snapshots = []
+    for spec in MESH_CATALOG:
+        snap = mesh_parcels(mesh_id=spec["id"], mesh_mode="hydrophobic").mesh_snapshot()
+        assert snap is not None
+        assert snap["id"] == spec["id"]
+        assert snap["mode"] == "hydrophobic"
+        assert math.isclose(snap["hole_z"], spec["hole_x_mm"], abs_tol=1e-6)
+        assert math.isclose(snap["hole_y"], spec["hole_y_mm"], abs_tol=1e-6)
+        assert math.isclose(2 * snap["strand_radius"], spec["t_mm"], abs_tol=1e-6)
+        snapshots.append((snap["pitch_y"], snap["pitch_z"], snap["strand_radius"]))
+    assert len(set(snapshots)) == len(MESH_CATALOG)
+
+
+def test_mesh2_does_not_change_live_cfd_solid_or_inlet_geometry():
+    pristine = dict(DESIGNER_DEFAULTS)
+    mesh2 = {**pristine, "mesh_id": "pp_094x094", "mesh_mode": "hydrophobic"}
+    cfg0, cfg2 = cell_config_from_designer(pristine), cell_config_from_designer(mesh2)
+    sim0 = CellSim3D(operating_from_designer(pristine), Params(), cfg0.grid_dims(),
+                     cfg0.h, cap=20, cfg=cfg0)
+    sim2 = CellSim3D(operating_from_designer(mesh2), Params(), cfg2.grid_dims(),
+                     cfg2.h, cap=20, cfg=cfg2)
+    assert np.array_equal(sim0.ns.solid, sim2.ns.solid)
+    assert np.array_equal(sim0.ns.inlet, sim2.ns.inlet)
+    assert np.array_equal(sim0.ns.outlet, sim2.ns.outlet)
+    assert sim0.inlet_area == sim2.inlet_area
 
 
 def test_mesh_capture_requires_contact_and_conserves_gas():
