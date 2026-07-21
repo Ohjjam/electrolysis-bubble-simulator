@@ -92,11 +92,34 @@
   #analysisField{width:100%;border:1px solid var(--line);border-radius:8px;
     background:var(--surf);color:var(--tx);padding:5px 7px;font-size:11px}
   #analysisDesc{min-height:29px;margin-top:5px;color:var(--dim);font-size:10px;line-height:1.4}
-  #analysisBar{height:11px;border-radius:5px;border:1px solid rgba(30,40,55,.22);
-    margin-top:6px;background:linear-gradient(90deg,#30123b,#2c7bb6,#49c9b0,#f9e721,#d7191c)}
-  .analysisTicks{display:flex;justify-content:space-between;color:var(--dim);font-size:9px;margin-top:2px}
   #analysisRead{margin-top:5px;padding-top:5px;border-top:1px solid var(--line);
     color:var(--tx);font-size:10.5px;min-height:22px}
+  #fieldLegendStack{position:absolute;z-index:12;top:174px;right:276px;
+    display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;
+    font-variant-numeric:tabular-nums}
+  .fieldLegend{width:126px;padding:8px 9px;border:1px solid rgba(180,190,205,.92);
+    border-radius:12px;background:rgba(255,255,255,.95);box-shadow:0 5px 22px rgba(20,32,52,.14);
+    backdrop-filter:blur(8px)}
+  .fieldLegend[hidden]{display:none}
+  .fieldLegendHead{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  .fieldLegendSymbol{display:inline-flex;align-items:center;justify-content:center;flex:none;
+    min-width:31px;height:27px;padding:0 5px;border:1px solid rgba(31,111,235,.28);
+    border-radius:8px;background:var(--surf2);color:var(--accent);
+    font:700 12px/1.1 "Cambria Math","Times New Roman",serif}
+  .fieldLegendSymbol sub{font-size:8px}
+  .fieldLegendLabel{min-width:0;font-size:10.5px;font-weight:700;line-height:1.2}
+  .fieldLegendUnit{display:block;margin-top:2px;color:var(--dim);font-size:9px;font-weight:400}
+  .fieldLegendScale{display:grid;grid-template-columns:14px minmax(0,1fr);gap:7px;height:154px}
+  .fieldLegendGradient{width:14px;height:100%;border:1px solid rgba(30,40,55,.28);
+    border-radius:6px;background:linear-gradient(to top,rgb(0,0,128) 0%,rgb(0,128,255) 25%,
+      rgb(128,255,128) 50%,rgb(255,128,0) 75%,rgb(128,0,0) 100%)}
+  .fieldLegendTicks{display:flex;flex-direction:column;justify-content:space-between;
+    min-width:0;color:var(--tx);font-size:9.5px;line-height:1;white-space:nowrap}
+  .fieldLegendTicks span{position:relative;padding-left:7px}
+  .fieldLegendTicks span::before{content:"";position:absolute;left:0;top:50%;width:4px;
+    border-top:1px solid #8b95a7}
+  .fieldLegendSummary{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:9px;line-height:1.35}
   #modeSeg.topModes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin-bottom:10px}
   #modeSeg.topModes button{min-width:0;background:var(--surf);color:var(--dim);
     border:1px solid var(--line);border-radius:8px;padding:6px 4px;font-size:11.5px;cursor:pointer}
@@ -196,7 +219,19 @@
     #mobilePanelActions{display:flex;gap:6px;margin:7px 0}
     #mobilePanelActions button{flex:1;border:1px solid var(--line);border-radius:8px;
       background:var(--surf);color:var(--dim);padding:6px 4px;font-size:10.5px}
-    #velLegend{display:none!important}
+    #fieldLegendStack{top:auto;left:10px;right:10px;bottom:82px;display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(138px,1fr));align-items:end;gap:5px}
+    .fieldLegend{width:auto;padding:6px 7px;border-radius:9px;backdrop-filter:blur(6px)}
+    .fieldLegendHead{margin-bottom:4px;gap:5px}
+    .fieldLegendSymbol{min-width:27px;height:23px;font-size:10.5px}
+    .fieldLegendLabel{font-size:9.5px}.fieldLegendUnit{display:inline;margin:0 0 0 4px;font-size:8.5px}
+    .fieldLegendScale{display:flex;flex-direction:column;height:auto;gap:2px}
+    .fieldLegendGradient{width:100%;height:9px;background:linear-gradient(to right,
+      rgb(0,0,128) 0%,rgb(0,128,255) 25%,rgb(128,255,128) 50%,rgb(255,128,0) 75%,rgb(128,0,0) 100%)}
+    .fieldLegendTicks{flex-direction:row-reverse;font-size:8px}
+    .fieldLegendTicks span:nth-child(2),.fieldLegendTicks span:nth-child(4){display:none}
+    .fieldLegendTicks span{padding:0}.fieldLegendTicks span::before{display:none}
+    .fieldLegendSummary{display:none}
     #modeSeg.topModes{grid-template-columns:repeat(4,minmax(0,1fr))}
     .toolMenuPanel{position:fixed;left:10px;right:10px;top:auto;width:auto}
   }
@@ -220,9 +255,37 @@
     </select>
     <div id="analysisDesc">셀에 표시할 계산 필드를 고르세요.</div>
     <div id="analysisScale" style="display:none">
-      <div id="analysisBar"></div>
-      <div class="analysisTicks"><span id="analysisMin">0</span><span id="analysisMax">1</span></div>
       <div id="analysisRead">셀 색상 위에 마우스를 올리면 위치별 값이 나옵니다.</div>
+    </div>
+  </div>
+  <div id="fieldLegendStack" aria-live="polite">
+    <div id="analysisLegend" class="fieldLegend" hidden>
+      <div class="fieldLegendHead">
+        <span class="fieldLegendSymbol" data-role="symbol">ε<sub>g</sub></span>
+        <span class="fieldLegendLabel"><span data-role="label">가스 홀드업</span><span class="fieldLegendUnit" data-role="unit">[–]</span></span>
+      </div>
+      <div class="fieldLegendScale">
+        <div class="fieldLegendGradient"></div>
+        <div class="fieldLegendTicks">
+          <span data-tick="4">1.00</span><span data-tick="3">0.75</span><span data-tick="2">0.50</span>
+          <span data-tick="1">0.25</span><span data-tick="0">0.00</span>
+        </div>
+      </div>
+      <div class="fieldLegendSummary" data-role="summary">평균 –</div>
+    </div>
+    <div id="bubbleVelocityLegend" class="fieldLegend" hidden>
+      <div class="fieldLegendHead">
+        <span class="fieldLegendSymbol" data-role="symbol">|u<sub>b</sub>|</span>
+        <span class="fieldLegendLabel"><span data-role="label">기포 이동속도</span><span class="fieldLegendUnit" data-role="unit">[m/s]</span></span>
+      </div>
+      <div class="fieldLegendScale">
+        <div class="fieldLegendGradient"></div>
+        <div class="fieldLegendTicks">
+          <span data-tick="4">0.25</span><span data-tick="3">0.19</span><span data-tick="2">0.13</span>
+          <span data-tick="1">0.06</span><span data-tick="0">0.00</span>
+        </div>
+      </div>
+      <div class="fieldLegendSummary" data-role="summary">P95 자동 범위</div>
     </div>
   </div>
   <div id="cameraDock" aria-label="3D 카메라 이동과 확대">
@@ -808,12 +871,6 @@
 </div>
 </div>
 
-<div id="velLegend" style="display:none;position:fixed;bottom:12px;left:12px;background:var(--glass);
-  border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:11px;color:var(--dim)">
-  기포 이동속도 |u<sub>b</sub>|&nbsp; 0 <span id="velGrad" style="display:inline-block;width:110px;height:9px;
-  vertical-align:middle;border-radius:3px;margin:0 5px"></span> <span id="velMax">0.25 m/s</span>
-</div>
-
 <script src="/web3d/i18n_catalog.js"></script>
 <script src="/web3d/i18n.js"></script>
 <script src="/web3d/controls.js"></script>
@@ -1180,6 +1237,7 @@ document.addEventListener("sim-language-change", () => {
   if (aiLastPlan) aiRenderPlan(aiLastPlan);
   if (aiLastEval) aiRenderEvaluation(aiLastEval);
   refreshAnalysisOverlay();
+  updateBubbleVelocityLegend();
   updateBubbleHud();
 });
 aiEl("aiProvider").addEventListener("change", () => {
@@ -1458,17 +1516,17 @@ function updateFaceTexture(tex, field, ny, nz, lo, hi) {
 
 const ANALYSIS_SPECS = {
   off: { label:"꺼짐", desc:"셀에 표시할 계산 필드를 고르세요." },
-  eps: { label:"가스 홀드업 ε", unit:"", floor:0.05,
+  eps: { label:"가스 홀드업", labelEn:"Gas holdup", symbol:"ε<sub>g</sub>", unit:"–", floor:0.05,
     desc:"관통방향 최대 가스 체적분율입니다. 0은 액체, 1은 가스입니다." },
-  speed: { label:"액체 유속 |u|", unit:"m/s", floor:0.01,
+  speed: { label:"액체 유속", labelEn:"Liquid velocity", symbol:"|u<sub>l</sub>|", unit:"m/s", floor:0.01,
     desc:"관통방향 최대 액체 속도입니다." },
-  j_c: { label:"음극 전류밀도 j", unit:"A/cm²",
+  j_c: { label:"음극 전류밀도", labelEn:"Cathode current density", symbol:"j<sub>c</sub>", unit:"A/cm²",
     desc:"기포 덮임을 반영해 재분배된 음극면 전류밀도입니다." },
-  j_a: { label:"양극 전류밀도 j", unit:"A/cm²",
+  j_a: { label:"양극 전류밀도", labelEn:"Anode current density", symbol:"j<sub>a</sub>", unit:"A/cm²",
     desc:"기포 덮임을 반영해 재분배된 양극면 전류밀도입니다." },
-  theta_c: { label:"음극 기포 덮임 θ", unit:"", floor:0.1,
+  theta_c: { label:"음극 기포 덮임", labelEn:"Cathode bubble coverage", symbol:"θ<sub>c</sub>", unit:"–", floor:0.1,
     desc:"음극면에서 기포가 가린 면적 비율입니다." },
-  theta_a: { label:"양극 기포 덮임 θ", unit:"", floor:0.1,
+  theta_a: { label:"양극 기포 덮임", labelEn:"Anode bubble coverage", symbol:"θ<sub>a</sub>", unit:"–", floor:0.1,
     desc:"양극면에서 기포가 가린 면적 비율입니다." },
 };
 
@@ -1535,6 +1593,23 @@ function analysisNumber(value) {
   return value.toFixed(3);
 }
 
+function updateQuantitativeLegend(id, options) {
+  const legend = document.getElementById(id);
+  if (!legend) return;
+  legend.hidden = !options || !options.visible;
+  if (legend.hidden) return;
+  const lo = Number(options.lo), hi = Number(options.hi);
+  const span = Math.max(0, hi - lo);
+  legend.querySelector('[data-role="symbol"]').innerHTML = options.symbol;
+  legend.querySelector('[data-role="label"]').textContent = options.label;
+  legend.querySelector('[data-role="unit"]').textContent = `[${options.unit || "–"}]`;
+  legend.querySelectorAll("[data-tick]").forEach(tick => {
+    const fraction = +tick.dataset.tick / 4;
+    tick.textContent = analysisNumber(lo + span * fraction);
+  });
+  legend.querySelector('[data-role="summary"]').textContent = options.summary || "";
+}
+
 function updateAnalysisDock(spec, range) {
   const scale = document.getElementById("analysisScale");
   const english = window.SimI18n && SimI18n.getLanguage() === "en";
@@ -1548,25 +1623,25 @@ function updateAnalysisDock(spec, range) {
   scale.style.display = analysisData && range ? "" : "none";
   const read = document.getElementById("analysisRead");
   if (!analysisData || !range) {
+    updateQuantitativeLegend("analysisLegend", { visible:false });
     read._base = english
       ? "Select a field, then hover over the colored cell to inspect local values."
       : "분석 항목을 고른 뒤 셀 색상 위에 마우스를 올리면 위치별 값이 나옵니다.";
     read.textContent = read._base;
     return;
   }
-  const suffix = spec.unit ? ` ${spec.unit}` : "";
-  document.getElementById("analysisMin").textContent = analysisNumber(range.lo) + suffix;
-  document.getElementById("analysisMax").textContent = analysisNumber(range.hi) + suffix;
+  const suffix = spec.unit && spec.unit !== "–" ? ` ${spec.unit}` : "";
   read._base = english
     ? `Mean ${analysisNumber(range.mean)}${suffix} · hover over the cell for a local value`
     : `평균 ${analysisNumber(range.mean)}${suffix} · 셀 색상 위에 마우스를 올려 위치값 확인`;
   read.textContent = read._base;
-  const stops = [0, .25, .5, .75, 1].map(t => {
-    const [r, g, b] = turbo(t);
-    return `rgb(${r},${g},${b}) ${Math.round(t * 100)}%`;
+  updateQuantitativeLegend("analysisLegend", {
+    visible:true, symbol:spec.symbol, label:english ? spec.labelEn : spec.label,
+    unit:spec.unit || "–", lo:range.lo, hi:range.hi,
+    summary:english
+      ? `Mean ${analysisNumber(range.mean)}${suffix}`
+      : `평균 ${analysisNumber(range.mean)}${suffix}`,
   });
-  document.getElementById("analysisBar").style.background =
-    `linear-gradient(90deg,${stops.join(",")})`;
 }
 
 function refreshAnalysisOverlay() {
@@ -2304,11 +2379,24 @@ function renderBubbles(now) {
   const wantLegend = P.bcol === "vel" && mode === "live";
   if (renderBubbles._leg !== wantLegend) {
     renderBubbles._leg = wantLegend;
-    document.getElementById("velLegend").style.display = wantLegend ? "" : "none";
+    updateBubbleVelocityLegend(wantLegend);
   }
 }
 let velocityScale = 0.25;                          // live colourbar max [m/s]
+let velocityP95 = 0.25;
 let velocityScaleUpdated = 0;
+
+function updateBubbleVelocityLegend(visible=P.bcol === "vel" && mode === "live") {
+  const english = window.SimI18n && SimI18n.getLanguage() === "en";
+  updateQuantitativeLegend("bubbleVelocityLegend", {
+    visible, symbol:"|u<sub>b</sub>|",
+    label:english ? "Bubble velocity" : "기포 이동속도",
+    unit:"m/s", lo:0, hi:velocityScale,
+    summary:english
+      ? `P95 ${analysisNumber(velocityP95)} m/s · auto range`
+      : `P95 ${analysisNumber(velocityP95)} m/s · 자동 범위`,
+  });
+}
 
 function niceVelocityMax(value) {
   value = Math.max(0.005, Math.min(1.0, value));
@@ -2408,13 +2496,11 @@ function updateVelocityScale(now) {
   }
   if (speeds.length) {
     speeds.sort((a, b) => a - b);
-    velocityScale = niceVelocityMax(speeds[Math.min(speeds.length - 1,
-      Math.floor(0.95 * (speeds.length - 1)))]);
+    velocityP95 = speeds[Math.min(speeds.length - 1,
+      Math.floor(0.95 * (speeds.length - 1)))];
+    velocityScale = niceVelocityMax(velocityP95);
   }
-  const text = velocityScale >= 0.1 ? velocityScale.toFixed(2)
-             : velocityScale >= 0.01 ? velocityScale.toFixed(3)
-             : velocityScale.toFixed(4);
-  document.getElementById("velMax").textContent = `${text} m/s`;
+  updateBubbleVelocityLegend();
 }
 
 function pickZoomFocus() {
@@ -3895,13 +3981,6 @@ document.getElementById("sliceMode").querySelectorAll("button").forEach(b => b.o
   document.getElementById("sliceMode").querySelectorAll("button").forEach(x => x.classList.remove("on"));
   b.classList.add("on"); sliceModeVal = b.dataset.m; drawSlice();
 });
-// velocity colourbar gradient (turbo stops)
-{
-  const stops = [0, 0.25, 0.5, 0.75, 1].map(t => {
-    const [r, g, b] = turbo(t); return `rgb(${r},${g},${b}) ${t * 100}%`;
-  });
-  document.getElementById("velGrad").style.background = `linear-gradient(to right, ${stops.join(",")})`;
-}
 drawSlice();                                    // initial paint (before first poll)
 
 // ==================== view presets (flat orthographic) =====================
@@ -4484,6 +4563,17 @@ window.__analysisInfo = () => ({
   } : null,
   faceC: !!(facePlaneC && facePlaneC.visible),
   faceA: !!(facePlaneA && facePlaneA.visible),
+  legendVisible: !document.getElementById("analysisLegend").hidden,
+});
+window.__colorLegendInfo = () => ({
+  analysisVisible:!document.getElementById("analysisLegend").hidden,
+  bubbleVelocityVisible:!document.getElementById("bubbleVelocityLegend").hidden,
+  bubbleVelocity:{ min:0, p95:+velocityP95.toFixed(6), max:+velocityScale.toFixed(6), unit:"m/s" },
+  analysis:analysisData ? {
+    min:+analysisData.range.lo.toFixed(6), mean:+analysisData.range.mean.toFixed(6),
+    max:+analysisData.range.hi.toFixed(6), unit:analysisData.spec.unit || "–",
+    symbol:analysisData.spec.symbol,
+  } : null,
 });
 window.__tiltInfo = () => ({
   requested:+(P.tilt || 0),

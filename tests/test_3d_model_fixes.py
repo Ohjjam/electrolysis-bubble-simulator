@@ -99,3 +99,13 @@ def test_3d_display_supports_dense_tracers_and_large_bubble_scales():
     assert 'max:5000, step:100' in html
     assert '["16","×16"]' in html
     assert "maxDisplayScale: 16" in html
+
+
+def test_quantitative_color_modes_have_viewport_legends():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert 'id="fieldLegendStack"' in html
+    assert 'id="analysisLegend"' in html
+    assert 'id="bubbleVelocityLegend"' in html
+    assert 'symbol:"|u<sub>b</sub>|"' in html
+    assert "window.__colorLegendInfo" in html
+    assert "velLegend" not in html
