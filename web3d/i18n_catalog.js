@@ -251,7 +251,7 @@
   "까지 같이 나갑니다. 최대전류 기준.": "We'll go out together until then. Based on maximum current.",
   "끄기": "Off",
   "나가므로 Excel에서 바로 겹쳐 그릴 수 있습니다.": "Because it goes out, you can overwrite it right away in Excel.",
-  "농도 (>0.3 M이면 합체 억제)": "Concentration (>0.3 M inhibits coalescence)",
+  "농도 (높을수록 합체 억제)": "Concentration (higher suppresses coalescence)",
   "농도 과전압 · 옴 손실": "Concentration Overvoltage Ohm Loss",
   "농전해질(KOH > 0.3 M)은": "Concentrated electrolytes (KOH > 0.3 M) are",
   "높이(y)별 평균 ε": "Average ε by height (y)",

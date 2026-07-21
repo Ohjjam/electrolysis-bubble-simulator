@@ -158,7 +158,11 @@ class LiveSim3D:
                  # ports + the user-drawn plate: all rebuild the voxel domain
                  "in_z", "in_w", "out_z", "out_w", "mask",
                  "in_face", "out_face",
-                 "h_mm", "dry_cathode"}     # hydraulic boundary also rebuilds
+                 "h_mm", "dry_cathode",     # hydraulic boundary also rebuilds
+                 # Mesh catalog geometry defines live 3-D collector strands.
+                 # Rebuild on layout changes so no existing parcel remains
+                 # attached to a strand that just moved or disappeared.
+                 "mesh_id", "mesh_cover", "mesh_pos", "mesh_mode"}
 
     @staticmethod
     def _clean(k, v):

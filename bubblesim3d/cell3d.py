@@ -250,15 +250,19 @@ class CellSim3D:
         p = self.parcels
         if len(p.r) == 0:
             return 0.0
-        m = (~p.attached) & (p.pos[:, 1] > 0.8 * self.grid.Ly)
+        p._ensure_state_arrays()
+        free = (~p.attached) & (~p.mesh_attached)
+        m = free & (p.pos[:, 1] > 0.8 * self.grid.Ly)
         if not m.any():
-            m = ~p.attached
+            m = free
         return float(p.r[m].mean()) if m.any() else 0.0
 
     def diagnostics(self):
         p = self.parcels
         r_mean, r_std = p.size_stats()
+        p._ensure_state_arrays()
         n_att = int(np.count_nonzero(p.attached)) if len(p.r) else 0
+        n_mesh = int(np.count_nonzero(p.mesh_attached)) if len(p.r) else 0
         # same near-wall-corrected departure radius the bubbles actually use,
         # including the seed floor the lifecycle enforces
         r_dep = max(2 * p.R_NUC,
@@ -308,14 +312,20 @@ class CellSim3D:
             "spread": p.DETACH_SPREAD,
             "n_bub": int(len(p.r)),
             "n_attached": n_att,
-            "n_free": int(len(p.r)) - n_att,
+            "n_mesh_attached": n_mesh,
+            "n_free": int(len(p.r)) - n_att - n_mesh,
             "r_dep_um": round(r_dep * 1e6, 1),       # real departure radius
             "r_conf_um": round(p.r_conf() * 1e6, 1), # channel-gap size limit
             "d_ch_um": round(self.channel_depth * 1e6, 1) if self.channel_depth else 0.0,
-            "p_merge": round(p.p_merge(), 3),        # coalescence on contact
+            "p_merge": round(p.p_merge(), 3),        # continuous medium efficiency
             "n_merge": int(p.n_merge),               # on the wall
+            "n_merge_mesh": int(p.n_merge_mesh),     # on PP strands
             "n_merge_free": int(p.n_merge_free),     # in the rising swarm
             "n_merge_real": float(p.n_merge_real),
+            "n_mesh_capture": int(p.n_mesh_capture),
+            "n_mesh_release_force": int(p.n_mesh_release_force),
+            "n_mesh_release_edge": int(p.n_mesh_release_edge),
+            "mesh_release_model": "Young-Dupre static angle; no hysteresis input",
             "interphase_model": "Schiller-Naumann local d32/slip",
             "interphase_rate_max_s": round(float(self.ns.interphase_rate_max), 4),
             "interphase_re_max": round(float(self.ns.interphase_re_max), 4),
@@ -425,6 +435,7 @@ class CellSim3D:
                      "Lx_mm": self.grid.Lx * 1e3, "Ly_mm": self.grid.Ly * 1e3,
                      "Lz_mm": self.grid.Lz * 1e3},
             "bubbles": self.parcels.snapshot_flat(),
+            "mesh3d": self.parcels.mesh_snapshot(),
             "merge_events": list(self.parcels.merge_events),
             "n_bub": int(len(self.parcels.r)),
             "diag": self.diagnostics(),

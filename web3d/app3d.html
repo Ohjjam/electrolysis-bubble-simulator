@@ -402,7 +402,7 @@
         이는 채널 모델의 void-onset 형태(EPS_FILM 문턱)에서 오는 구조적 한계입니다.</span><br><br>
         <b>여전히 미구현:</b> 막 내부 함수율 λ(x) 분포·건조에 따른 막 전도도 저하·이력현상(모두
         건식을 <b>더 나쁘게</b> 만드므로 이 항은 <b>하한</b>) · 음극의 기체상 H₂ 배출 ·
-        mesh는 라이브 3-D 물리엔 없음(LSV 예측 전용) · Ni foam 내부 관통류.</div>
+        Ni foam 내부 관통류.</div>
     </div>
     <div class="box"><h3>① 셀 프리셋</h3>
       <div class="row"><button class="btn" id="exPreset" style="border-color:var(--gold);color:var(--gold)">⚙ 실측 셀 프리셋 적용 (격자 재생성)</button></div>
@@ -464,7 +464,9 @@
       </div>
       <div class="note" style="margin-top:5px">실측 기본값(n=3): 촉매/NF 145.1±2.3°
         (142.5/146.3/146.6) · bare PP mesh 101.2±1.6° (99.7/101.2/102.8).
-        가스버블 각도는 내부에서 θ<sub>water</sub>=180°−θ<sub>bubble</sub>로 변환합니다.</div>
+        가스버블 각도는 내부에서 θ<sub>water</sub>=180°−θ<sub>bubble</sub>로 변환합니다.
+        수중 기포각이 클수록 aerophobic이므로 NF가 기포를 밀어내고, 상대적으로 기포 친화적인
+        PP가 접촉 기포를 수집한 뒤 유동·부력 또는 mesh 끝단에서 방출하는 방향입니다.</div>
       <div class="row"><button class="btn" id="exGo" style="border-color:var(--grn);color:var(--grn)">▶ 분극곡선 예측 계산</button></div>
       <div id="exWarn" class="note" style="display:none"></div>
     </div>
@@ -493,7 +495,7 @@
       <div class="note" style="margin-top:4px">지금 돌아가는 <b>라이브 3-D 셀</b>의 실제 거동 —
         CP 모드면 V(t), CA 모드면 j(t). 기포가 촉매를 덮고 유로를 막을수록 곡선이 떠오릅니다.
         아래 슬라이더로 조건을 바꾸면 새 과도응답부터 다시 기록.
-        ※ mesh는 아직 라이브 3-D 물리에는 없음 — mesh 효과는 위 LSV 예측으로 비교.</div>
+        선택한 mesh의 strand 수집·접촉 합체·힘평형/끝단 방출도 이 라이브 기록에 포함됩니다.</div>
     </div>
     <div class="note" style="margin:0 0 9px">⬇ 아래는 3D 탭과 같은 전체 컨트롤 —
       유로 형식·채널수·유량·접촉각 등을 바꾸고 <b>▶ 분극곡선 예측 계산</b>을 다시 누르면
@@ -644,7 +646,8 @@
         <b>추적 기포는 표본</b> — 초당 ~10만 개 나오는 실제 기포를 1400개로 <b>몬테카를로 표본</b>합니다
         (1개 ≈ mult개 실제). 그래서 화면 개수는 통계지 실개수가 아닙니다.<br>
         <b>Ni foam 내부 관통류 없음</b> · <b>막 함수율 분포 λ(x) 없음</b> ·
-        <b>기체 crossover 없음</b> · mesh는 <b>3-D 물리엔 미반영</b>(LSV 예측 전용).<br>
+        <b>기체 crossover 없음</b> · mesh는 부분격자 strand 수집 모델이며 woven-mesh 유동장을
+        직접 해상하지 않습니다. 정적 접촉각 이탈 근사는 이력현상을 포함하지 않습니다.<br>
         <b>외부 검증 상태</b>: 알칼라인 2전극 I–V는 실측(AHEAD)에 <b>캘리브레이션됨</b>(2.0V에서 12% 이내).
         PEM/산성은 <b>미검증</b>. 기포 동역학·EIS 스펙트럼은 <b>정량 검증 안 됨</b>.
         <span class="src">VALIDATION.md — 모델 카드 전문</span></div>
@@ -792,6 +795,7 @@
     <label class="sliceChk"><input type="checkbox" data-layer="membrane" checked> 막(membrane)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="ptl" checked> 다공층(PTL)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="walls" checked> 유로 벽(리브)</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="mesh" checked> PP mesh</label>
   </div>
 
   <div style="font-size:11.5px;color:var(--dim);margin:7px 0 3px">시각 프리셋</div>
@@ -1429,6 +1433,8 @@ const MAT = {
   gasket: new THREE.MeshStandardMaterial({ color:0x29333c, metalness:0.05, roughness:0.88 }),
   bolt: new THREE.MeshStandardMaterial({ color:0x8c98a3, metalness:0.9, roughness:0.26 }),
   memEdge: new THREE.MeshStandardMaterial({ color:0xd5e7ff, metalness:0.0, roughness:0.32 }),
+  mesh: new THREE.MeshPhysicalMaterial({ color:0xe8eef5, transparent:true, opacity:0.78,
+                                         roughness:0.66, metalness:0.0, clearcoat:0.12 }),
 };
 const RIB_EDGE = new THREE.LineBasicMaterial({ color:0x17222d, transparent:true, opacity:0.42 });
 const SHARED_RENDER_MATERIALS = new Set([...Object.values(MAT), RIB_EDGE]);
@@ -1456,6 +1462,7 @@ function setSolidsTransparency(flat) {
 
 let camHome = new THREE.Vector3();
 let cathodeGeom = null, anodeGeom = null, membraneMesh = null, ptlGroup = null, wallsGroup = null;
+let meshGroup = null, meshSig = "";
 let ptlMeshC = null, ptlMeshA = null;
 let plateMeshC = null, plateMeshA = null, cellEdge = null;
 let decorC = null, decorA = null, decorCore = null;
@@ -1464,13 +1471,14 @@ let decorC = null, decorA = null, decorCore = null;
 // electrode groups, so hiding an electrode silently deleted the 3-D walls and
 // only the flat dark stripes of the face TEXTURE remained ("벽 입체가 없어져").
 const layers = { cathode: true, anode: true, membrane: true, her: true, oer: true,
-                 ptl: true, walls: true };
+                 ptl: true, walls: true, mesh: true };
 function applyLayers() {
   if (cathodeGeom) cathodeGeom.visible = layers.cathode;
   if (anodeGeom) anodeGeom.visible = layers.anode;
   if (membraneMesh) membraneMesh.visible = layers.membrane;
   if (ptlGroup) ptlGroup.visible = layers.ptl;
   if (wallsGroup) wallsGroup.visible = layers.walls;
+  if (meshGroup) meshGroup.visible = layers.mesh;
   // Component visibility has one source of truth: the layer checkboxes.
   // Presets update those checkboxes instead of secretly hiding an object while
   // its checkbox remains checked.
@@ -2027,12 +2035,40 @@ function buildPorts(ports) {
   place(ports.out, ports.out_face || "top", MAT.outlet, "outlet");
 }
 
+function buildMesh3D(mesh) {
+  if (!meshGroup) return;
+  disposeObjectGeometry(meshGroup, SHARED_RENDER_MATERIALS);
+  meshGroup.clear();
+  if (!mesh || !plateCtx) { applyLayers(); return; }
+  const W = plateCtx.W;
+  const x = mesh.x_axis - gridInfo.nx * gridInfo.h / 2;
+  const y0 = mesh.y0, y1 = mesh.y1;
+  const r = Math.max(0.001, mesh.strand_radius);
+  const py = Math.max(0.001, mesh.pitch_y), pz = Math.max(0.001, mesh.pitch_z);
+  const yLen = Math.max(0, y1 - y0);
+  // Exact catalog radius and physics-derived pitch: this is the collector
+  // surface used by Parcels, not a decorative screen.
+  for (let z = 0, guard = 0; z <= W + 1e-8 && guard < 2000; z += pz, guard++) {
+    const strand = new THREE.Mesh(new THREE.CylinderGeometry(r, r, yLen, 12), MAT.mesh);
+    strand.position.set(x, y0 + yLen / 2, z - W / 2);
+    meshGroup.add(strand);
+  }
+  for (let y = y0, guard = 0; y <= y1 + 1e-8 && guard < 2000; y += py, guard++) {
+    const strand = new THREE.Mesh(new THREE.CylinderGeometry(r, r, W, 12), MAT.mesh);
+    strand.rotation.x = Math.PI / 2;
+    strand.position.set(x, y, 0);
+    meshGroup.add(strand);
+  }
+  meshGroup.userData.physics = { ...mesh };
+  applyLayers();
+}
+
 function rebuildCell() {
   if (faceTexC) faceTexC.dispose();
   if (faceTexA) faceTexA.dispose();
   disposeObjectGeometry(cellGroup, SHARED_RENDER_MATERIALS);
   cellGroup.clear();
-  landSig = ""; portSig = "";      // force mask-rib / port rebuild on the next poll
+  landSig = ""; portSig = ""; meshSig = ""; // force physics-geometry rebuild
   // The drawn cell IS the computed domain. Using the designer's W_cm/H_cm here
   // while the bubbles carry GRID coordinates made the ribs slide relative to
   // the gas whenever nz*h != W_cm*10 (voxel rounding, or the max_cells cap) —
@@ -2051,8 +2087,9 @@ function rebuildCell() {
   ptlGroup = new THREE.Group();
   portGroup = new THREE.Group();
   wallsGroup = new THREE.Group();      // channel walls: independent of the electrodes
+  meshGroup = new THREE.Group();       // PP collector strands from live physics
   decorC = new THREE.Group(); decorA = new THREE.Group(); decorCore = new THREE.Group();
-  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, ptlGroup, portGroup, wallsGroup,
+  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, ptlGroup, portGroup, wallsGroup, meshGroup,
                 decorC, decorA, decorCore);
 
   // Core: the PTL halves bridge the centre membrane to the inner rib faces.
@@ -2180,14 +2217,21 @@ const instAttached = new THREE.InstancedMesh(
   MAXB);
 instAttached.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
 instAttached.frustumCulled = false; instAttached.count = 0;
+const instMesh = new THREE.InstancedMesh(
+  bubbleGeometry,
+  movingBubbleMaterial,
+  MAXB);
+instMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3);
+instMesh.frustumCulled = false; instMesh.count = 0;
 const MERGE_MAX = 256;
 const mergeMaterial = bubbleMaterial(0.62, 0.08);
 mergeMaterial.depthWrite = false;
 const mergeInst = new THREE.InstancedMesh(bubbleGeometry, mergeMaterial, MERGE_MAX);
 mergeInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MERGE_MAX * 3), 3);
 mergeInst.frustumCulled = false; mergeInst.count = 0;
-visualRoot.add(inst, instAttached, mergeInst);
+visualRoot.add(inst, instAttached, instMesh, mergeInst);
 let displayedAttachedCount = 0;
+let displayedMeshCount = 0;
 let displayedDistributionCount = 0;
 let availableDistributionCount = 0;
 let displayedTracerCount = 0;
@@ -2249,7 +2293,8 @@ function _updateVisPool(st, now) {
   for (let q = 0; q < n; q++) {
     const o = q * 7;
     const x = b[o], y = b[o + 1], z = b[o + 2], r = b[o + 3];
-    const side = b[o + 4], att = b[o + 5] > 0.5, rawId = b[o + 6];
+    const side = b[o + 4], state = b[o + 5], att = state > 0.5;
+    const mesh = state > 1.5, rawId = b[o + 6];
     const cx = (x / CELL) | 0, cy = (y / CELL) | 0, cz = (z / CELL) | 0;
     let best = -1, bd = MATCH2;
     // Stable server IDs are authoritative, especially for electrode-attached
@@ -2275,7 +2320,7 @@ function _updateVisPool(st, now) {
     if (best >= 0) {                               // continue an existing bubble
       const v = visPool[best];
       v.claimed = true; v.dying = false;
-      v.rawId = rawId; v.att = att;
+      v.rawId = rawId; v.att = att; v.mesh = mesh;
       v.tx = x; v.ty = y; v.tz = z; v.tr = r; v.t0 = now; v.t1 = nextT;
       if (dtSim > 0) {
         const dx = x - v.sx, dy = y - v.sy, dz = z - v.sz;
@@ -2283,7 +2328,7 @@ function _updateVisPool(st, now) {
       }
     } else if (visPool.length < MAXB) {            // a genuine newcomer: fade in
       visPool.push({ sx: x, sy: y, sz: z, sr: r * 0.3, tx: x, ty: y, tz: z, tr: r,
-        side, att, rawId, key: (Math.random() * 4294967296) | 0, spd: 0,
+        side, att, mesh, rawId, key: (Math.random() * 4294967296) | 0, spd: 0,
         t0: now, t1: nextT, dying: false, claimed: true });
     }
   }
@@ -2328,7 +2373,7 @@ function ingestBubbles(st) {
 function renderBubbles(now) {
   if (mode !== "live" || !bubGrid) {
     if (mode !== "live") return;
-    inst.count = 0; instAttached.count = 0; return;
+    inst.count = 0; instAttached.count = 0; instMesh.count = 0; return;
   }
   const g = bubGrid, gridLx = (g.nx * g.h_mm);   // mm
   // Attached bubbles can detach within milliseconds. Keep the microscope view
@@ -2396,7 +2441,7 @@ function renderBubbles(now) {
   availableDistributionCount = eligibleFree;
   const freeRenderTarget = showFreeDistribution ? Math.min(displayLimit, eligibleFree) : 0;
   let freeSeen = 0;
-  let freeCount = 0, attachedCount = 0;
+  let freeCount = 0, attachedCount = 0, meshCount = 0;
   for (const v of visPool) {
     if (!eligible(v)) continue;
     if (v.att && reserveAttachedSlots
@@ -2419,7 +2464,7 @@ function renderBubbles(now) {
     // ×1 is the calculated physical radius; the 0.02 mm floor is render-only.
     const r = Math.max(0.02, pr * 1000 * Math.max(1, +P.bscale || 1));
     let orientation = _q;
-    if (v.att) {
+    if (v.att && !v.mesh) {
       // The physics centre remains untouched in visPool. Rendering compresses
       // only the electrode-normal axis and shifts the visual centre by the
       // removed cap height so the bubble still touches its catalyst plane.
@@ -2446,19 +2491,23 @@ function renderBubbles(now) {
       // Use the exact same H2/O2 colour as the moving bubble markers.
       _col.copy(v.side < 0.5 ? C_H2 : C_O2);
     }
-    const target = v.att ? instAttached : inst;
-    const index = v.att ? attachedCount++ : freeCount++;
+    const target = v.mesh ? instMesh : (v.att ? instAttached : inst);
+    const index = v.mesh ? meshCount++ : (v.att ? attachedCount++ : freeCount++);
     target.setMatrixAt(index, _m);
     target.setColorAt(index, _col);
   }
   inst.count = freeCount;
   instAttached.count = attachedCount;
+  instMesh.count = meshCount;
   displayedDistributionCount = freeCount;
   displayedAttachedCount = attachedCount;
+  displayedMeshCount = meshCount;
   inst.instanceMatrix.needsUpdate = true;
   instAttached.instanceMatrix.needsUpdate = true;
+  instMesh.instanceMatrix.needsUpdate = true;
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   if (instAttached.instanceColor) instAttached.instanceColor.needsUpdate = true;
+  if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
   // velocity colourbar legend follows the colour mode
   const wantLegend = P.bcol === "vel" && mode === "live";
   if (renderBubbles._leg !== wantLegend) {
@@ -2896,6 +2945,8 @@ function updateFaces(st) {
                + ":" + st.ports.in.join("") + "|" + st.ports.out.join("");
     if (psig !== portSig) { portSig = psig; buildPorts(st.ports); }
   }
+  const msig = st.mesh3d ? JSON.stringify(st.mesh3d) : "none";
+  if (msig !== meshSig) { meshSig = msig; buildMesh3D(st.mesh3d || null); }
   if (st.faces) {
     latestFaces = st.faces;
     const c = latestFaces.cathode, a = latestFaces.anode;
@@ -3817,10 +3868,11 @@ function updateBubbleHud() {
   const number = value => Math.max(0, Math.round(+value || 0)).toLocaleString(english ? "en-US" : "ko-KR");
   const view = P.bview || "move";
   const attached = bubGrid ? displayedAttachedCount : (+dg.n_attached || 0);
+  const meshHeld = bubGrid ? displayedMeshCount : (+dg.n_mesh_attached || 0);
   const distributionAvailable = bubGrid ? availableDistributionCount : (+dg.n_free || 0);
   document.getElementById("hAttached").textContent = english
-    ? `${number(attached)} shown · attached/growing`
-    : `${number(attached)}개 표시 · 부착·성장 중`;
+    ? `${number(attached)} electrode + ${number(meshHeld)} mesh-held shown`
+    : `전극 ${number(attached)}개 + mesh 수집 ${number(meshHeld)}개 표시`;
   document.getElementById("hDistribution").textContent = view === "move"
     ? (english
         ? `hidden · ${number(distributionAvailable)} statistical markers available`
@@ -4264,8 +4316,8 @@ function setVisualPreset(next) {
   document.getElementById("visualSeg").querySelectorAll("button").forEach(button =>
     button.classList.toggle("on", button.dataset.v === next));
   const presetLayers = next === "internal"
-    ? { cathode:false, anode:false, membrane:true, ptl:true, her:true, oer:true, walls:true }
-    : { cathode:true, anode:true, membrane:true, ptl:true, her:true, oer:true, walls:true };
+    ? { cathode:false, anode:false, membrane:true, ptl:true, her:true, oer:true, walls:true, mesh:true }
+    : { cathode:true, anode:true, membrane:true, ptl:true, her:true, oer:true, walls:true, mesh:true };
   // Presets are now ordinary, visible checkbox operations. After applying one,
   // the user can still customize every layer without a hidden preset override.
   document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
@@ -4558,8 +4610,9 @@ window.__camInfo = () => ({
 window.__tick = () => { controls.update(); renderer.render(scene, activeCam); };
 window.__rinfo = () => ({ calls: renderer.info.render.calls,
                           tris: renderer.info.render.triangles,
-                          instCount: inst.count + instAttached.count,
+                          instCount: inst.count + instAttached.count + instMesh.count,
                           freeBubbles: inst.count, attachedBubbles: instAttached.count,
+                          meshBubbles: instMesh.count,
                           w: renderer.domElement.width, h: renderer.domElement.height });
 window.__verify = () => {
   controls.update();
@@ -4591,7 +4644,7 @@ window.__dbg3d = () => {
 window.__clipCount = () => renderer.clippingPlanes.length;
 window.__renderNow = () => {
   renderBubbles(performance.now());
-  return inst.count + instAttached.count;
+  return inst.count + instAttached.count + instMesh.count;
 };
 function instanceScaleSample(mesh) {
   if (!mesh.count) return null;
@@ -4603,8 +4656,9 @@ function instanceScaleSample(mesh) {
 window.__bubbleStyleInfo = () => ({
   view: P.bview || "move", free: inst.count, freeVisible:inst.visible,
   freeAvailable:availableDistributionCount, attached: instAttached.count,
+  meshHeld:instMesh.count,
   tracked:trInst.count,
-  displayed: inst.count + instAttached.count,
+  displayed: inst.count + instAttached.count + instMesh.count,
   displayScale: Math.max(1, +P.bscale || 1),
   maxDisplayScale: 16,
   attachedAndMovingShareMaterial: instAttached.material === trInst.material,
@@ -4612,7 +4666,7 @@ window.__bubbleStyleInfo = () => ({
   attachedScaleSample: instanceScaleSample(instAttached),
   movingScaleSample: instanceScaleSample(trInst),
   requestedLimit: Math.max(0, Math.floor(+P.bcount || 0)),
-  pool: visPool.length, meshes: 3, mergeAnimations:mergeAnimations.length,
+  pool: visPool.length, meshes: 4, mergeAnimations:mergeAnimations.length,
   mergeVisible:mergeInst.count, maxInstances: MAXB,
   attachedNormalScaleAtTheta: +(0.48 + 0.18 * (Math.max(1, Math.min(179, +P.theta || 34.9)) / 179)).toFixed(3),
 });
@@ -4629,6 +4683,13 @@ window.__ribInfo = () => {
   };
   return { cathode: info(ribSubC), anode: info(ribSubA) };
 };
+window.__meshInfo = () => ({
+  enabled: !!meshGroup,
+  visible: !!(meshGroup && meshGroup.visible),
+  strands: meshGroup ? meshGroup.children.length : 0,
+  physics: meshGroup ? meshGroup.userData.physics || null : null,
+  heldBubbles: instMesh.count,
+});
 window.__visInfo = () => {
   const now = performance.now();
   let alive = 0, dying = 0, att = 0;

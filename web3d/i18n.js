@@ -180,7 +180,7 @@
     "셀 전압 (CA)": "Cell voltage (CA)",
     "전해질": "Electrolyte",
     "인산": "Phosphoric acid",
-    "농도 (>0.3 M이면 합체 억제)": "Concentration (>0.3 M suppresses coalescence)",
+    "농도 (높을수록 합체 억제)": "Concentration (higher suppresses coalescence)",
     "유동 · 기포": "Flow and bubbles",
     "유량 (펌프)": "Flow velocity (pump)",
     "전극 물 접촉각 (기포 이탈)": "Electrode water contact angle (bubble detachment)",

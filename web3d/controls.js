@@ -23,7 +23,7 @@
       { k:"j", nm:"전류밀도 j", un:"A/cm²", min:0.01, max:3, step:0.01, v:0.5, lo:0, hi:10 },
       { k:"V_cell", nm:"셀 전압 (CA)", un:"V", min:1.2, max:2.6, step:0.01, v:2.0, lo:0, hi:5 },
       { k:"electrolyte", nm:"전해질", seg:[["KOH","KOH"],["H2SO4","H₂SO₄"],["PB","인산"]], v:"KOH" },
-      { k:"c_mol", nm:"농도 (>0.3 M이면 합체 억제)", un:"mol/L", min:0.1, max:12, step:0.1, v:6, lo:0.01, hi:20 },
+      { k:"c_mol", nm:"농도 (높을수록 합체 억제)", un:"mol/L", min:0.1, max:12, step:0.1, v:6, lo:0.01, hi:20 },
     ]],
     ["유동 · 기포", [
       { k:"u_flow", nm:"유량 (펌프)", un:"m/s", min:0, max:2, step:0.01, v:0.35, lo:0, hi:5 },

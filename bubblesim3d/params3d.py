@@ -65,7 +65,7 @@ DESIGNER_DEFAULTS = {
     "D_w_mem": 1.0e-9,           # water diffusivity in the membrane [m^2/s]
         # (measured/calibrated r_mem pairs with a gap value; keep them together)
     "h_mm": 2.0,                 # live-grid voxel size [mm] (smaller = finer channels, slower)
-    # --- PP-mesh bubble-management interlayer (experiment tab; sweep only) --
+    # --- PP-mesh bubble-management interlayer ------------------------------
     "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)
     "mesh_cover": 1.0,           # fraction of the flow path covered (1 = full)
     "mesh_pos": "outlet",        # partial-cover anchor: inlet | middle | outlet
@@ -145,7 +145,7 @@ def operating_from_designer(d: dict) -> Operating:
     med = d.get("electrolyte", "KOH")
     if med not in _ELYTES:
         med = "KOH"
-    return Operating(
+    op = Operating(
         mode=mode,
         j_set=max(0.0, _num(d, "j")) * 1.0e4,          # A/cm^2 -> A/m^2  (CP)
         V_cell=max(0.0, _num(d, "V_cell")),            # V               (CA)
@@ -170,6 +170,39 @@ def operating_from_designer(d: dict) -> Operating:
         t_mem_um=max(1.0, _num(d, "t_mem_um")),
         high_fidelity=True,
     )
+    _attach_mesh(op, d)
+    return op
+
+
+def _attach_mesh(op, d):
+    """Attach measured mesh geometry to both live-3D and sweep Operating.
+
+    ``Operating`` deliberately contains only the shared electrochemistry fields;
+    the mesh catalog is a designer concern, so these optional attributes stay on
+    the bridge.  Keeping one helper prevents the former bug where the LSV sweep
+    knew about the selected mesh but the live 3-D solver silently did not.
+    """
+    ms = mesh_spec(str(d.get("mesh_id", "")))
+    op.mesh_id = "" if ms is None else ms["id"]
+    op.mesh_cover = min(1.0, max(0.0, _num(d, "mesh_cover")))
+    op.mesh_pos = str(d.get("mesh_pos", "outlet"))
+    op.mesh_mode = ("hydrophobic"
+                    if str(d.get("mesh_mode", "physical")) == "hydrophobic"
+                    else "physical")
+    if ms is None:
+        op.mesh_hole_mm = 0.0
+        op.mesh_hole_x_mm = 0.0
+        op.mesh_hole_y_mm = 0.0
+        op.mesh_open = 1.0
+        op.mesh_t_mm = 0.0
+        return op
+    op.mesh_hole_mm = ms["hole_mm"]
+    op.mesh_hole_x_mm = ms.get("hole_x_mm", ms["hole_mm"])
+    op.mesh_hole_y_mm = ms.get("hole_y_mm", ms["hole_mm"])
+    op.mesh_open = ms["open"]
+    op.mesh_t_mm = ms["t_mm"]
+    op.mesh_contact_angle = _num(d, "mesh_theta")
+    return op
 
 
 def sweep_operating(d: dict, j_macm2: float) -> Operating:
@@ -191,18 +224,6 @@ def sweep_operating(d: dict, j_macm2: float) -> Operating:
                                      # (j0, alpha_a, r_mem, void_frac) set pairs with these
     op.channel_void_ohmic = True
     op.void_ohmic_frac = min(1.0, max(0.0, _num(d, "void_frac")))
-    ms = mesh_spec(str(d.get("mesh_id", "")))
-    if ms is not None:
-        op.mesh_hole_mm = ms["hole_mm"]
-        op.mesh_hole_x_mm = ms.get("hole_x_mm", ms["hole_mm"])
-        op.mesh_hole_y_mm = ms.get("hole_y_mm", ms["hole_mm"])
-        op.mesh_open = ms["open"]
-        op.mesh_t_mm = ms["t_mm"]
-        op.mesh_contact_angle = _num(d, "mesh_theta")
-        op.mesh_cover = min(1.0, max(0.0, _num(d, "mesh_cover")))
-        op.mesh_pos = str(d.get("mesh_pos", "outlet"))
-        op.mesh_mode = ("hydrophobic" if str(d.get("mesh_mode", "physical")) == "hydrophobic"
-                        else "physical")
     return op
 
 

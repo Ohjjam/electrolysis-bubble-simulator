@@ -32,10 +32,12 @@ resolved statistically because the neighbours of a tracked bubble are its own
 chance that a Poisson-distributed neighbour falls inside its new reach grows by
 dP = P(reach_new) - P(reach_old), and a merge is drawn against dP * p_merge —
 rate-consistent (independent of dt) rather than a per-step coin flip.
-p_merge comes from the kernel: concentrated electrolytes (KOH above
-ELECTROLYTES["KOH"]["c_coalesce"] = 0.3 M) inhibit coalescence (salting-out).
+p_merge uses the electrolyte database's critical concentration as a continuous
+half-inhibition scale, so concentrated KOH suppresses rather than hard-disables
+coalescence.
 A merge halves `mult` and grows r by 2^(1/3): W = mult*V(r) is untouched.
-Not resolved: coalescence inside the free rising swarm.
+Free-swarm coalescence is resolved statistically; interface deformation and
+ion-resolved film chemistry are not.
 
 CONFINEMENT: the opposite plate is `channel_depth` away, so no bubble can grow
 past ~90% of the gap — beyond that it bridges the channel (slug flow) instead of
@@ -156,12 +158,22 @@ class Parcels:
         self.mult = z0()                  # real bubbles this tracked one represents
         self.side = np.zeros(0, dtype=np.int8)      # 0 cathode (x=0), 1 anode (x=Lx)
         self.attached = np.zeros(0, dtype=bool)
+        # A mesh-held bubble is no longer attached to the catalyst, but it is
+        # not a free riser either. mesh_axis: 1 = y-running strand, 2 = z-running
+        # strand. Keeping this state explicit avoids rendering/advecting a
+        # collected bubble as if it had already detached.
+        self.mesh_attached = np.zeros(0, dtype=bool)
+        self.mesh_axis = np.zeros(0, dtype=np.int8)
         self.r_dep = z0()                 # per-bubble departure radius [m]
         self.phase = z0()                 # per-bubble meander phase
         self.p_touch = z0()               # P(a neighbour lies within reach) so far
         self.n_merge = 0                  # wall coalescence events (diagnostic)
         self.n_merge_free = 0             # swarm coalescence events (diagnostic)
+        self.n_merge_mesh = 0             # physical-contact merges on PP strands
         self.n_merge_real = 0.0           # represented real-bubble pair events
+        self.n_mesh_capture = 0
+        self.n_mesh_release_force = 0
+        self.n_mesh_release_edge = 0
         self.merge_events = []            # bounded event stream for the renderer
         self._merge_seq = 0
         self.ids = np.zeros(0, dtype=np.int64)
@@ -180,6 +192,14 @@ class Parcels:
 
     def _face_area(self):
         return self.g.Ly * self.g.Lz
+
+    def _ensure_state_arrays(self):
+        """Backwards-compatible guard for small tests/legacy saved fixtures."""
+        n = len(self.r)
+        if len(self.mesh_attached) != n:
+            self.mesh_attached = np.zeros(n, dtype=bool)
+        if len(self.mesh_axis) != n:
+            self.mesh_axis = np.zeros(n, dtype=np.int8)
 
     def _record_merge(self, a, b, radius, side, attached, radius_a=None, radius_b=None):
         self._merge_seq += 1
@@ -227,6 +247,99 @@ class Parcels:
             xc, xa = self.elec_planes
             return (xc - off) if side == 0 else (xa + off)
         return off if side == 0 else self.g.Lx - off
+
+    # ---------------------------------------------------------- PP mesh layer
+    def mesh_geometry(self):
+        """Measured live-3D PP mesh geometry, in metres.
+
+        Catalog opening dimensions and open-area fraction determine the two
+        pitches.  Splitting the open-area ratio equally between the two woven
+        directions (hole/pitch = sqrt(phi)) is the unique symmetric solution;
+        it adds no fitted reference length.  The strand radius is the measured
+        catalog thickness / 2.
+        """
+        hole_z = 1e-3 * float(getattr(self.op, "mesh_hole_x_mm", 0.0))
+        hole_y = 1e-3 * float(getattr(self.op, "mesh_hole_y_mm", 0.0))
+        t = 1e-3 * float(getattr(self.op, "mesh_t_mm", 0.0))
+        cover = min(1.0, max(0.0, float(getattr(self.op, "mesh_cover", 0.0))))
+        if not getattr(self.op, "mesh_id", "") or hole_y <= 0 or hole_z <= 0 \
+                or t <= 0 or cover <= 0 or self.elec_planes is None:
+            return None
+        # A physical mesh thicker than the channel cannot be installed. Mesh 2
+        # intentionally removes that hydraulic constraint while retaining the
+        # measured strand geometry as a bubble-contact surface.
+        if str(getattr(self.op, "mesh_mode", "physical")) != "hydrophobic" \
+                and t >= self._gap():
+            return None
+        phi = min(0.99, max(0.01, float(getattr(self.op, "mesh_open", 1.0))))
+        scale = 1.0 / np.sqrt(phi)
+        pitch_y, pitch_z = hole_y * scale, hole_z * scale
+        span = cover * self.g.Ly
+        anchor = str(getattr(self.op, "mesh_pos", "outlet"))
+        if anchor == "inlet":
+            y0 = 0.0
+        elif anchor == "middle":
+            y0 = 0.5 * (self.g.Ly - span)
+        else:
+            y0 = self.g.Ly - span
+        xa = float(self.elec_planes[1])
+        return {
+            "id": str(getattr(self.op, "mesh_id", "")),
+            "pitch_y": pitch_y, "pitch_z": pitch_z,
+            "hole_y": hole_y, "hole_z": hole_z,
+            "strand_radius": 0.5 * t,
+            "x_axis": xa + 0.5 * t,
+            "y0": max(0.0, y0), "y1": min(self.g.Ly, y0 + span),
+            "open": phi,
+            "mode": str(getattr(self.op, "mesh_mode", "physical")),
+        }
+
+    def mesh_snapshot(self):
+        """Small renderer payload; no voxel or solver coordinate is changed."""
+        geom = self.mesh_geometry()
+        if geom is None:
+            return None
+        return {k: (round(float(v) * 1e3, 6) if k in {
+                    "pitch_y", "pitch_z", "hole_y", "hole_z", "strand_radius",
+                    "x_axis", "y0", "y1"} else v)
+                for k, v in geom.items()}
+
+    def _nearest_mesh_strand(self, p, radius, geom=None):
+        """Nearest physically reachable strand point for one bubble centre.
+
+        Returns ``(axis, point, distance_to_axis)`` only when the spherical
+        bubble actually intersects a measured cylindrical strand.  There is no
+        attraction distance, capture probability, or teleport to a crossing.
+        """
+        geom = self.mesh_geometry() if geom is None else geom
+        if geom is None or p[1] < geom["y0"] or p[1] > geom["y1"]:
+            return None
+        py, pz = geom["pitch_y"], geom["pitch_z"]
+        y_line = geom["y0"] + np.rint((p[1] - geom["y0"]) / py) * py
+        y_line = float(np.clip(y_line, geom["y0"], geom["y1"]))
+        z_line = float(np.clip(np.rint(p[2] / pz) * pz, 0.0, self.g.Lz))
+        dx = float(p[0] - geom["x_axis"])
+        d_y_axis = float(np.hypot(dx, p[2] - z_line))   # strand runs along y
+        d_z_axis = float(np.hypot(dx, p[1] - y_line))   # strand runs along z
+        axis = 1 if d_y_axis <= d_z_axis else 2
+        dist = d_y_axis if axis == 1 else d_z_axis
+        if dist > float(radius) + geom["strand_radius"]:
+            return None
+        point = np.array([geom["x_axis"], p[1], z_line], dtype=float) if axis == 1 \
+            else np.array([geom["x_axis"], y_line, p[2]], dtype=float)
+        return axis, point, dist
+
+    def _mesh_transfer_allowed(self):
+        """Young-equation gas affinity: NF -> PP only when PP is preferred.
+
+        Designer angles are water-side equivalents.  The measured underwater
+        bubble angle is 180-theta_water and Young-Dupre gas affinity is
+        1+cos(theta_bubble) = 1-cos(theta_water).  This is a deterministic
+        thermodynamic direction test, not a fitted capture probability.
+        """
+        theta_e = np.radians(float(getattr(self.op, "contact_angle", 90.0)))
+        theta_m = np.radians(float(getattr(self.op, "mesh_contact_angle", 90.0)))
+        return (1.0 - np.cos(theta_m)) > (1.0 - np.cos(theta_e))
 
     def _sample_sites(self, side, want):
         """Random continuous (y,z) nucleation spots on the face, restricted to
@@ -356,6 +469,7 @@ class Parcels:
 
     def step(self, ns, j_A_m2, dt, ctx):
         """One bubble-dynamics step: nucleate + grow, coalesce, detach, advect."""
+        self._ensure_state_arrays()
         self._t += dt
         r_dep0 = max(2 * self.R_NUC,
                      self.departure_radius(ctx, max(1e-6, j_A_m2)))
@@ -364,7 +478,13 @@ class Parcels:
         for _ in range(n_sub):
             self._nucleate_and_grow(j_A_m2, sdt, ctx, r_dep0)
             self._coalesce()
+            self._capture_on_mesh()
             self._detach(ctx, j_A_m2)
+        # Mesh parcels do not receive Faradaic growth directly, so one
+        # contact pass per outer flow step is sufficient and avoids repeating
+        # the same neighbour search up to MAX_SUB times.
+        self._coalesce_mesh()
+        self._move_and_release_mesh(ns, dt, ctx)
         self._advect(ns, dt, ctx)
         self._coalesce_free(ns, dt, ctx)
 
@@ -463,6 +583,11 @@ class Parcels:
             self.mult = np.concatenate([self.mult] + new_mult)
             self.side = np.concatenate([self.side] + new_side)
             self.attached = np.concatenate([self.attached] + new_att)
+            n_new = sum(len(v) for v in new_r)
+            self.mesh_attached = np.concatenate(
+                [self.mesh_attached, np.zeros(n_new, dtype=bool)])
+            self.mesh_axis = np.concatenate(
+                [self.mesh_axis, np.zeros(n_new, dtype=np.int8)])
             self.r_dep = np.concatenate([self.r_dep] + new_dep)
             self.phase = np.concatenate([self.phase] + new_ph)
             self.p_touch = np.concatenate([self.p_touch] + new_touch)
@@ -514,19 +639,190 @@ class Parcels:
                 self.pos[att, 0] = np.where(self.side[att] == 0, off,
                                             self.g.Lx - off)
 
+    def _capture_on_mesh(self):
+        """Transfer an OER bubble only after it geometrically touches PP."""
+        geom = self.mesh_geometry()
+        if geom is None or not self._mesh_transfer_allowed():
+            return
+        candidates = np.nonzero(self.attached & (self.side == 1))[0]
+        for i in candidates:
+            hit = self._nearest_mesh_strand(self.pos[i], self.r[i], geom)
+            if hit is None:
+                continue
+            axis, axis_point, _ = hit
+            self.attached[i] = False
+            self.mesh_attached[i] = True
+            self.mesh_axis[i] = axis
+            # Put the centre tangent to the channel-facing side of the measured
+            # cylindrical strand. Gas volume, radius, multiplicity and ID stay
+            # unchanged, so the transfer cannot create or destroy gas.
+            self.pos[i] = axis_point
+            self.pos[i, 0] = geom["x_axis"] + geom["strand_radius"] + self.r[i]
+            self.p_touch[i] = 0.0
+            self.n_mesh_capture += 1
+
+    def _coalesce_mesh(self):
+        """Merge mesh-held representative cohorts only on physical contact.
+
+        The smaller-multiplicity cohort takes one partner volume from the larger
+        cohort (the standard super-droplet update). This conserves represented
+        gas exactly and does not merge non-touching bubbles merely because they
+        occupy the same mesh unit cell.
+        """
+        idx = np.nonzero(self.mesh_attached & (self.mult > 0.0))[0]
+        if len(idx) < 2:
+            return
+        efficiency = self.p_merge()
+        if efficiency <= 0.0:
+            return
+        # Spatial hash: only bubbles in adjacent diameter-sized buckets can
+        # touch. This changes no collision criterion and keeps thousands of
+        # mesh-held representatives from turning into an O(N^2) live loop.
+        cell = max(2.0 * float(self.r[idx].max()), np.finfo(float).tiny)
+        coords = np.floor(self.pos[idx] / cell).astype(np.int64)
+        buckets = {}
+        for local, key in enumerate(map(tuple, coords)):
+            buckets.setdefault(key, []).append(local)
+        used = set()
+        for qa in range(len(idx)):
+            i = int(idx[qa])
+            if i in used or self.mult[i] <= 0.0:
+                continue
+            cx, cy, cz = coords[qa]
+            neighbours = []
+            for ax in (-1, 0, 1):
+                for ay in (-1, 0, 1):
+                    for az in (-1, 0, 1):
+                        neighbours.extend(buckets.get(
+                            (int(cx + ax), int(cy + ay), int(cz + az)), ()))
+            for qb in neighbours:
+                if qb <= qa:
+                    continue
+                j = int(idx[qb])
+                if j in used or self.mult[j] <= 0.0 or self.side[i] != self.side[j]:
+                    continue
+                if np.linalg.norm(self.pos[i] - self.pos[j]) > self.r[i] + self.r[j]:
+                    continue
+                # Contact is necessary; electrolyte film drainage supplies the
+                # continuous merge efficiency instead of a concentration cutoff.
+                if self.rng.random() > efficiency:
+                    continue
+                small, large = (i, j) if self.mult[i] <= self.mult[j] else (j, i)
+                ms, ml = float(self.mult[small]), float(self.mult[large])
+                rs, rl = float(self.r[small]), float(self.r[large])
+                r_new = (rs ** 3 + rl ** 3) ** (1.0 / 3.0)
+                if r_new > self.r_conf():
+                    continue
+                before_s, before_l = self.pos[small].copy(), self.pos[large].copy()
+                vs, vl = self._vol(rs), self._vol(rl)
+                self.pos[small] = (vs * before_s + vl * before_l) / (vs + vl)
+                self.r[small] = r_new
+                self.mult[large] = max(0.0, ml - ms)
+                self.W[small] = ms * self._vol(r_new)
+                self.W[large] = self.mult[large] * self._vol(rl)
+                self.r_dep[small] = max(float(self.r_dep[small]), r_new)
+                geom = self.mesh_geometry()
+                if geom is not None:
+                    hit = self._nearest_mesh_strand(self.pos[small], r_new, geom)
+                    if hit is not None:
+                        axis, axis_point, _ = hit
+                        self.mesh_axis[small] = axis
+                        self.pos[small] = axis_point
+                        self.pos[small, 0] = (geom["x_axis"]
+                                              + geom["strand_radius"] + r_new)
+                self.n_merge_mesh += 1
+                self.n_merge_real += ms
+                self._record_merge(before_s, before_l, r_new,
+                                   int(self.side[small]), False, rs, rl)
+                used.add(small); used.add(large)
+                break
+        if np.any(self.mult <= np.finfo(float).eps):
+            self._filter(self.mult > np.finfo(float).eps)
+
+    def _move_and_release_mesh(self, ns, dt, ctx):
+        """Slide on strands and release by measured-angle force balance.
+
+        With no measured contact-angle hysteresis we do not invent a tangential
+        pinning coefficient. A held bubble follows liquid+buoyant slip along its
+        current strand. It releases at a strand/coverage end, or when buoyancy
+        plus Schiller--Naumann drag exceeds the Young--Dupre static adhesion
+        estimate based on the measured PP bubble contact angle.
+        """
+        idx = np.nonzero(self.mesh_attached)[0]
+        if len(idx) == 0:
+            return
+        geom = self.mesh_geometry()
+        if geom is None:
+            self.mesh_attached[idx] = False
+            self.mesh_axis[idx] = 0
+            self.n_mesh_release_edge += len(idx)
+            return
+        p, r = self.pos[idx], self.r[idx]
+        uf, vf, wf = ns.sample_velocity(p)
+        liquid = np.stack([uf, vf, wf], axis=1)
+        speed = np.linalg.norm(liquid, axis=1)
+        rho, mu = float(ctx["rho_l"]), float(ctx["mu"])
+        sigma, d_rho = float(ctx["sigma"]), float(ctx["d_rho"])
+        Re = 2.0 * r * speed * rho / max(mu, np.finfo(float).tiny)
+        Cd = np.zeros_like(Re)
+        low = (Re > np.sqrt(np.finfo(float).eps)) & (Re < 1000.0)
+        high = Re >= 1000.0
+        Cd[low] = 24.0 / Re[low] * (1.0 + 0.15 * Re[low] ** 0.687)
+        Cd[high] = 0.44
+        drag = (0.5 * rho * Cd * np.pi * r * r * speed)[:, None] * liquid
+        buoy = (d_rho * self._vol(r) * G)[:, None] * np.asarray(ns.up)[None, :]
+        force = np.linalg.norm(drag + buoy, axis=1)
+
+        theta_b = np.radians(180.0 - float(getattr(
+            self.op, "mesh_contact_angle", 90.0)))
+        contact_radius = np.minimum(geom["strand_radius"],
+                                    r * abs(np.sin(theta_b)))
+        work_adhesion = sigma * max(0.0, 1.0 + np.cos(theta_b))
+        adhesion = 2.0 * np.pi * contact_radius * work_adhesion
+        release = force >= adhesion
+
+        # No hysteresis input => no invented static-friction force. A bubble may
+        # translate only along the strand that it is actually touching.
+        slip = terminal_velocity(r, d_rho, mu, rho)
+        transport = liquid + slip[:, None] * np.asarray(ns.up)[None, :]
+        held = ~release
+        axis = self.mesh_axis[idx]
+        move_y = held & (axis == 1)
+        move_z = held & (axis == 2)
+        p[move_y, 1] += transport[move_y, 1] * dt
+        p[move_z, 2] += transport[move_z, 2] * dt
+        edge = held & ((p[:, 1] < geom["y0"]) | (p[:, 1] > geom["y1"])
+                       | (p[:, 2] < 0.0) | (p[:, 2] > self.g.Lz))
+        p[:, 1] = np.clip(p[:, 1], 0.0, self.g.Ly)
+        p[:, 2] = np.clip(p[:, 2], 0.0, self.g.Lz)
+        self.pos[idx] = p
+
+        force_idx, edge_idx = idx[release], idx[edge]
+        if len(force_idx):
+            self.mesh_attached[force_idx] = False
+            self.mesh_axis[force_idx] = 0
+            self.n_mesh_release_force += len(force_idx)
+        if len(edge_idx):
+            self.mesh_attached[edge_idx] = False
+            self.mesh_axis[edge_idx] = 0
+            self.n_mesh_release_edge += len(edge_idx)
+
     # ----------------------------------------------------------- coalescence
     def p_merge(self):
-        """Whether the medium is below its measured coalescence threshold.
+        """Continuous electrolyte coalescence efficiency (0 < eta <= 1).
 
-        This deliberately returns 0 or 1 instead of the former fitted 0.05/0.9
-        probabilities. Collision frequency and film-drainage efficiency are
-        calculated separately; the electrolyte database supplies only its
-        empirical critical coalescence concentration.
+        The database's critical coalescence concentration is treated as the
+        measured half-inhibition concentration, eta=c_crit/(c_crit+c), instead
+        of the former nonphysical hard switch.  This is an explicit one-input
+        closure: it adds no new fitted constant, but it is not an ion-resolved
+        thin-film calculation.
         """
         p = self.params
         crit = ELECTROLYTES.get(getattr(self.op, "electrolyte", "KOH"), {}).get(
             "c_coalesce", getattr(p, "c_coalesce_crit", 0.3) if p else 0.3)
-        return 0.0 if getattr(self.op, "c_electrolyte", 0.0) > crit else 1.0
+        crit = max(float(crit), np.finfo(float).tiny)
+        concentration = max(0.0, float(getattr(self.op, "c_electrolyte", 0.0)))
+        return crit / (crit + concentration)
 
     def _p_touch(self, r, mult):
         """P(at least one real neighbour within reach) for a Poisson site field.
@@ -551,7 +847,9 @@ class Parcels:
         existing weighted cohorts in place, so the tracked-particle count does
         not grow with the number of outer time steps.
         """
-        free = np.nonzero((~self.attached) & (self.mult > 0.0))[0]
+        self._ensure_state_arrays()
+        free = np.nonzero((~self.attached) & (~self.mesh_attached)
+                          & (self.mult > 0.0))[0]
         if len(free) < 2 or self.p_merge() <= 0.0:
             return
         pos = self.pos[free]
@@ -598,7 +896,7 @@ class Parcels:
                 t_contact = (ri + rj) / approach
                 efficiency = float(np.exp(-t_drain / max(t_contact, tiny)))
                 kernel = np.pi * (ri + rj) ** 2 * approach * efficiency
-                probability = (max(mi, mj) * kernel * float(dt)
+                probability = (self.p_merge() * max(mi, mj) * kernel * float(dt)
                                / self.g.cell_volume * pair_factor)
                 gamma = int(np.floor(probability))
                 if self.rng.random() < probability - gamma:
@@ -638,6 +936,19 @@ class Parcels:
         if changed:
             self.W = self.mult * self._vol(self.r)
             self._filter(self.mult > np.finfo(float).eps)
+            # Coalescence increases the receiving parcel radius after advection.
+            # Re-seat that enlarged sphere against its electrode so the new
+            # surface cannot overlap the catalyst plane for one outer step.
+            free_now = (~self.attached) & (~self.mesh_attached)
+            if free_now.any():
+                idx = np.nonzero(free_now)[0]
+                clearance = np.nextafter(self.r[idx], np.inf)
+                y_w, nrm = self._wall_dist(self.pos[idx, 0], self.side[idx])
+                inside = y_w < clearance
+                if inside.any():
+                    hit = idx[inside]
+                    self.pos[hit, 0] += ((clearance - y_w)[inside]
+                                         * nrm[inside])
 
     def _coalesce(self):
         """Merge wall bubbles that have grown into a neighbour.
@@ -708,7 +1019,8 @@ class Parcels:
         risers and inflated the mean radius 3-8x -- a physics error. The id
         churn is handled in the RENDERER (nearest-match continuity), not here.
         """
-        free = np.nonzero(~self.attached)[0]
+        self._ensure_state_arrays()
+        free = np.nonzero((~self.attached) & (~self.mesh_attached))[0]
         if len(free) <= self.FREE_TARGET:
             return
         sel = self.rng.choice(len(free), size=self.FREE_TARGET, replace=False)
@@ -720,7 +1032,7 @@ class Parcels:
         scale = w_total / w_kept
         self.W[kept] *= scale
         self.mult[kept] *= scale
-        live = self.attached.copy()
+        live = self.attached | self.mesh_attached
         live[kept] = True
         self._filter(live)
 
@@ -732,8 +1044,9 @@ class Parcels:
         Tomiyama/Antal wall-normal force balance. Artificial sinusoidal wobble
         and random crawl are intentionally absent from the physical trajectory.
         """
+        self._ensure_state_arrays()
         velocity = np.zeros((len(self.r), 3), dtype=np.float64)
-        free = ~self.attached
+        free = (~self.attached) & (~self.mesh_attached)
         if not free.any():
             return velocity
         p = self.pos[free]
@@ -751,9 +1064,10 @@ class Parcels:
     def _advect(self, ns, dt, ctx):
         """Rise the freed bubbles (flow + buoyant slip + lateral meander); vent
         those that reach the outlet. Attached bubbles stay put."""
+        self._ensure_state_arrays()
         if len(self.r) == 0:
             return
-        free = ~self.attached
+        free = (~self.attached) & (~self.mesh_attached)
         if free.any():
             p = self.pos[free]
             r_f = self.r[free]
@@ -791,14 +1105,19 @@ class Parcels:
             # the bubble surface cannot enter the electrode: its centre stops at
             # one radius from the catalyst plane (where the wall force diverges)
             y_w, nrm = self._wall_dist(p[:, 0], side_f)
-            inside = y_w < r_f
+            # Use the next representable outward radius.  Subtracting a radius
+            # from an electrode-plane coordinate can otherwise round the final
+            # clearance a few ulps below r, which looks like a tiny penetration
+            # in downstream geometry checks.
+            clearance = np.nextafter(r_f, np.inf)
+            inside = y_w < clearance
             if inside.any():
-                p[inside, 0] += (r_f - y_w)[inside] * nrm[inside]
+                p[inside, 0] += (clearance - y_w)[inside] * nrm[inside]
             self.pos[free] = p
         # reflect off solid walls; vent free bubbles past the outlet
         m = self.r + 0.2 * self.g.h
         self.pos = self.g.clamp_points(self.pos, m)
-        free_now = ~self.attached
+        free_now = (~self.attached) & (~self.mesh_attached)
         y, z = self.pos[:, 1], self.pos[:, 2]
         vented = free_now & (y > (self.g.Ly - m)) & self._at_top_vent(z)
         if self.vent_line is not None and self.vent_face in ("left", "right"):
@@ -819,6 +1138,8 @@ class Parcels:
         self.pos = self.pos[keep]; self.r = self.r[keep]; self.W = self.W[keep]
         self.mult = self.mult[keep]
         self.side = self.side[keep]; self.attached = self.attached[keep]
+        self.mesh_attached = self.mesh_attached[keep]
+        self.mesh_axis = self.mesh_axis[keep]
         self.r_dep = self.r_dep[keep]; self.phase = self.phase[keep]
         self.p_touch = self.p_touch[keep]
         self.ids = self.ids[keep]
@@ -916,17 +1237,20 @@ class Parcels:
             / self.produced_cum
 
     def snapshot_flat(self):
-        """Flat [x, y, z, r, side, attached, id]*N in metres, grid frame.
+        """Flat [x, y, z, r, side, state, id]*N in metres, grid frame.
+
+        state: 0 free, 1 catalyst-attached, 2 mesh-held.
 
         The stable per-bubble id lets the browser MATCH bubbles across
         snapshots and interpolate their motion at 60 fps (same fix as the 2-D
         app's flow2d ids — without it the poll cadence shows as stutter)."""
+        self._ensure_state_arrays()
         if len(self.r) == 0:
             return []
         out = np.empty((len(self.r), 7))
         out[:, 0:3] = self.pos
         out[:, 3] = self.r
         out[:, 4] = self.side
-        out[:, 5] = self.attached.astype(float)
+        out[:, 5] = self.attached.astype(float) + 2.0 * self.mesh_attached.astype(float)
         out[:, 6] = self.ids
         return out.ravel().tolist()
