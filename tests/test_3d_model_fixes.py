@@ -97,8 +97,19 @@ def test_3d_display_supports_dense_tracers_and_large_bubble_scales():
     html = APP3D_HTML.read_text(encoding="utf-8")
     assert "const TR_N = 5000" in html
     assert 'max:5000, step:100' in html
+    assert 'v:"both", local:1' in html
+    assert 'v:5000, lo:0, hi:5000' in html
     assert '["16","×16"]' in html
     assert "maxDisplayScale: 16" in html
+
+
+def test_analysis_spectrum_is_visual_only_and_can_show_raw_voxels():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert 'id="analysisSmooth"' in html
+    assert "tex.userData.analysisScale = scale" in html
+    assert "if (analysisSmooth)" in html
+    assert "sourceGrid: analysisData" in html
+    assert "textureSize: faceTexC" in html
 
 
 def test_quantitative_color_modes_have_viewport_legends():

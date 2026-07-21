@@ -1,5 +1,8 @@
 /* Generated local Korean -> English UI catalog. No runtime network calls. */
 (function(g){ "use strict"; g.SIM_I18N_EN = {
+  "부드러운 스펙트럼": "Smooth spectrum",
+  "색상만 보간 · 계산값은 원본 복셀": "Color interpolation only · calculations use original voxels",
+  "색상만 보간하며 계산과 마우스 위치값은 원본 복셀을 사용합니다.": "Only the colors are interpolated; calculations and hovered values use the original voxels.",
   "# --- 조건 (designer) ---": "# --- Condition (designer) ---",
   "# 내보낸 시각": "# exported time",
   "# 유로단면_mm2": "# Euro section_mm2",
