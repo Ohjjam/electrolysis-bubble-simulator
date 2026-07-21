@@ -843,11 +843,11 @@ const CTRL = SIM_CTRL.concat([
       help:"이동 보기는 부착 기포와 계속 흐르는 트레이서만 표시합니다. 분포 보기는 통계적 대표 표본을 표시합니다." },
     { k:"bcol", nm:"색상 기준", seg:[["gas","기체 종류"],["vel","기포 이동속도 |uᵦ|"]], v:"gas", local:1,
       help:"기포가 3D 공간에서 이동하는 전체 속도입니다. 액체 유동과 부력 미끄럼을 함께 포함합니다." },
-    { k:"bscale", nm:"버블 표시 배율", seg:[["1","실제 ×1"],["2","×2"],["4","×4"]], v:"1", local:1,
+    { k:"bscale", nm:"버블 표시 배율", seg:[["1","실제 ×1"],["2","×2"],["4","×4"],["8","×8"],["12","×12"],["16","×16"]], v:"1", local:1,
       help:"부착·분포·이동 버블에 같은 배율을 적용합니다. ×1이 계산된 실제 크기입니다." },
     { k:"bcount", nm:"분포 표본 수 상한 (0=전체)", un:"개", min:0, max:9000, step:100, v:0, lo:0, hi:9000, local:1 },
-    { k:"trace", nm:"이동 트레이서 수", seg:[["off","끄기"],["300","300"],["700","700"],["1400","1400"]], v:"700", local:1,
-      help:"화면에 표시한 부착 대표 마커는 이탈 시 같은 위치에서 이동 경로로 이어집니다. 이동 슬롯 수 안에서 대표 경로만 표시합니다." },
+    { k:"trace", nm:"이동 트레이서 수 (0=끄기)", un:"개", min:0, max:5000, step:100, v:700, lo:0, hi:5000, local:1,
+      help:"0~5,000개의 화면용 대표 경로를 선택합니다. 계산 기포 수는 바뀌지 않으며, 많은 수는 기기 성능에 따라 프레임 속도가 낮아질 수 있습니다." },
   ]],
 ]);
 
@@ -2437,7 +2437,7 @@ function pickZoomFocus() {
 // parcels feel — plus radius-dependent terminal slip. They also use the same
 // voxel mask and half-cell collision substeps as Parcels._advect. They seed at
 // real bubble positions and remain continuous until they reach the outlet.
-const TR_N = 1400;                       // capacity; the drawn count follows P.trace
+const TR_N = 5000;                       // render capacity; physics parcels are unchanged
 const trInst = new THREE.InstancedMesh(
   new THREE.SphereGeometry(1, 14, 10),
   movingBubbleMaterial,
@@ -2546,7 +2546,10 @@ function _trSeed() {
 }
 
 function wantedTracerCount() {
-  return P.trace === "off" ? 0 : Math.min(TR_N, +P.trace > 0 ? +P.trace : 700);
+  if (P.trace === "off") return 0;       // backward-compatible saved UI state
+  const requested = Number(P.trace);
+  return Number.isFinite(requested)
+    ? Math.min(TR_N, Math.max(0, Math.floor(requested))) : 700;
 }
 
 // Same Schiller-Naumann terminal-velocity correlation as parcels.py. The
@@ -2591,9 +2594,13 @@ function renderTracers(now) {
   // handoffs. Filling every slot with random background markers forced each
   // new handoff to teleport an unrelated moving marker across the cell.
   const reservedForLifecycle = trackedAttachedIds.size + tracerHandoffs.length;
-  const backgroundTarget = Math.max(0, Math.min(
-    Math.floor(want * 0.65), want - reservedForLifecycle));
-  while (tracers.length < backgroundTarget) {
+  const backgroundTarget = Math.max(0, want - reservedForLifecycle);
+  // Fill a large selection over several frames. This avoids a one-frame hitch
+  // and seeds from successive server snapshots instead of stacking thousands
+  // of representative markers at the same sampled positions.
+  const seedBatch = Math.max(1, Math.ceil(backgroundTarget / 12));
+  let seeded = 0;
+  while (tracers.length < backgroundTarget && seeded++ < seedBatch) {
     const t = _trSeed(); if (!t) break; tracers.push(t);
   }
   // Append exact handoffs only into a free slot. Never replace a moving marker
@@ -2689,6 +2696,7 @@ function renderTracers(now) {
 }
 window.__traceInfo = () =>
   ({ mode:P.bview || "move", n:trInst.count, pool:tracers.length,
+     requested:wantedTracerCount(), capacity:TR_N,
      speedScale:velocityScale, solidReady:tracerMaskReady(bubGrid),
      inSolid:tracers.reduce((n, t) => n + (tracerPointInSolid(bubGrid, t.x, t.y, t.z) ? 1 : 0), 0),
      collisionBlocks:tracerCollisionBlocks, solidReseeds:tracerSolidReseeds,
@@ -4382,6 +4390,7 @@ window.__bubbleStyleInfo = () => ({
   tracked:trInst.count,
   displayed: inst.count + instAttached.count,
   displayScale: Math.max(1, +P.bscale || 1),
+  maxDisplayScale: 16,
   attachedAndMovingShareMaterial: instAttached.material === trInst.material,
   gasColors: { h2:C_H2.getHexString(), o2:C_O2.getHexString() },
   attachedScaleSample: instanceScaleSample(instAttached),

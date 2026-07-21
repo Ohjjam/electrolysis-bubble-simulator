@@ -1,5 +1,6 @@
 """Regression tests for the 3-D model audit fixes."""
 import math
+from pathlib import Path
 
 from bubblesim import Params
 from bubblesim.kernel.bubbles.forces import departure_radius
@@ -9,6 +10,9 @@ from bubblesim3d.cell3d import CellSim3D
 from bubblesim3d.params3d import (DESIGNER_DEFAULTS, cell_config_from_designer,
                                   operating_from_designer)
 from server3d_app import LiveSim3D
+
+
+APP3D_HTML = Path(__file__).parents[1] / "web3d" / "app3d.html"
 
 
 def _cell(**overrides):
@@ -87,3 +91,11 @@ def test_non_custom_flow_clears_a_stale_drawn_mask():
     assert result["accepted"]["mask"] == ""
     assert live.designer["ff"] != "custom"
     assert live.designer["mask"] == ""
+
+
+def test_3d_display_supports_dense_tracers_and_large_bubble_scales():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert "const TR_N = 5000" in html
+    assert 'max:5000, step:100' in html
+    assert '["16","×16"]' in html
+    assert "maxDisplayScale: 16" in html
