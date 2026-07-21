@@ -19,7 +19,8 @@ class Operating:
     c_electrolyte: float = 6.0   # electrolyte concentration [mol/L]
     T: float = 333.15            # temperature [K]  (~60 degC)
     P: float = 1.0e5             # pressure [Pa]
-    contact_angle: float = 60.0  # apparent water contact angle through liquid [deg]
+    # Water-side equivalent of measured catalyst/NF gas-bubble angle 145.1 deg.
+    contact_angle: float = 34.9  # apparent water contact angle through liquid [deg]
     u_flow: float = 0.0          # tangential cross-flow velocity [m/s]
     B_field: float = 0.0         # magnetic flux density [T]  (MHD convection)
     E_ext: float = 0.0           # near-surface field magnitude for DEP [V/m]
@@ -73,7 +74,9 @@ class Operating:
     mesh_hole_y_mm: float = 0.0       # rectangular opening y [mm] (0 -> mean)
     mesh_open: float = 1.0            # open-area fraction phi [0..1]
     mesh_t_mm: float = 0.0            # mesh thickness [mm] (0 = no mesh)
-    mesh_contact_angle: float = 105.8 # untreated PP apparent water angle [deg]
+    # Water-side equivalent of the measured PP gas-bubble angle 101.2 deg:
+    # theta_water = 180 - theta_bubble = 78.8 deg.
+    mesh_contact_angle: float = 78.8
     mesh_cover: float = 0.0           # fraction of the flow path covered [0..1] (1 = full)
     mesh_pos: str = "outlet"          # partial-cover anchor: "inlet" | "middle" | "outlet"
     mesh_mode: str = "physical"       # physical | hydrophobic (ignore hydraulic thickness)

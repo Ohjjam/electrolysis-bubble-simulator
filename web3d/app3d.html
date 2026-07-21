@@ -441,20 +441,20 @@
           <button data-v="outlet" class="on">출구쪽</button>
         </div></div>
       <div style="margin-top:8px;padding:8px;border:1px solid #3d5a80;border-radius:8px;background:rgba(61,90,128,.10)">
-        <div style="font-size:11px;font-weight:700;margin-bottom:6px">표면 접촉각 — 서로 독립적으로 입력</div>
+        <div style="font-size:11px;font-weight:700;margin-bottom:6px">수중 가스버블 접촉각 — 기포 내부 기준</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
           <label style="display:block;font-size:10px;color:var(--dim)">
-            전극 Ni foam θ<sub>e</sub>
+            촉매/NF θ<sub>b,e</sub>
             <span style="display:flex;align-items:center;gap:4px;margin-top:3px">
-              <input id="exElecTheta" type="number" value="110" min="1" max="179" step="0.1"
+              <input id="exElecTheta" type="number" value="145.1" min="1" max="179" step="0.1"
                 style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
               <span>°</span>
             </span>
           </label>
           <label style="display:block;font-size:10px;color:var(--dim)">
-            PP mesh θ<sub>m</sub>
+            bare PP mesh θ<sub>b,m</sub>
             <span style="display:flex;align-items:center;gap:4px;margin-top:3px">
-              <input id="exMeshTheta" type="number" value="105.8" min="1" max="179" step="0.1"
+              <input id="exMeshTheta" type="number" value="101.2" min="1" max="179" step="0.1"
                 style="width:100%;background:var(--surf);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:5px">
               <span>°</span>
             </span>
@@ -462,8 +462,9 @@
         </div>
         <div id="exAngleRead" class="note" style="margin:6px 0 0;border:none;padding:0"></div>
       </div>
-      <div class="note" style="margin-top:5px">문헌 기본값: 미처리 bare Ni foam 110° · 미처리 PP mesh 105.8°.
-        두 값은 별도 입력이며, PP 각도가 전극보다 크지 않으면 접촉각만으로는 기포가 PP로 옮겨갈 구동력이 없습니다.</div>
+      <div class="note" style="margin-top:5px">실측 기본값(n=3): 촉매/NF 145.1±2.3°
+        (142.5/146.3/146.6) · bare PP mesh 101.2±1.6° (99.7/101.2/102.8).
+        가스버블 각도는 내부에서 θ<sub>water</sub>=180°−θ<sub>bubble</sub>로 변환합니다.</div>
       <div class="row"><button class="btn" id="exGo" style="border-color:var(--grn);color:var(--grn)">▶ 분극곡선 예측 계산</button></div>
       <div id="exWarn" class="note" style="display:none"></div>
     </div>
@@ -617,7 +618,8 @@
 
     <div class="box"><h3>⑥ PP mesh — Mesh 1 형상효과 / Mesh 2 소수성 분리</h3>
       <div class="eq">P<sub>contact,UB</sub> = 1 − φ·max(1−d<sub>b</sub>/L<sub>x</sub>,0)·max(1−d<sub>b</sub>/L<sub>y</sub>,0)</div>
-      <div class="eq">P<sub>wet</sub> = max[0, (cosθ<sub>e</sub>−cosθ<sub>m</sub>)/(1+cosθ<sub>e</sub>)]
+      <div class="eq">θ<sub>w</sub> = 180° − θ<sub>b</sub> &nbsp;·&nbsp;
+        P<sub>wet</sub> = max[0, (cosθ<sub>w,e</sub>−cosθ<sub>w,m</sub>)/(1+cosθ<sub>w,e</sub>)]
         &nbsp;·&nbsp; P<sub>transfer,UB</sub> = P<sub>contact,UB</sub>P<sub>wet</sub></div>
       <div class="eq">χ = (1−φ)t<sub>m</sub>/d<sub>ch</sub> &nbsp;·&nbsp;
         u<sub>boost</sub> = 1/(1−χ) &nbsp;·&nbsp; ΔP/ΔP₀ ≈ u<sub>boost</sub><sup>3</sup></div>
@@ -625,8 +627,9 @@
       <div class="eq-n">d<sub>b</sub>는 전극 접촉각과 국소 벽면 유속으로 계산한 이탈기포 직경입니다.
         <b>버블 중심은 직사각형 단위 셀 전체 어디서든 균일하게 생길 수 있으며, 구멍 중앙에 고정하지 않습니다.</b>
         메시가 전극에 거의 붙어 있다는 상한 가정에서, 버블 전체가 L<sub>x</sub>×L<sub>y</sub> 개구 안에 들어가는 중심 영역만
-        비접촉으로 빼므로 그물코가 작고 가닥 면적이 많을수록 접촉확률은 증가하지만 2 mm 문턱은 없습니다. PP가 전극보다 더 소수성일 때만
-        Young 식 기반 전달 구동력이 생깁니다. χ는 메시 고체가 차지한 채널 체적비라 유속·압력강하 추정에만 씁니다.
+        비접촉으로 빼므로 그물코가 작고 가닥 면적이 많을수록 접촉확률은 증가하지만 2 mm 문턱은 없습니다.
+        입력값은 수중 가스버블 각도이며, PP의 θ<sub>b</sub>가 더 작을 때 Young 식 기반 전달 구동력이 생깁니다.
+        χ는 메시 고체가 차지한 채널 체적비라 유속·압력강하 추정에만 씁니다.
         촉매 차단 손실은 메시-전극 간격·압착·측면 액 접근 데이터가 없어 전압식에 임의로 넣지 않습니다.<br>
         <b style="color:var(--gold)">L<sub>ref</sub>, 0.6, 0.5, 0.3 상수는 제거</b>했습니다. 접촉각 이력·거칠기·실제
         woven mesh 압력손실은 아직 실측이 필요합니다. <b>Mesh 2는 이 불확실한 두께 효과를 전부 끄고</b>
@@ -2420,7 +2423,7 @@ function renderBubbles(now) {
       // The physics centre remains untouched in visPool. Rendering compresses
       // only the electrode-normal axis and shifts the visual centre by the
       // removed cap height so the bubble still touches its catalyst plane.
-      const theta = Math.max(1, Math.min(179, +P.theta || 60));
+      const theta = Math.max(1, Math.min(179, +P.theta || 34.9));
       const normalScale = 0.48 + 0.18 * (theta / 179);
       const tangentScale = 1.04 + 0.10 * (1 - normalScale);
       x += (v.side < 0.5 ? -1 : 1) * r * (1 - normalScale) * 0.86;
@@ -2949,6 +2952,8 @@ modeSeg.addEventListener("click", e => {
 // curve only (points drawn on the chart); mesh curves use geometry, calculated
 // bubble size, and explicit surface contact angles. Measured mesh polarization
 // data never enters the model.
+const EXP_BUBBLE_ANGLE_E = 145.1;
+const EXP_BUBBLE_ANGLE_M = 101.2;
 const EXP_PRESET = {
   W_cm: 2.2, H_cm: 2.2, ff: "serp", n_ch: 13, w_ch_mm: 0.88, d_ch_mm: 0.9,
   w_land_mm: 0.88, t_ptl_um: 600, electrolyte: "KOH", c_mol: 1.0,
@@ -2956,7 +2961,9 @@ const EXP_PRESET = {
   // 4 mL/min anolyte pump. Serpentine = one continuous 0.88x0.9 mm channel, so
   // u = Q/A = (4e-6/60) / (0.88e-3*0.9e-3) = 0.0842 m/s. (It was 0.08 = 3.80
   // mL/min, a silent -5% on the calibrated flow.)
-  T: 65, u_flow: 0.0842, mode: "CP", j: 0.5, theta: 110, mesh_theta: 105.8,
+  // Core solvers use water-side angles.  The experiment UI displays the
+  // measured submerged gas-bubble angles and converts with theta_w=180-theta_b.
+  T: 65, u_flow: 0.0842, mode: "CP", j: 0.5, theta: 34.9, mesh_theta: 78.8,
   // CALIBRATED WITH the dry-cathode water term ON (the cell IS anolyte-only).
   // The pristine curve was re-fit against all 16 measured points with the water
   // balance active: RMSE 26 mV (the old dry-OFF fit was 39 mV). The earlier
@@ -2981,6 +2988,20 @@ function expMeshMode() {
   return document.getElementById("exMeshMode").querySelector(".on")?.dataset.v || "physical";
 }
 
+function expBubbleAngles() {
+  const bubbleE = Math.max(1, Math.min(179,
+    +document.getElementById("exElecTheta").value || EXP_BUBBLE_ANGLE_E));
+  const bubbleM = Math.max(1, Math.min(179,
+    +document.getElementById("exMeshTheta").value || EXP_BUBBLE_ANGLE_M));
+  // Avoid exposing floating-point artifacts such as 34.900000000000006 in shared inputs.
+  return {
+    bubbleE,
+    bubbleM,
+    waterE: Number((180 - bubbleE).toFixed(3)),
+    waterM: Number((180 - bubbleM).toFixed(3)),
+  };
+}
+
 function expUpdateMeshModeUI() {
   const hydrophobic = expMeshMode() === "hydrophobic";
   document.getElementById("exMeshLabel").textContent = hydrophobic
@@ -2989,8 +3010,8 @@ function expUpdateMeshModeUI() {
   document.getElementById("exMeshModeNote").innerHTML = hydrophobic
     ? `<b>Mesh 2 · 소수성만</b>: mesh 두께는 카탈로그 정보로만 남습니다. ` +
       `유로 단면·유속·체류시간·압력손실은 pristine과 같고, ` +
-      `<b>그물코 접촉확률 × 입력한 접촉각의 Young 구동력</b> 만 전극 기포 덮임에 반영합니다. ` +
-      `접촉각은 임의값으로 고정하지 않습니다. 완전 소수성 가정은 mesh 접촉각을 179°로 입력해 확인할 수 있습니다.`
+      `<b>그물코 접촉확률 × 실측 가스버블 접촉각의 Young 구동력</b> 만 전극 기포 덮임에 반영합니다. ` +
+      `가스버블 각도는 물 접촉각으로 변환해 계산하며, PP의 더 작은 각도가 기체 선호 방향입니다.`
     : `<b>Mesh 1 · 형상+소수성</b>: 소수성 기포 전달과 함께 mesh 고체 체적이 ` +
       `유로 단면을 줄이는 효과를 유속·체류시간·압력손실에 반영합니다.`;
 }
@@ -3004,10 +3025,9 @@ async function expEnter() {
 
 async function expLoadCatalog() {
   try {
-    const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
-    const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
+    const { waterE, waterM } = expBubbleAngles();
     const req = ++expCatalogRequest;
-    const q = new URLSearchParams({ theta: te, mesh_theta: tm, mesh_mode: expMeshMode() });
+    const q = new URLSearchParams({ theta: waterE, mesh_theta: waterM, mesh_mode: expMeshMode() });
     const r = await (await fetch("/api3d/meshes?" + q)).json();
     if (req !== expCatalogRequest) return;           // discard an older angle response
     expCatalog = r.catalog || [];
@@ -3033,14 +3053,14 @@ function expSelectedMesh() {
 }
 
 function expUpdateAngleRead() {
-  const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
-  const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
-  const ce = Math.cos(te * Math.PI / 180), cm = Math.cos(tm * Math.PI / 180);
+  const { bubbleE, bubbleM, waterE, waterM } = expBubbleAngles();
+  const ce = Math.cos(waterE * Math.PI / 180), cm = Math.cos(waterM * Math.PI / 180);
   const pw = Math.max(0, Math.min(1, (ce - cm) / Math.max(1e-9, 1 + ce)));
   const el = document.getElementById("exAngleRead");
-  el.innerHTML = `θ<sub>e</sub>=${te.toFixed(1)}° · θ<sub>m</sub>=${tm.toFixed(1)}° · ` +
+  el.innerHTML = `θ<sub>b,e</sub>=${bubbleE.toFixed(1)}° · θ<sub>b,m</sub>=${bubbleM.toFixed(1)}° ` +
+    `(θ<sub>w</sub> ${waterE.toFixed(1)}°→${waterM.toFixed(1)}°) · ` +
     `P<sub>wet</sub>=<b style="color:${pw > 0 ? 'var(--grn)' : 'var(--gold)'}">${pw.toFixed(3)}</b> — ` +
-    (pw > 0 ? "PP 쪽 기체 선호 구동력이 있는 조건" : "PP가 전극보다 더 소수성이 아니어서 전달 구동력 0");
+    (pw > 0 ? "PP 쪽 기체 선호 구동력이 있는 조건" : "PP 가스버블 각도가 더 작지 않아 전달 구동력 0");
 }
 
 function expDrawMeshGeometry(override) {
@@ -3130,9 +3150,8 @@ function expDrawMeshGeometry(override) {
   // For a catalog preview, recompute these two values directly from the two
   // visible angle inputs and this rectangle.  A sweep result passed as
   // `override` already contains the backend's exact values and takes priority.
-  const te = Math.max(1, Math.min(179, +document.getElementById("exElecTheta").value || 110));
-  const tm = Math.max(1, Math.min(179, +document.getElementById("exMeshTheta").value || 105.8));
-  const ce = Math.cos(te * Math.PI / 180), cm = Math.cos(tm * Math.PI / 180);
+  const { waterE, waterM } = expBubbleAngles();
+  const ce = Math.cos(waterE * Math.PI / 180), cm = Math.cos(waterM * Math.PI / 180);
   const pcLocal = 1 - phi * Math.max(1 - db / lx, 0) * Math.max(1 - db / ly, 0);
   const pwLocal = Math.max(0, Math.min(1, (ce - cm) / Math.max(1e-9, 1 + ce)));
   const pc = override ? (m.contact_prob ?? m.contact_probability ?? pcLocal) : pcLocal;
@@ -3178,12 +3197,12 @@ document.getElementById("exPreset").onclick = () => {
   const stat = document.getElementById("exPresetStat");
   stat.textContent = "프리셋 전송 중… (격자 재구축, 몇 초)";
   for (const k in EXP_PRESET) send(k, EXP_PRESET[k]);
-  document.getElementById("exElecTheta").value = EXP_PRESET.theta;
-  document.getElementById("exMeshTheta").value = EXP_PRESET.mesh_theta;
+  document.getElementById("exElecTheta").value = EXP_BUBBLE_ANGLE_E;
+  document.getElementById("exMeshTheta").value = EXP_BUBBLE_ANGLE_M;
   setTimeout(() => {
     stat.textContent =
       "적용됨: 2.2×2.2cm · 13ch 서펜타인 0.88/0.9mm · 1M KOH 65°C · " +
-      "캘리브레이션 키네틱스 (pristine 16점 RMSE 26mV) · Ni 110° · PP 105.8°. 복셀 0.55mm.";
+      "캘리브레이션 키네틱스 (pristine 16점 RMSE 26mV) · 가스버블각 NF 145.1° · PP 101.2°. 복셀 0.55mm.";
     expLoadCatalog();          // fits badges depend on the (new) channel depth
   }, 900);
 };
@@ -3193,13 +3212,14 @@ async function expSweep() {
   const go = document.getElementById("exGo");
   go.disabled = true; go.textContent = "계산 중…";
   const pos = document.getElementById("exPos").querySelector(".on").dataset.v;
+  const { waterE, waterM } = expBubbleAngles();
   const body = {
     mesh_id: document.getElementById("exMesh").value,
     mesh_cover: (+document.getElementById("exCover").value) / 100,
     mesh_pos: pos,
     mesh_mode: expMeshMode(),
-    theta: +document.getElementById("exElecTheta").value,
-    mesh_theta: +document.getElementById("exMeshTheta").value,
+    theta: waterE,
+    mesh_theta: waterM,
   };
   // keep the shared designer in sync so app2d / state agree with the sweep
   for (const k in body) send(k, body[k]);
@@ -3236,8 +3256,8 @@ function expOverlayAdd(res, body) {
   const V = res.mesh ? res.mesh.V : res.pristine.V;
   const ffKo = { serp: "서펜타인", par: "평행", inter: "인터디지트", custom: "직접그림" };
   let label = `${ffKo[s.ff] || s.ff} ${s.n_ch}ch · u${(+s.u_flow).toFixed(2)}`;
-  if (s.theta != null) label += ` · θe${s.theta}`;
-  if (s.mesh_theta != null && res.mesh) label += `/θm${s.mesh_theta}`;
+  if (s.theta != null) label += ` · θb,e${(180 - (+s.theta)).toFixed(1)}`;
+  if (s.mesh_theta != null && res.mesh) label += `/θb,m${(180 - (+s.mesh_theta)).toFixed(1)}`;
   if (res.mesh) {
     const posKo = { inlet: "입구쪽", middle: "중간", outlet: "출구쪽" };
     const cover = Math.round((s.mesh_cover ?? 1) * 100);
@@ -4594,7 +4614,7 @@ window.__bubbleStyleInfo = () => ({
   requestedLimit: Math.max(0, Math.floor(+P.bcount || 0)),
   pool: visPool.length, meshes: 3, mergeAnimations:mergeAnimations.length,
   mergeVisible:mergeInst.count, maxInstances: MAXB,
-  attachedNormalScaleAtTheta: +(0.48 + 0.18 * (Math.max(1, Math.min(179, +P.theta || 60)) / 179)).toFixed(3),
+  attachedNormalScaleAtTheta: +(0.48 + 0.18 * (Math.max(1, Math.min(179, +P.theta || 34.9)) / 179)).toFixed(3),
 });
 window.__ribInfo = () => {
   const info = sub => {

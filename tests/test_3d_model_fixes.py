@@ -121,6 +121,17 @@ def test_mesh2_ui_exposes_hydrophobic_only_mode():
     assert "두께의 유체역학 효과 제외" in html
 
 
+def test_mesh_experiment_defaults_to_measured_gas_bubble_angles():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert 'value="145.1"' in html
+    assert 'value="101.2"' in html
+    assert "EXP_BUBBLE_ANGLE_E = 145.1" in html
+    assert "EXP_BUBBLE_ANGLE_M = 101.2" in html
+    assert "waterE: Number((180 - bubbleE).toFixed(3))" in html
+    assert "waterM: Number((180 - bubbleM).toFixed(3))" in html
+    assert "theta: 34.9, mesh_theta: 78.8" in html
+
+
 def test_mesh2_catalog_does_not_reject_mesh_thicker_than_channel():
     base = {**DESIGNER_DEFAULTS, "d_ch_mm": 0.9, "theta": 60,
             "mesh_theta": 150}

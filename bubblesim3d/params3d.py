@@ -51,7 +51,8 @@ DESIGNER_DEFAULTS = {
     # 0.35 m/s: channel mean velocity. Pump flow is derived from the requested
     # physical channel cross-section, not from the coarse live voxel inlet.
     "u_flow": 0.35, "tilt": 0.0, "B": 0.0, "E": 0.0,
-    "theta": 60.0, "T": 60.0, "Pbar": 1.0,
+    # Measured catalyst/NF gas-bubble angle 145.1 deg -> water-side 34.9 deg.
+    "theta": 34.9, "T": 60.0, "Pbar": 1.0,
     # --- electrode kinetics shape + electrolyte-path convention -------------
     "alpha_a": 1.0,              # OER anodic transfer coefficient (Tafel slope lever)
     "gap_mm": 2.0,               # electrode-to-membrane electrolyte gap CONVENTION [mm]
@@ -68,7 +69,8 @@ DESIGNER_DEFAULTS = {
     "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)
     "mesh_cover": 1.0,           # fraction of the flow path covered (1 = full)
     "mesh_pos": "outlet",        # partial-cover anchor: inlet | middle | outlet
-    "mesh_theta": 105.8,         # untreated PP apparent water contact angle [deg]
+    # Water-side equivalent of measured PP gas-bubble angle 101.2 deg.
+    "mesh_theta": 78.8,
     "mesh_mode": "physical",     # physical | hydrophobic (Mesh 2: no hydraulic thickness)
     "void_frac": 0.82,           # void_ohmic_frac for the polarization sweep
                                  # (fraction of the electrolyte path the channel

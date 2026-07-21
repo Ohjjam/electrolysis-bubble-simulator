@@ -14,7 +14,7 @@ _SOLVER = ChannelSolver()
 # the measured PP mesh (hole 1.016x1.346 mm -> 1.18 mean, 50% open, 0.483 mm)
 MESH = dict(mesh_hole_mm=1.181, mesh_hole_x_mm=1.016,
             mesh_hole_y_mm=1.346, mesh_open=0.5, mesh_t_mm=0.483,
-            mesh_contact_angle=105.8)
+            contact_angle=34.9, mesh_contact_angle=78.8)
 
 
 def _channel_op(j_macm2, **kw):
@@ -47,7 +47,7 @@ def test_mesh_thicker_than_channel_cannot_mount():
 
 def test_mesh2_ignores_hydraulic_thickness_but_keeps_surface_transfer():
     common = dict(open_frac=0.45, d_ch_mm=0.9, bubble_d_mm=0.23,
-                  electrode_angle_deg=60, mesh_angle_deg=150, hydraulic=False)
+                  electrode_angle_deg=34.9, mesh_angle_deg=78.8, hydraulic=False)
     thin = mesh_factors(2.4, t_mm=0.2, **common)
     thick = mesh_factors(2.4, t_mm=2.03, **common)
     for result in (thin, thick):
@@ -63,7 +63,7 @@ def test_mesh2_ignores_hydraulic_thickness_but_keeps_surface_transfer():
 
 def test_contact_probability_is_smooth_and_finer_is_higher():
     kw = dict(open_frac=0.5, t_mm=0.483, d_ch_mm=0.9,
-              bubble_d_mm=0.23, electrode_angle_deg=60, mesh_angle_deg=105.8)
+              bubble_d_mm=0.23, electrode_angle_deg=34.9, mesh_angle_deg=78.8)
     fine = mesh_factors(0.5, **kw)
     base = mesh_factors(1.18, **kw)
     coarse = mesh_factors(4.0, **kw)
@@ -74,13 +74,20 @@ def test_contact_probability_is_smooth_and_finer_is_higher():
     assert dense["contact_prob"] > sparse["contact_prob"]
 
 
-def test_wetting_transfer_requires_mesh_to_be_more_hydrophobic():
-    no_drive = mesh_factors(1.18, 0.5, 0.483, 0.9, bubble_d_mm=0.23,
-                            electrode_angle_deg=110, mesh_angle_deg=105.8)
+def test_measured_gas_bubble_angles_drive_transfer_toward_pp_mesh():
+    # Measured submerged gas-bubble angles are converted to water-side angles:
+    # catalyst/NF 145.1 -> 34.9 deg; bare PP 101.2 -> 78.8 deg.
     driven = mesh_factors(1.18, 0.5, 0.483, 0.9, bubble_d_mm=0.23,
-                          electrode_angle_deg=60, mesh_angle_deg=105.8)
-    assert no_drive["wetting_drive"] == 0.0 and no_drive["capture_eff"] == 0.0
-    assert driven["wetting_drive"] > 0.0 and driven["theta_factor"] < 1.0
+                          electrode_angle_deg=34.9, mesh_angle_deg=78.8)
+    assert 0.34 < driven["wetting_drive"] < 0.35
+    assert driven["theta_factor"] < 1.0
+
+
+def test_wetting_transfer_reverses_when_bubble_angles_are_reversed():
+    no_drive = mesh_factors(1.18, 0.5, 0.483, 0.9, bubble_d_mm=0.23,
+                            electrode_angle_deg=78.8, mesh_angle_deg=34.9)
+    assert no_drive["wetting_drive"] == 0.0
+    assert no_drive["capture_eff"] == 0.0
 
 
 def test_solid_volume_boost_and_pressure_ratio():
@@ -138,8 +145,8 @@ def test_unfit_mesh_changes_nothing():
 
 def test_mesh2_channel_keeps_thick_mesh_active_without_flow_boost():
     mesh2 = dict(mesh_hole_mm=2.4, mesh_open=0.45, mesh_t_mm=2.03,
-                 mesh_contact_angle=150, mesh_cover=1.0,
-                 mesh_mode="hydrophobic", contact_angle=60)
+                 mesh_contact_angle=78.8, mesh_cover=1.0,
+                 mesh_mode="hydrophobic", contact_angle=34.9)
     st = _solve(_channel_op(1500, **mesh2))
     assert st.fields["mesh_on"]
     assert st.fields["mesh_mode"] == "hydrophobic"

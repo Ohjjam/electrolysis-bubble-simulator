@@ -28,6 +28,8 @@ all.  This module instead keeps the mechanisms separate and dimensionless:
    is a driving-score, not a claim that contact-angle hysteresis/kinetics are
    resolved.  ``capture = P_contact * P_wet`` is therefore the modelled upper
    fraction of electrode-covering bubbles transferred to the mesh.
+   The experiment UI accepts submerged gas-bubble contact angles and converts
+   them before calling this model with ``theta_water = 180 deg - theta_bubble``.
 4. The mesh solid occupies ``obstruction=(1-phi)t_m/d_ch`` of the local channel
    volume.  Continuity gives ``u_boost=1/(1-obstruction)`` and residence-time
    scaling gives ``retention=1/u_boost``.  A laminar parallel-gap estimate gives
@@ -51,8 +53,11 @@ import math
 from .bubbles.forces import departure_radius
 
 
-DEFAULT_ELECTRODE_ANGLE = 110.0  # deg, representative untreated bare Ni foam
-DEFAULT_PP_ANGLE = 105.8         # deg, representative untreated PP mesh
+# The solver uses apparent water contact angles through the liquid.  These
+# defaults are converted from this experiment's measured submerged gas-bubble
+# angles: catalyst/NF 145.1 deg and bare PP mesh 101.2 deg.
+DEFAULT_ELECTRODE_ANGLE = 34.9   # 180 - 145.1 deg
+DEFAULT_PP_ANGLE = 78.8          # 180 - 101.2 deg
 DP_WARN = 3.0                    # engineering warning only; not used in voltage
 DP_SEVERE = 10.0
 

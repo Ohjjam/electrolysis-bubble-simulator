@@ -1508,10 +1508,9 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api3d/meshes":
             with LIVE.lock:
                 dsn = dict(LIVE.designer)
-            # The experiment panel owns two explicit contact-angle inputs.  Use
-            # them for the preview without mutating the live simulator state;
-            # otherwise a freshly opened panel can show the live default (60°)
-            # next to an experiment input that says 110°.
+            # The experiment panel owns two measured gas-bubble-angle inputs
+            # and sends their water-side equivalents here.  Use them for the
+            # preview without mutating the live simulator state.
             q = self._query(self.path)
             for k in ("theta", "mesh_theta"):
                 if k not in q:
