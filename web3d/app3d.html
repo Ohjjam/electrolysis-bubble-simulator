@@ -787,13 +787,17 @@
 <div id="plateEd"></div>
 
   <div style="font-size:11.5px;color:var(--dim);margin:6px 0 3px">부품 레이어 (켜기/끄기)</div>
+  <div style="font-size:10.5px;line-height:1.35;color:var(--dim);margin:0 0 5px">
+    음극측 ← 유로 · 음극 전극/PTL · 막 · 양극 전극/NF · PP mesh · 유로 → 양극측
+  </div>
   <div id="layerBox" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;margin-bottom:6px">
     <label class="sliceChk"><input type="checkbox" data-layer="her" checked> 음극 기포(H₂)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="oer" checked> 양극 기포(O₂)</label>
-    <label class="sliceChk"><input type="checkbox" data-layer="cathode" checked> 음극(전극)</label>
-    <label class="sliceChk"><input type="checkbox" data-layer="anode" checked> 양극(전극)</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="plateC" checked> 음극측 셀 외판</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="plateA" checked> 양극측 셀 외판</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="electrodeC" checked> 음극 전극/PTL</label>
+    <label class="sliceChk"><input type="checkbox" data-layer="electrodeA" checked> 양극 전극/NF</label>
     <label class="sliceChk"><input type="checkbox" data-layer="membrane" checked> 막(membrane)</label>
-    <label class="sliceChk"><input type="checkbox" data-layer="ptl" checked> 다공층(PTL)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="walls" checked> 유로 벽(리브)</label>
     <label class="sliceChk"><input type="checkbox" data-layer="mesh" checked>
       <span id="meshLayerLabel">PP mesh</span></label>
@@ -1468,35 +1472,36 @@ function setSolidsTransparency(flat) {
 }
 
 let camHome = new THREE.Vector3();
-let cathodeGeom = null, anodeGeom = null, membraneMesh = null, ptlGroup = null, wallsGroup = null;
+let plateGroupC = null, plateGroupA = null, membraneMesh = null;
+let electrodeGroupC = null, electrodeGroupA = null, wallsGroup = null;
 let meshGroup = null, meshSig = "";
 let ptlMeshC = null, ptlMeshA = null;
 let plateMeshC = null, plateMeshA = null, cellEdge = null;
 let decorC = null, decorA = null, decorCore = null;
-// component layers (on/off): electrode geometry + membrane/PTL + per-side bubbles
-// + the channel WALLS as their own layer — they used to live inside the
-// electrode groups, so hiding an electrode silently deleted the 3-D walls and
-// only the flat dark stripes of the face TEXTURE remained ("벽 입체가 없어져").
-const layers = { cathode: true, anode: true, membrane: true, her: true, oer: true,
-                 ptl: true, walls: true, mesh: true };
+// Layer names describe the actual meshes. The outside slabs are cell/flow-plate
+// backs; the two PTL volumes are the actual electrode layers. They stay
+// independent so a side can be inspected without a misleading plate toggle.
+const layers = { plateC: true, plateA: true, electrodeC: true, electrodeA: true,
+                 membrane: true, her: true, oer: true, walls: true, mesh: true };
 function applyLayers() {
-  if (cathodeGeom) cathodeGeom.visible = layers.cathode;
-  if (anodeGeom) anodeGeom.visible = layers.anode;
+  if (plateGroupC) plateGroupC.visible = layers.plateC;
+  if (plateGroupA) plateGroupA.visible = layers.plateA;
   if (membraneMesh) membraneMesh.visible = layers.membrane;
-  if (ptlGroup) ptlGroup.visible = layers.ptl;
+  if (electrodeGroupC) electrodeGroupC.visible = layers.electrodeC;
+  if (electrodeGroupA) electrodeGroupA.visible = layers.electrodeA;
   if (wallsGroup) wallsGroup.visible = layers.walls;
   if (meshGroup) meshGroup.visible = layers.mesh;
   // Component visibility has one source of truth: the layer checkboxes.
   // Presets update those checkboxes instead of secretly hiding an object while
   // its checkbox remains checked.
-  if (plateMeshC) plateMeshC.visible = layers.cathode;
-  if (plateMeshA) plateMeshA.visible = layers.anode;
+  if (plateMeshC) plateMeshC.visible = layers.plateC;
+  if (plateMeshA) plateMeshA.visible = layers.plateA;
   updateAnalysisVisibility();
   if (cellEdge) cellEdge.visible = visualPreset === "analysis";
   syncRibRenderStyle();
   const showDecor = visualPreset !== "analysis" && !matchMedia("(max-width:900px)").matches;
-  if (decorC) decorC.visible = showDecor && layers.cathode;
-  if (decorA) decorA.visible = showDecor && layers.anode;
+  if (decorC) decorC.visible = showDecor && layers.plateC;
+  if (decorA) decorA.visible = showDecor && layers.plateA;
   if (decorCore) decorCore.visible = showDecor && layers.membrane;
   // bubble layers (her/oer) are applied in updateBubbles via the side filter
 }
@@ -2125,32 +2130,31 @@ function rebuildCell() {
   plateCtx = { W, H, chT, coreT };
 
   // component groups so each can be toggled on/off as a layer
-  cathodeGeom = new THREE.Group(); anodeGeom = new THREE.Group();
+  plateGroupC = new THREE.Group(); plateGroupA = new THREE.Group();
   membraneMesh = new THREE.Group();
-  ptlGroup = new THREE.Group();
+  electrodeGroupC = new THREE.Group(); electrodeGroupA = new THREE.Group();
   portGroup = new THREE.Group();
   wallsGroup = new THREE.Group();      // channel walls: independent of the electrodes
   meshGroup = new THREE.Group();       // PP collector strands from live physics
   decorC = new THREE.Group(); decorA = new THREE.Group(); decorCore = new THREE.Group();
-  cellGroup.add(cathodeGeom, anodeGeom, membraneMesh, ptlGroup, portGroup, wallsGroup, meshGroup,
+  cellGroup.add(plateGroupC, plateGroupA, membraneMesh, electrodeGroupC, electrodeGroupA,
+                portGroup, wallsGroup, meshGroup,
                 decorC, decorA, decorCore);
 
-  // Core: the PTL halves bridge the centre membrane to the inner rib faces.
-  // PTL used to live inside the electrode groups, so the internal preset hid it
-  // together with the end plates and made this continuous stack look detached.
-  // Keep the exact physics-grid coordinates; only render-layer ownership changes.
+  // Core: each actual electrode/PTL volume bridges the centre membrane to its
+  // channel. Keep the exact physics-grid coordinates; only render-layer
+  // ownership and UI naming differ from the old, misleading plate labels.
   const tMemV = Math.min(0.5, coreT * 0.18);
   box(tMemV, H, W, MAT.mem, 0, H / 2, 0, membraneMesh);
   const ptlT = (coreT - tMemV) / 2;
   ptlMeshC = box(ptlT, H, W, MAT.ptl,
-    -(tMemV / 2 + ptlT / 2), H / 2, 0, ptlGroup);
+    -(tMemV / 2 + ptlT / 2), H / 2, 0, electrodeGroupC);
   ptlMeshA = box(ptlT, H, W, MAT.ptl,
-    +(tMemV / 2 + ptlT / 2), H / 2, 0, ptlGroup);
+    +(tMemV / 2 + ptlT / 2), H / 2, 0, electrodeGroupA);
 
-  // channel layers: back plate slab (electrode group) + rib subgroup (filled
-  // from the land mask). The ribs go into wallsGroup — NOT the electrode
-  // group — so hiding an electrode to see the bubbles keeps the 3-D walls up.
-  for (const [geom, side] of [[cathodeGeom, -1], [anodeGeom, +1]]) {
+  // Channel layers: cosmetic outside plate slab + independent rib subgroup
+  // filled from the land mask. Neither is an electrode.
+  for (const [geom, side] of [[plateGroupC, -1], [plateGroupA, +1]]) {
     const plateRadius = Math.max(0.25, Math.min(gridInfo.h * 0.45, Math.min(H, W) * 0.045));
     const plateBevel = Math.max(0.04, Math.min(baseT * 0.14, plateRadius * 0.24));
     const plate = roundedBox(baseT, H, W, MAT.plate,
@@ -4391,8 +4395,10 @@ function setVisualPreset(next) {
   document.getElementById("visualSeg").querySelectorAll("button").forEach(button =>
     button.classList.toggle("on", button.dataset.v === next));
   const presetLayers = next === "internal"
-    ? { cathode:false, anode:false, membrane:true, ptl:true, her:true, oer:true, walls:true, mesh:true }
-    : { cathode:true, anode:true, membrane:true, ptl:true, her:true, oer:true, walls:true, mesh:true };
+    ? { plateC:false, plateA:false, electrodeC:true, electrodeA:true,
+        membrane:true, her:true, oer:true, walls:true, mesh:true }
+    : { plateC:true, plateA:true, electrodeC:true, electrodeA:true,
+        membrane:true, her:true, oer:true, walls:true, mesh:true };
   // Presets are now ordinary, visible checkbox operations. After applying one,
   // the user can still customize every layer without a hidden preset override.
   document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
@@ -4454,7 +4460,7 @@ document.getElementById("bZoom").onclick = e => {
   }
 };
 
-// component layer checkboxes (음극/양극/막/기포)
+// component layer checkboxes (외판/전극/막/유로/기포)
 document.querySelectorAll("#layerBox input[data-layer]").forEach(cb => {
   cb.addEventListener("change", () => {
     layers[cb.dataset.layer] = cb.checked;
@@ -4820,7 +4826,10 @@ window.__visualInfo = () => ({
   preset: visualPreset, view: viewMode, analysis: analysisMode,
   plateC: !!(plateMeshC && plateMeshC.visible),
   plateA: !!(plateMeshA && plateMeshA.visible),
-  ptl: !!(ptlGroup && ptlGroup.visible),
+  electrodeC: !!(electrodeGroupC && electrodeGroupC.visible),
+  electrodeA: !!(electrodeGroupA && electrodeGroupA.visible),
+  ptl: !!(electrodeGroupC && electrodeGroupC.visible &&
+           electrodeGroupA && electrodeGroupA.visible),
   decorC: !!(decorC && decorC.visible),
   decorA: !!(decorA && decorA.visible),
   decorCore: !!(decorCore && decorCore.visible),
@@ -4866,7 +4875,10 @@ window.__contactInfo = () => {
   const ptlC = bounds(ptlMeshC), ptlA = bounds(ptlMeshA);
   const ribC = bounds(ribSubC), ribA = bounds(ribSubA);
   return {
-    ptlVisible: !!(ptlGroup && ptlGroup.visible),
+    ptlVisible: !!(electrodeGroupC && electrodeGroupC.visible &&
+                   electrodeGroupA && electrodeGroupA.visible),
+    electrodeCVisible: !!(electrodeGroupC && electrodeGroupC.visible),
+    electrodeAVisible: !!(electrodeGroupA && electrodeGroupA.visible),
     cathode: { ptl: ptlC, rib: ribC,
       gap: ptlC && ribC ? +(ptlC[0] - ribC[1]).toFixed(6) : null },
     anode: { ptl: ptlA, rib: ribA,

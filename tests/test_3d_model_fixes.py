@@ -159,3 +159,18 @@ def test_quantitative_color_modes_have_viewport_legends():
     assert 'symbol:"|u<sub>b</sub>|"' in html
     assert "window.__colorLegendInfo" in html
     assert "velLegend" not in html
+
+
+def test_component_layers_distinguish_outer_plates_from_real_electrodes():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert 'data-layer="plateC"' in html
+    assert 'data-layer="plateA"' in html
+    assert 'data-layer="electrodeC"' in html
+    assert 'data-layer="electrodeA"' in html
+    assert "음극측 셀 외판" in html
+    assert "양극측 셀 외판" in html
+    assert "음극 전극/PTL" in html
+    assert "양극 전극/NF" in html
+    assert 'data-layer="cathode"' not in html
+    assert 'data-layer="anode"' not in html
+    assert 'data-layer="ptl"' not in html
