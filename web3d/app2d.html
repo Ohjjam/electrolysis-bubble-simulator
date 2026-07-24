@@ -768,8 +768,8 @@ async function poll() {
       `가스 ${(d.q_gas_mLs ?? 0).toFixed(2)} mL/s vs 액체 ${(d.q_liq_mLs ?? 0).toFixed(2)} mL/s`;
     document.getElementById("mBub").innerHTML =
       `추적 <b style="color:var(--tx)">${s.n_bub}</b>개 (부착 ${d.n_attached}, 상승 ${d.n_free}) · ` +
-      `1개 ≈ <b style="color:var(--gold)">${(d.mult ?? 1).toFixed(0)}</b>개 실제 → 실제 약 ` +
-      `<b style="color:var(--tx)">${(d.n_real_est ?? 0).toLocaleString()}</b>개 · ` +
+      `부착 seed 가중치 <b style="color:var(--gold)">${(d.mult ?? 1).toFixed(2)}</b> · 기대 기포수 ` +
+      `<b style="color:var(--tx)">${(d.n_expected_bubbles ?? d.n_real_est ?? 0).toLocaleString()}</b> · ` +
       `θ ${(d.theta_c ?? 0).toFixed(3)}/${(d.theta_a ?? 0).toFixed(3)} · ${(s.speed_actual ?? 0).toFixed(2)}× 실시간`;
     // what the GRID resolves vs what the sliders asked for. The pass pitch is
     // H/n_ch (the width sliders only set the RATIO), and both are quantised to
@@ -1110,9 +1110,10 @@ const CSV = {
     return { title:"② 전체 셀 — 높이별 가스 홀드업 (스냅샷)", rows };
   },
   lsv(){ if(!lsvRes||!lsvRes.j) return null; const p=lsvRes.pristine, ju=p.j_used||lsvRes.j, rc=p.reachable;
+    const lb=p.voltage_is_lower_bound||lsvRes.j.map(()=>false), jl=p.j_limit||lsvRes.j.map(()=>"");
     const meas=new Map(EXP_MEAS);
-    const rows=[["j_설정_mA_cm2","j_실제_mA_cm2","도달가능","실측_V","모델_pristine_V"].concat(lsvRes.mesh?["mesh_V"]:[])];
-    lsvRes.j.forEach((j,i)=>{ const r=[j,ju[i],rc?(rc[i]?1:0):1,meas.has(j)?meas.get(j):"",p.V[i]];
+    const rows=[["j_설정_mA_cm2","j_실제_mA_cm2","도달가능","전압하한","j한계_mA_cm2","실측_V","모델_pristine_V"].concat(lsvRes.mesh?["mesh_V"]:[])];
+    lsvRes.j.forEach((j,i)=>{ const r=[j,ju[i],rc?(rc[i]?1:0):1,lb[i]?1:0,jl[i]==null?"":jl[i],meas.has(j)?meas.get(j):"",p.V[i]];
       if(lsvRes.mesh) r.push(lsvRes.mesh.V[i]); rows.push(r); });
     return { title:"③ 분극곡선 (LSV)", rows };
   },

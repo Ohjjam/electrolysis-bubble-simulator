@@ -52,18 +52,21 @@ def test_vogt_enhancement():
     assert tr.vogt_enhancement(1e4, 1e4, 0.0) == 1.0   # disabled
 
 
-def test_vogt_raises_achievable_current():
-    """With Vogt on, the CP transport limit (hence clamp) is above the base."""
+def test_vogt_raises_reported_cp_feasibility_ceiling():
+    """Vogt raises the CP ceiling without changing the requested current."""
     from bubblesim.solvers.zerod import ZeroDTwoElectrodeSolver
 
     class Flat:
         def coverage(self): return 0.0
         def void_fraction(self): return 0.0
     op = Operating(mode="CP", j_set=1.0e9, model="two_electrode")
-    j_vogt = ZeroDTwoElectrodeSolver().solve(op, build_context(op, Params()), [Flat()]).j
+    st_vogt = ZeroDTwoElectrodeSolver().solve(
+        op, build_context(op, Params()), [Flat()])
     p0 = Params(); p0.k_vogt = 0.0
-    j_base = ZeroDTwoElectrodeSolver().solve(op, build_context(op, p0), [Flat()]).j
-    assert j_vogt > j_base
+    st_base = ZeroDTwoElectrodeSolver().solve(
+        op, build_context(op, p0), [Flat()])
+    assert st_vogt.j == st_base.j == op.j_set
+    assert st_vogt.fields["j_limit_A_m2"] > st_base.fields["j_limit_A_m2"]
 
 
 # ============================================================ E  activity -> j0

@@ -2,7 +2,8 @@
 import math
 from pathlib import Path
 
-from bubblesim import Params
+from bubblesim import Operating, Params
+from bubblesim.constants import F, R_GAS
 from bubblesim.kernel.bubbles.forces import departure_radius
 from bubblesim.kernel.context import build_context
 from bubblesim.kernel.sources import faradaic_gas_rate
@@ -13,6 +14,8 @@ from server3d_app import LiveSim3D, mesh_catalog_status
 
 
 APP3D_HTML = Path(__file__).parents[1] / "web3d" / "app3d.html"
+VISUALS3D_JS = Path(__file__).parents[1] / "web3d" / "visuals3d.js"
+RUN3D_BAT = Path(__file__).parents[1] / "run3d.bat"
 
 
 def _cell(**overrides):
@@ -37,9 +40,11 @@ def test_oer_stoichiometry_is_applied_once_in_cell_gas_total():
     sim, _, op = _cell()
     j = sim.cell_current_A_m2()
     A = sim.grid.Ly * sim.grid.Lz
-    kw = dict(wet=True, water_activity=sim.ctx["water_activity"])
-    expected = (faradaic_gas_rate(j, "HER", op.T, op.P, A, **kw)
-                + faradaic_gas_rate(j, "OER", op.T, op.P, A, **kw))
+    # Independent hand-calculation oracle: do not call the production helper
+    # for the expected value, or an internal z error would pass both sides.
+    p_gas = op.P - sim.ctx["p_water"]
+    expected = (sim.params.eta_faraday * j * A / F
+                * R_GAS * op.T / p_gas * (1.0 / 2.0 + 1.0 / 4.0))
     actual = sim.gas_liquid()[0]
     assert math.isclose(actual, expected, rel_tol=1e-12)
 
@@ -61,12 +66,15 @@ def test_live_grid_cap_coarsens_resolution_not_cell_size():
     assert math.isclose(nz * cfg.h, 0.20, rel_tol=0.12)
 
 
-def test_physical_pump_flow_is_conserved_on_voxel_inlet():
+def test_resolved_channel_velocity_and_flow_are_consistent():
     sim, cfg, op = _cell()
-    expected_total = op.u_flow * cfg.channel_area_m2() * 2
+    expected_total = op.u_flow * sim.inlet_area_voxel
     assert math.isclose(sim.gas_liquid()[1], expected_total, rel_tol=1e-12)
     assert math.isclose(sim.ns.u_in * sim.inlet_area_voxel,
                         expected_total, rel_tol=1e-12)
+    assert math.isclose(sim.ns.u_in, op.u_flow, rel_tol=1e-12)
+    assert math.isclose(sim.inlet_area_requested,
+                        cfg.channel_area_m2() * 2, rel_tol=1e-12)
 
 
 def test_server_rejects_invalid_geometry_transactionally():
@@ -84,6 +92,11 @@ def test_live_and_sweep_property_fidelity_match():
     assert operating_from_designer(DESIGNER_DEFAULTS).high_fidelity is True
 
 
+def test_experiment_contact_angle_does_not_leak_into_shared_default():
+    assert Operating().contact_angle == 60.0
+    assert operating_from_designer(DESIGNER_DEFAULTS).contact_angle == 34.9
+
+
 def test_non_custom_flow_clears_a_stale_drawn_mask():
     live = LiveSim3D()
     live.designer["mask"] = "2,2:0000"  # legacy/inconsistent state
@@ -93,14 +106,106 @@ def test_non_custom_flow_clears_a_stale_drawn_mask():
     assert live.designer["mask"] == ""
 
 
-def test_3d_display_supports_dense_tracers_and_large_bubble_scales():
+def test_any_changed_condition_starts_a_fresh_run_but_ui_controls_do_not():
+    live = LiveSim3D()
+    initial_run = live.run_id
+    old_sim = live.sim
+    live.sim.t = 3.5
+    live._carry = 0.75
+    live.speed_actual = 0.8
+
+    changed = live.update({"j": float(live.designer["j"]) + 0.01})
+    assert changed["run_id"] == initial_run + 1
+    assert live.run_id == initial_run + 1
+    assert live.sim is not old_sim
+    assert live.sim.t == 0.0
+    assert live._carry == 0.0
+    assert live.speed_actual == 0.0
+
+    current_run = live.run_id
+    same_sim = live.sim
+    controls = live.update({"speed": 2.0, "paused": True})
+    assert controls["run_id"] == current_run
+    assert controls["paused"] is True
+    assert live.sim is same_sim
+
+
+def test_reset_reports_new_run_preserves_conditions_and_pauses_at_zero():
+    live = LiveSim3D()
+    live.update({"j": float(live.designer["j"]) + 0.01, "paused": False})
+    current_j = live.designer["j"]
+    previous_run = live.run_id
+    previous_sim = live.sim
+    live.sim.t = 2.0
+
+    result = live.reset()
+    assert result == {"ok": 1, "run_id": previous_run + 1, "paused": True}
+    assert live.run_id == previous_run + 1
+    assert live.paused is True
+    assert live.sim is not previous_sim
+    assert live.sim.t == 0.0
+    assert live.designer["j"] == current_j
+
+
+def test_3d_page_has_run_controls_and_clears_visual_pools_on_new_run():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    assert 'id="simRunBar"' in html
+    assert 'id="bStageReset"' in html
+    assert 'id="bStageStart"' in html
+    assert 'id="bStageStop"' in html
+    assert "function clearLiveVisualState()" in html
+    assert "observeRunResult(st);" in html
+    assert "tracers.length = 0; tracerHandoffs.length = 0" in html
+    assert "gas3dCur = null; vel3dCur = null" in html
+
+
+def test_3d_display_uses_exact_detach_paths_without_random_replication():
     html = APP3D_HTML.read_text(encoding="utf-8")
     assert "const TR_N = 5000" in html
     assert 'max:5000, step:100' in html
     assert 'v:"both", local:1' in html
-    assert 'v:5000, lo:0, hi:5000' in html
+    assert 'v:600, lo:0, hi:5000' in html
+    assert 'source:"exact-detach-events"' in html
+    assert "function ingestLifecycleEvents(st)" in html
+    assert "function _trSeed()" not in html
+    assert "availableDistributionCount = Math.min(eligibleFree, serverFreeTarget)" in html
     assert '["16","×16"]' in html
     assert "maxDisplayScale: 16" in html
+
+
+def test_live_snapshot_filters_exact_detach_events_by_sequence():
+    live = LiveSim3D()
+    live.sim.parcels.lifecycle_events = [
+        {"seq": 4, "type": "nucleate"},
+        {"seq": 5, "type": "detach", "id": 11},
+        {"seq": 6, "type": "detach", "id": 12},
+    ]
+    initial = live.snapshot(event_after=0)["lifecycle"]
+    assert initial == {"latest_seq": 6, "events": []}
+    feed = live.snapshot(event_after=5)["lifecycle"]
+    assert feed["latest_seq"] == 6
+    assert feed["events"] == [{"seq": 6, "type": "detach", "id": 12}]
+
+
+def test_live_advance_yields_after_one_slow_step():
+    live = LiveSim3D()
+    calls = []
+    live.sim.step = lambda dt, proj_iters: calls.append((dt, proj_iters))
+    live.MAX_LOCK_SECONDS = 0.0
+    advanced = live._advance(10 * live.DT)
+    assert advanced == live.DT
+    assert calls == [(live.DT, live.PROJ_ITERS)]
+    assert 0.0 <= live._carry < 1.0
+
+
+def test_live_advance_keeps_the_requested_batch_when_steps_are_fast():
+    live = LiveSim3D()
+    calls = []
+    live.sim.step = lambda dt, proj_iters: calls.append((dt, proj_iters))
+    live.MAX_LOCK_SECONDS = 1.0
+    advanced = live._advance(live.BLOCK)
+    assert advanced == 4 * live.DT
+    assert len(calls) == 4
 
 
 def test_analysis_spectrum_is_visual_only_and_can_show_raw_voxels():
@@ -174,3 +279,49 @@ def test_component_layers_distinguish_outer_plates_from_real_electrodes():
     assert 'data-layer="cathode"' not in html
     assert 'data-layer="anode"' not in html
     assert 'data-layer="ptl"' not in html
+
+
+def test_render_only_visual_upgrade_contract_is_present():
+    html = APP3D_HTML.read_text(encoding="utf-8")
+    helpers = VISUALS3D_JS.read_text(encoding="utf-8")
+    assert "new THREE.ExtrudeGeometry" in helpers
+    assert "roundedBoxGeometry" in html
+    assert 'data-v="assembly"' in html
+    assert 'data-v="internal" class="on"' in html
+    assert 'data-v="analysis"' in html
+    assert 'let visualPreset = "internal"' in html
+    assert 'setAnalysisMode(next === "analysis" ? "j_c" : "off")' in html
+    assert "new THREE.CylinderGeometry" in html
+    assert "const instAttached = new THREE.InstancedMesh" in html
+    assert "freeBubbleTransform" in html
+    assert "material.onBeforeCompile" in html
+
+
+def test_dense_snapshot_fields_are_independently_selectable():
+    sim, _, _ = _cell()
+    base = sim.snapshot(with_faces=False)
+    assert not {"faces", "land2d", "ports", "gas3d", "vel3d"} & base.keys()
+
+    geometry = sim.snapshot(with_faces=False, with_geometry=True)
+    assert "land2d" in geometry and "ports" in geometry
+    assert "faces" not in geometry and "gas3d" not in geometry and "vel3d" not in geometry
+
+    velocity = sim.snapshot(with_faces=False, with_velocity=True)
+    assert "vel3d" in velocity and "gas3d" not in velocity and "faces" not in velocity
+
+    legacy = sim.snapshot(with_faces=True)
+    assert {"faces", "land2d", "ports", "gas3d", "vel3d"} <= legacy.keys()
+
+    live = LiveSim3D()
+    surfaces = live.snapshot(surfaces=True)
+    assert "faces" in surfaces
+    assert not {"land2d", "ports", "gas3d", "vel3d"} & surfaces.keys()
+
+
+def test_run3d_launcher_has_portable_python_fallbacks():
+    launcher = RUN3D_BAT.read_text(encoding="utf-8")
+    assert ".venv\\Scripts\\python.exe" in launcher
+    assert "py -3.14" in launcher
+    assert "%LOCALAPPDATA%\\Python" in launcher
+    assert "server3d_app.py --view 3d %*" in launcher
+    assert "C:\\Users\\user" not in launcher

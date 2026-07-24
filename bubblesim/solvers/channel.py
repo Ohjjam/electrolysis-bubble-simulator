@@ -87,22 +87,24 @@ class ChannelSolver:
         custom = getattr(op, "custom_path", None)
         if custom and len(custom) >= 2:                  # user-drawn flow path (design tool)
             pts = [(max(0.0, min(1.0, float(p[0]))), max(0.0, min(1.0, float(p[1])))) for p in custom]
-            Lscale = max(1e-3, sum((((pts[i + 1][0] - pts[i][0]) * W) ** 2
+            L_geom = max(1e-3, sum((((pts[i + 1][0] - pts[i][0]) * W) ** 2
                                     + ((pts[i + 1][1] - pts[i][1]) * H) ** 2) ** 0.5
                                    for i in range(len(pts) - 1)))
-            m = max(8, min(140, int(round(Lscale / 0.0035))))   # ~3.5 mm resolution
+            m = max(8, min(140, int(round(L_geom / 0.0035))))   # ~3.5 mm resolution
             polys, ctype = [pts], "custom"
         elif ctype == "serpentine":
-            Lscale, m = n_pass * W + H, max(8, self.m_per * n_pass)   # runs (W each) + vertical bends (H)
+            L_geom, m = n_pass * W + H, max(8, self.m_per * n_pass)   # runs (W each) + vertical bends (H)
             polys = channel_polylines("serpentine", n_pass)
         else:                                            # straight / parallel: one short pass of height H
-            Lscale, m = H, max(8, self.m_per)
+            L_geom, m = H, max(8, self.m_per)
             polys = channel_polylines(ctype, n_pass)
+        requested_length = max(0.0, float(getattr(op, "flow_length_cm", 0.0))) * 1e-2
+        Lscale = requested_length if requested_length > 0.0 else L_geom
         ds = Lscale / (m - 1)
         d_ch = max(0.05, float(getattr(op, "chan_depth_mm", 1.0))) * 1e-3
         # High-fidelity gas is reported wet, so the evolved dry gas expands
         # against its partial pressure rather than the total pressure.
-        p_gas = max(0.05 * op.P, op.P - float(context.get("p_water", 0.0)))
+        p_gas = float(context.get("p_dry_gas", op.P))
         KA = (R_GAS * T / p_gas) / (z * F * u * d_ch)    # Vgas/Q per (A/m) of cumulative j
 
         # --- bubble-management mesh interlayer (kernel.meshlayer) --------------
@@ -203,11 +205,21 @@ class ChannelSolver:
         fields = dict(st.fields)
         fields.update({
             "segments": segs, "ctype": ctype, "n_pass": n_pass,
+            "flow_length_m": float(Lscale),
+            "flow_length_geometry_m": float(L_geom),
+            "flow_length_source": ("designer" if requested_length > 0.0 else "layout"),
             "theta_in": float(theta[0]), "theta_out": float(theta[-1]),
             "eps_out": float(eps[-1]), "bn_frac": float(i_bn / max(1, m - 1)),
             "eff_in": float(eff[0]), "eff_out": float(eff[-1]),
             "up_frac": round(up_frac, 3),                # how much of the path runs upward (self-purging)
             "inlet": [round(float(polys[0][0][0]), 3), round(float(polys[0][0][1]), 3)],
+            "channel_closure_status": "empirical; target-cell calibration required",
+            "channel_closures": {
+                "orientation_retention": "clip(1 - 0.5*vfrac, 0.4, 1.6)",
+                "coverage_from_void": "0.9*(1-exp(-3*eps))",
+                "film_threshold": float(EPS_FILM),
+                "void_ohmic_fraction": float(vfrac_ohm),
+            },
         })
         if mesh_on:                                      # add-only diagnostics
             fields.update({

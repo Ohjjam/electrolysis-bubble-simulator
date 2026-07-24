@@ -1,6 +1,6 @@
 # 3D 시뮬레이터 방정식·수치기법 정리 (`bubblesim3d`)
 
-> 2026-07-16 코드 기준. 최신 3세대(3D 셀 시뮬레이터)가 **실제로 풀고 있는 식**과
+> 2026-07-22 감사 반영 코드 기준. 최신 3세대(3D 셀 시뮬레이터)가 **실제로 풀고 있는 식**과
 > **수치 방법**을 모듈별로 정리한 것. 아키텍처 개요는 [`3D_SIMULATOR.md`](3D_SIMULATOR.md),
 > 커널 물리의 배경 설명은 [`../README.md`](../README.md) 참조.
 
@@ -24,7 +24,7 @@
 
 ```
 버블 → θ(coverage), ε(근벽 void) ─→ [커널] 2전극 전압수지 → j (8스텝마다 갱신)
-버블 → 3×3×3 void 장 ────────────→ [NS] 부력 + Brinkman 차단 → 유동장
+버블 → α_g, d32, gas velocity ─────→ [NS] Schiller–Naumann 상간교환 → 유동장
 유동장 + j ─────────────────────→ [파슬] 핵생성·성장·합체·이탈·상승·배출
 ```
 
@@ -48,8 +48,11 @@ V_cell = E_rev(T,P) + η_act,anode(j) + η_act,cathode(j) + η_conc(j) + j·R_to
   — 기포가 덮으면 전압↑(CP)/전류↓(CA)로 되먹임이 닫혀 있음.
 - **농도 과전압 (경계층 물질전달 한계):**
   ```
-  η_conc = −(RT/zF)·ln(1 − j/j_lim),   j_lim = Sherwood(Re,Sc) 경계층 + Vogt 증강
+  η_conc = −(RT/F)·ln(1 − j/j_lim),   j_lim = 보정 base·Sherwood·Vogt closure
   ```
+  여기의 전하수는 이온 운반자(OH⁻/H⁺)의 `|z|=1`이다. HER/OER 기체 분자당 전자수
+  `z=2/4`는 Faraday 기체 생성에만 사용한다. `D_carrier/delta_bl` 유도 한계는 별도 proxy로
+  보고하며 보정 `j_lim`에 숨겨 더하지 않는다.
 - **저항 직렬합:**
   ```
   R_total = gap/κ_eff + r_membrane_area + r_contact_area
@@ -57,52 +60,55 @@ V_cell = E_rev(T,P) + η_act,anode(j) + η_act,cathode(j) + η_conc(j) + j·R_to
   ```
 - **캘리브레이션 기준:** AHEAD 측정 I–V (Zhang, Sci. Adv. 2026; 30 wt% KOH, 80 °C,
   zero-gap) — 기본값 `j0_HER=130`, `j0_OER=1.3e-7`(겉보기), `r_mem=3.2e-6 Ω·m²`.
-- 전기화학은 느리게 변하므로 **8 유동스텝마다** 재계산 (CachedSolver 패턴).
+- CP는 수송/물 한계를 넘겨도 설정전류를 낮추지 않고 infeasible flag와 전압 하한을 반환한다.
+  CA는 한계 아래에서 bracket한다. 전기화학은 **8 유동스텝마다** 재계산하며 coupling 주기
+  수렴성 시험이 필요하다.
 
 ### 1.2 전해액 유동 — 비압축 Navier–Stokes
 [3D 신규: `ns3d.py`]
 
 ```
-∂u/∂t + (u·∇)u = −∇p + f_부력 + f_차단      ,   ∇·u = 0
+∂u/∂t + (u·∇)u = −∇p + ν∇²u + f_상간교환      ,   ∇·u = 0
 ```
 
 | 요소 | 방법/식 |
 |---|---|
 | 격자 | **Staggered MAC** (u,v,w는 면, p는 중심) — 발산·압력구배 연산자가 일치해 투영 후 ∇·u ≈ 기계정밀도 (collocated 격자의 checkerboard 모드 회피) |
-| 시간 전진 | **Chorin projection**: 힘 추가 → 투영 → semi-Lagrangian 이류 → 투영 |
+| 시간 전진 | 힘 추가 → 명시적 점성 substep → semi-Lagrangian 이류 → **마지막 Chorin 투영**. downstream parcel이 보는 최종 장의 발산을 제거한다. |
 | 압력 Poisson | `∇²p = ∇·u*·h²` 를 **red-black SOR**(ω=1.7)로, 이전 스텝 p로 **warm-start** |
 | 이류 | **Semi-Lagrangian** (back-trace + trilinear 보간) — 무조건 안정 |
-| 부력 (기포→액체) | Boussinesq형: `Δu = g·((ρ_l−ρ_g)/ρ_l)·α_gas·ĝ(tilt)·Δt` (α_gas = 파슬이 뿌린 void). **중력 벡터 ĝ가 tilt 각으로 회전** → 셀 기울임 효과가 물리에서 창발 |
-| 차단 항력 (기포→액체) | **Brinkman형 벌점**: `u ← u/(1 + K·α_gas·Δt)`, K=60 s⁻¹ — 기포 커튼 속 액체가 운동량을 잃어 흐름이 기포 구름을 **우회** (grid-scale Euler–Euler 항력) |
-| 감쇠 | 선형 damp 3 s⁻¹ + semi-Lagrangian 수치확산 (**명시적 점성항 없음** — Stam stable fluids; 정성 스코프) |
+| 상간 운동량 교환 | parcel의 `α_g`, multiplicity 기반 계면적에서 얻은 `d32`, gas-liquid slip에 Schiller–Naumann `C_d(Re)`를 적용한다. 이 경로가 준비되면 별도 Boussinesq 기포부력을 더하지 않아 이중계산을 피한다. |
+| 점성 | `ν=μ/ρ`의 명시적 Laplacian, `νΔt/h²≤1/6`이 되도록 substep. 셀 엔진의 legacy 선형 `damp`는 0이다. |
 | 경계 | 전극면·측벽·리브: 법선속도 0 (장애물 마스크는 압력 스텐실에서 이웃 제거 = 내부 Neumann 벽), 하단 **인렛 포트**에 u_in, 상단 p=0 개방 outlet |
 
 ### 1.3 기포 — Lagrangian 파슬 + 대표 다중도
 [3D 신규 골격 + 커널 물리: `parcels.py`]
 
-커널 `Surface`의 수명주기(핵생성→성장→이탈→상승)를 3D로 리프트. 추적 버블 1개가
-실제 버블 `mult`개를 대표: **r은 진짜 단일 버블 반경**(문헌 스케일 수십~수백 µm),
-가스량은 `W = mult·V(r)`. 실제 셀의 초당 10⁵~10⁶개 이탈(추적 불가능 벽)을 정직하게 흡수.
+커널 `Surface`의 수명주기(핵생성→성장→이탈→상승)를 3D로 리프트. 추적 cohort의
+`mult`는 **기대 기포수의 비음수 통계 가중치**이며 cohort 분할 후 1 미만도 가능하다.
+**r은 진짜 단일 버블 반경**(문헌 스케일 수십~수백 µm), 가스량은 `W = mult·V(r)`.
+실제 셀의 초당 10⁵~10⁶개 이탈(1:1 추적 불가능)을 통계적으로 흡수한다.
 
 | 단계 | 식/방법 |
 |---|---|
-| **핵생성** | Faraday 기체 예산으로 시드 구매: `Q̇ = η_F·(j·A)/(zF)·RT/P_gas` (HER z=2, OER z=4 → H₂가 같은 전하당 2배 부피). 고정 `z` 외의 OER 보정계수는 없다. 고정밀 모드에서는 수증기를 제외한 건조기체 분압 `P_gas`를 쓴다. 시드 r=2 µm, **촉매면**(zero-gap이라 채널의 막쪽 벽)의 연속 랜덤 위치, 랜드 아래는 기각샘플링으로 배제. `mult = site_density·(0.5+β/90)·A / 140슬롯` |
+| **핵생성** | Faraday 기체 예산으로 시드 구매: `Q̇ = η_F·(j·A)/(zF)·RT/P_gas` (HER z=2, OER z=4). 시드 기본 r은 `Params.r_nuc=5 µm`; 촉매면 연속 랜덤 위치에서 land 아래를 배제한다. `mult = site_density·(0.5+β/90)·A / 140슬롯`. 이는 3D 전용 budget closure이며 `k_nuc`, `B_nuc`, `f_to_bubble`을 사용하지 않는다. |
 | **성장** | 남은 예산을 부착 버블에 **r² 가중 분배**: `dV_single = dW/mult` → `r_new = (3V/4π)^{1/3}`. 성장-이탈 주기(~1 ms)가 유동 스텝(3 ms)보다 짧으므로 **서브스텝**(주기 가스량의 25%/패스, ≤32회). r이 이탈반경·채널구속에 걸리면 잉여 가스는 `mult` 재유도(= 같은 크기의 실제 버블이 더 많아짐)로 흡수 — W 보존 |
-| **합체** | 통계적: 이웃(자기 mult 형제들, Poisson 분포 n = mult·N/A)이 접촉 반경 `d = 1.6·r·sinβ` 안에 들어올 확률 `P = 1−exp(−π n d²)`의 **성장 증분 dP**에 대해 추첨(dt 무관 = rate-consistent). 합체 확률은 전해질 규칙: KOH > 0.3 M이면 salting-out으로 0.05, 아니면 0.9. 합체 시 `mult → mult/2`, `r → r·2^{1/3}` (W 불변) |
-| **이탈** | 커널 힘균형 `F_b + F_d + F_DEP = F_adh`의 해 r_d (이분법): 부력 `(4/3)πΔρg·r³`, 유동항력 `½C_d ρ_l u_eff² π r²`, 음의 DEP `∝ E²·r³`(부피 스케일링), 접촉선 부착력 `A_adh·r` — A_adh는 무유동·무장에서 정확히 **Fritz 반경**에 이탈하도록 보정: `r_d0 = fritz_scale·½·0.0208·β[deg]·√(σ/(gΔρ))` (fritz_scale=0.08: Fritz는 비등 상관식이라 전해에 과대). MHD는 `u_eff = u + k_mhd·j·B`. **벽전단 보정**: 정지액에서 r 먼저 풀고 `u_eff = u_bulk·min(1, r_stag/(gap/2))`로 재평가(이탈 버블은 벽 전단층 안에 있으므로). 버블별 ±35% 분산, 채널 구속 상한 `r ≤ 0.45·gap`(그 이상은 슬러그) |
-| **상승** | 풀린 유동 속도(trilinear 샘플) + **Schiller–Naumann 종단 슬립**: `C_d = (24/Re)(1+0.15·Re^0.687)`, `U = √(8Δρ g r/(3 C_d ρ_l))` 감쇠 고정점 반복(Stokes 시드) + 약한 횡방향 미앤더. **복셀 충돌은 축별·서브스텝**(≤반셀/이동)이라 어떤 속도에서도 리브 관통 불가 → 버블이 리브 밑을 미끄러져 턴 갭으로. 상승이 막힌 버블은 느린 횡 crawl(접촉선 wobble). 출구 도달 시 배출(vent) |
-| **되먹임** | 가스 부피를 **3×3×3 스미어**로 격자 void에 투영(≤0.8) → NS 부력·차단 항력의 α_gas |
+| **합체** | 벽 부착기는 `d=2r·sinβ`의 Poisson 접촉확률 증가분으로 갱신한다. 자유 swarm은 Shima식 가중 pair와 기하 collision kernel×Prince–Blanch film drainage를 쓴다. 전해질 억제는 `η=c_crit/(c_crit+c)` closure이며 보편 상수가 아니다. |
+| **이탈** | `F_b + F_d + F_DEP = F_adh`의 해. 3D 기본은 실측 무유동 이탈반경 `r_departure_ref`로 adhesion을 정하고 Fritz는 fallback이다. MHD `k_mhd·jB`, DEP gradient length, `Cd_flow`, `r_min_detach`, ±30% 분산은 보정/closure 입력이다. 채널 구속 상한은 `r≤0.45·gap`. |
+| **상승** | 풀린 액체속도 + Schiller–Naumann 종단 slip + Tomiyama/Antal 벽법선 drift. 계산 궤적에는 인공 sinusoidal wobble·random crawl을 넣지 않는다. 장애물 충돌은 축별 반-cell 이하 substep이며 출구에서 vent한다. |
+| **되먹임** | 기체체적·계면적·gas momentum을 유효 **fluid cell만** 대상으로 3×3×3 적층해 `α_g`, `d32`, gas velocity를 만든다. raw `α_g>1`이면 세 장을 같은 셀별 비율로 축소해 반환 `α_g`·`d32`·gas velocity의 상호 일관성을 유지하고, 제거된 Euler coupling 체적을 별도 진단한다. parcel 기체 ledger 자체는 자르지 않는다. |
 | **커버리지** | Poisson 합집합: `θ = 1 − exp(−Σ mult·π(r·sinβ)²/A)` (≤0.95) → 1.1의 전압수지로 |
-| **보존** | `produced(∫Q̇dt) = resident(ΣW) + vented` **기계정밀 폐합** — 갈 곳 없는 가스는 pending으로 이월, 자유 버블 솎아내기(1400개 유지)는 생존자의 W·mult 동일 배율 재규격화 |
+| **보존** | `produced(∫Q̇dt) = resident(ΣW) + pending + vented`. 자유 parcel 축약은 비음수 통계 가중치로 전극 side별 `Σmult`, `Σmult·r²`, `Σmult·r³`(기대 수·계면적·체적)를 보존하며, 불가능하면 축약을 건너뛰고 진단한다. `mult≥1` 강제는 유효 충돌을 버려 시간간격 의존성을 만들므로 사용하지 않는다. |
 
 ### 1.4 전극면 전류 재분배 — 병목맵
 [3D 신규, face2d 방식: `faceredist.py`]
 
-근벽 버블들의 실제 접촉 발자국 `mult·π(r sinβ)²`을 유동격자 3×3배 해상도 빈에
+**촉매에 부착된** 버블들의 실제 접촉 발자국 `mult·π(r sinβ)²`을 유동격자 3×3배 해상도 빈에
 **디스크로 스탬핑** → Poisson 합집합 `θ = 0.9(1−exp(−면적/빈면적))` → 3×3 블러 2회 →
 
 ```
-j(y,z) = j_mean · (1−θ(y,z)) / mean(1−θ)        (활성 셀 평균 = j_mean, 전하 보존)
+j(y,z) = j_mean · active·(1−θ(y,z)) / mean_full(active·(1−θ))
+                                                    (전체 기하 면적 적분 전하 보존)
 ```
 
 리브(랜드) 셀은 j=−1로 표시(전해액 없음). 정직한 한계: 공통 과전압 가정의
@@ -120,12 +126,15 @@ j(y,z) = j_mean · (1−θ(y,z)) / mean(1−θ)        (활성 셀 평균 = j_me
   면적비 ~10×의 제트가 생겨 버블이 리브를 넘는 오류 — 수정됨).
 - 라이브 뷰 = 계산 격자 그대로(과장 배율 없음), 렌더러 리브는 물리 랜드 마스크에서 생성.
 
-### 1.6 가스 초킹 진단
+### 1.6 gas/liquid 비율 진단
 
 ```
 Q_gas = Q̇_HER + Q̇_OER (각각 z=2, z=4의 Faraday 식),   Q_liq = u_flow·A_channel
-Q_gas/Q_liq ≳ 1  →  초킹 (펌프가 가스를 못 밀어냄 → holdup 폭주) — UI 경고 배너
+Q_gas/Q_liq = Faraday 기체 원천 / 해결된 복셀 입구 액체유량
 ```
+
+이는 설계 screening 비율이다. 현재 3D는 기체 상연속식과 기체 발생에 따른 액체 체적 치환을
+풀지 않으므로 `Q_gas/Q_liq ≳ 1`을 정량 choking 기준으로 해석하지 않는다.
 
 ---
 
@@ -218,7 +227,7 @@ Henry 용존 포화 `c_sat = P·k_H`, 과포화 `S = c/c_sat`도 커널 transpor
 | 배열-시프트 flood fill (6-연결) | 관통성 검사, 가스 클러스터 배출 |
 | 서브스텝핑 | 벽 성장(≤32), 파슬-복셀 충돌(≤반셀/이동) |
 | Poisson 통계 폐합 | 커버리지 합집합, 합체 접촉확률(증분식, dt 무관) |
-| 대표 다중도 + 적응 솎아내기(재규격화) | 실물 크기 버블 ↔ 실물 개수(10⁵~10⁶/s) 양립 |
+| 대표 다중도 + moment 보존 축약 | 실물 크기 버블 ↔ 실물 개수(10⁵~10⁶/s) 양립 |
 | 분수 스텝 캐리 | 배속 0.02×~5× 슬로모/가속 (스텝 수 내림 오차 제거) |
 
 ## 5. 정직한 한계 (모듈 docstring에 동일 명시)
@@ -229,6 +238,8 @@ Henry 용존 포화 `c_sat = P·k_H`, 과포화 `S = c/c_sat`도 커널 transpor
   운동량 경계층을 **해상하지 못한다** — 채널 하나가 셀 한 칸이라 포물선이 표현될 수 없다.
   따라서 셀 뷰는 여전히 정성 시각화이고, 압력강하·Re는 정량값이 아니다.
 - **기포**: sub-grid Lagrangian 파슬 — 계면 추적(VOF) 아님.
+  - **two-fluid 아님**: 액체장에는 `∇·u_l=0`을 적용하지만 `α_l=1−α_g` 상연속식과
+    별도 기체 연속식이 없다. 고 void에서 액체유량·holdup·압력강하를 동시에 닫지 못한다.
   - **이탈 후 성장 없음** (자유 기포의 반경은 합체로만 변한다).
   - **난류 분산 없음**: 이 셀은 층류(Re ≈ 4×10²)라 Prince–Blanch의 난류 충돌항과
     소산율 ε_t가 적용되지 않는다.
@@ -245,7 +256,8 @@ Henry 용존 포화 `c_sat = P·k_H`, 과포화 `S = c/c_sat`도 커널 transpor
   패스 중앙은 거의 수평(75~90°: 87%), **턴 갭은 거의 수직 상승**(0~15°: 5%, v_y ≈ +350 mm/s,
   v_z ≈ 0), 나머지 8%는 코너의 비스듬한 흐름. 패널 ①은 클릭 지점의 `vel3d`를 그대로 읽어
   부력·유동·합을 셀 좌표계 나침반에 그린다.
-- **면 전류맵**: 공통 과전압 전극-네트워크 축약(θ 기반 재분배). 3D 갭 퍼텐셜 풀이 아님.
+- **면 전류맵**: 공통 과전압 전극-네트워크 축약(부착기포 θ 기반 재분배). 전체 기하 면적의
+  적분전류는 0D 평균전류와 같지만, 3D 갭 퍼텐셜 풀이가 아니고 gas source에 재입력되지 않는다.
 - **포트**: 입·출구를 아래·위·왼쪽·오른쪽 **네 변** 중에서 고를 수 있다. 관통 방향(x)
   포트는 없다 — 전극면 자체이기 때문.
 - **교차형(interdigitated)은 이 모델에서 성립하지 않는다**: 실제 교차형 판은 채널을 막다른
@@ -269,27 +281,25 @@ Henry 용존 포화 `c_sat = P·k_H`, 과포화 `S = c/c_sat`도 커널 transpor
 - **미세구조**: 통계적 대표 구조(목표 공극률 정확) — 특정 전극의 토모그래피 재구성 아님.
   폼은 64³ 해상도에서 연결성 유지를 위해 고체분율 하한을 적용(`eps_achieved`로 명시).
 
-## 6. 검증 앵커 (tests/) — 241 테스트
+## 6. 검증 앵커 (`tests/`)
 
 숫자는 모두 현재 코드에서 실측한 값이다.
 
 - **골든 동결**: `bubblesim/` 무수정 → `test_characterization` rel 1e-9로 bit-identical.
 - **보존 (정확한 것)**
-  - 가스 폐합 `produced = resident + vented` — Track A **~4e-14** (기계정밀),
+  - 가스 폐합 `produced = resident + pending + vented` — Track A 기계정밀,
     Track B 복셀 1개 부피 이내.
-  - 대표 다중도 항등식 `W = mult·V(r)` — 성장·구속 clamp·벽 합체·무리 합체·솎아내기
-    전 구간에서 rel 1e-9.
-  - 면 전류 재분배: 활성 셀 평균 = `j_mean` (rel 1e-9).
+  - 대표 다중도 항등식 `W = mult·V(r)`과 축약 전후 side별 수·면적·체적 moment 보존.
+  - 면 전류 재분배: **전체 기하 면 평균** = `j_mean`; land는 0.
 - **유동 (해석해 대조)**
   - **평면 Poiseuille**: 무슬립 채널이 `u(x) = 1.5 ū [1-((x-L/2)/(L/2))²]`를 **최대 1.5 %**
     오차로 재현(Re = 4e-3, Stokes). `nu = 0`이면 플러그 그대로 → 포물선은 **점성항**이
     만든 것이지 수치확산이 아님.
   - 압력 풀이: 차가운 닫힌 상자 RB-SOR 1000 sweep → max|div| **3.5e-14**(기계정밀).
-  - **라이브 루프**(warm-start, `PROJ_TOL = 2e-3`, 사행 유로): 속도 단위 상대오차
-    **div·h/v_max ≈ 0.21 %**(평균 52 sweep, 18 ms/step, 0.16× 실시간), 질량수지 **1.1 %**.
-    옛 고정 12 sweep은 1.27 %에 0.24× 실시간이었다 — 정확도 6배를 1.5배 비용으로 샀다.
-    스텝은 `forces → 점성 → 이류 → **투영**` 순서라 파슬이 샘플하는 장이 발산 제거된 장이다
-    (투영을 이류 앞에 두면 같은 sweep 수로 잔차가 6배 커진다).
+  - **라이브 루프**(warm-start, `PROJ_TOL = 2e-3`, cap 80): 사행 유로에서는 cap이 먼저
+    걸릴 수 있다. 최종 `div·h/v_max`를 `projection_relative_divergence`로 매 snapshot 보고하고,
+    tolerance를 넘으면 `projection_converged=false`와 UI 경고를 낸다. 스텝 순서는
+    `forces → 점성 → 이류 → 투영`; 제한된 sweep 결과를 정량 수렴으로 간주하지 않는다.
 - **기포 물리 (엔진의 실제 설정에서)**
   - 이탈 반경, θ=30/60/120° · **정지 액체**: 61 / 122 / 244 µm (젖음성 레버 4×).
   - 같은 각, **펌프 0.35 m/s · 채널 깊이 1 mm**: 32 / 40 / 43 µm — 큰 기포일수록 전단층에
@@ -312,5 +322,7 @@ Henry 용존 포화 `c_sat = P·k_H`, 과포화 `S = c/c_sat`도 커널 transpor
   - 입·출구 포트는 네 변 어디에나: 지정 법선속도(입구)와 Dirichlet p=0(출구),
     나머지는 플레이트. 측면 관류에서 **질량수지 5 % 이내**, 기체도 그 포트로만 배출
     (윗면을 막으면 기포가 갇혀 옆으로 기어가 포트를 찾는다).
-- **외부 검증**: 2전극 기본값이 AHEAD 측정 분극곡선 재현(2.0 V에서 0.785 A/cm²,
-  1.6~2.1 V 구간, `test_validation`) — 상세는 [`../VALIDATION.md`](../VALIDATION.md).
+- **외부 앵커**: 2전극 기본값이 AHEAD 2.0 V 측정점 0.785 A/cm²를 ±12%로 확인하고
+  1.6/1.8/2.0 V 단조성과 넓은 범위를 검사한다. 전 곡선 수% 검증은 아니다.
+  상세는 [`../VALIDATION.md`](../VALIDATION.md), 감사 반영은
+  [`PRO_AUDIT_IMPLEMENTATION.md`](PRO_AUDIT_IMPLEMENTATION.md).

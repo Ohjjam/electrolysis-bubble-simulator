@@ -423,13 +423,15 @@ def test_redistribute_conserves_charge():
            jf[np.unravel_index(theta.argmin(), theta.shape)]
 
 
-def test_redistribute_active_mask_conserves_over_active():
+def test_redistribute_active_mask_conserves_full_face_charge():
     ny, nz = 8, 8
     theta = np.zeros((ny, nz))
     active = np.ones((ny, nz), dtype=bool)
     active[:, 0] = False                              # a land column
     jf = redistribute(0.5, theta, active)
-    assert abs(jf[active].mean() - 0.5) < 1e-9        # conserved over active area
+    assert abs(jf.mean() - 0.5) < 1e-9                # full-face integral conserved
+    assert np.all(jf[~active] == 0.0)
+    assert jf[active].mean() > 0.5                    # active area carries land current
 
 
 def test_uniform_when_no_coverage():

@@ -15,6 +15,17 @@
     background:radial-gradient(125% 96% at 54% 8%, #fbfdff 0%, #e8eef6 58%, #cfd9e7 100%);}
   #stageWrap{position:fixed;inset:0}
   #stage{position:absolute;inset:0;display:block;width:100%;height:100%}
+  #simRunBar{position:absolute;z-index:18;top:12px;left:50%;transform:translateX(-50%);
+    display:flex;align-items:center;gap:5px;padding:5px;border:1px solid rgba(180,190,205,.9);
+    border-radius:12px;background:rgba(255,255,255,.94);box-shadow:0 5px 22px rgba(20,32,52,.14);
+    backdrop-filter:blur(8px)}
+  .simRunBtn{min-width:70px;height:31px;padding:0 11px;border:1px solid var(--line);
+    border-radius:8px;background:var(--surf);color:var(--tx);font:600 11.5px/1 "Segoe UI",system-ui,sans-serif;
+    white-space:nowrap;cursor:pointer}
+  .simRunBtn:hover{border-color:var(--accent);background:var(--surf2)}
+  .simRunBtn:disabled{opacity:.55;cursor:wait}
+  #bStageStart.is-active{border-color:var(--grn);color:var(--grn);background:rgba(15,138,99,.09)}
+  #bStageStop.is-active{border-color:var(--warn);color:var(--warn);background:rgba(201,51,63,.08)}
   #mobileViewBar,#mobilePanelActions,.mobileFold{display:none}
   #panel{position:fixed;top:12px;left:12px;width:300px;background:var(--glass);
     border:1px solid var(--line);border-radius:14px;padding:12px 13px;backdrop-filter:blur(9px);
@@ -196,8 +207,10 @@
       align-items:center;justify-content:space-between;pointer-events:none;color:#43506a;
       font-size:10.5px;font-weight:650;text-shadow:0 1px 2px #fff}
     #mobileViewBar .mhint{font-weight:400;color:#6f7b91}
+    #simRunBar{top:35px;padding:4px;gap:4px}
+    .simRunBtn{min-width:0;height:29px;padding:0 9px;font-size:10.5px}
     #cameraDock{bottom:9px;width:min(240px,calc(100% - 20px));padding:6px 8px}
-    #analysisDock{top:42px;right:10px;width:min(214px,calc(100% - 20px));padding:7px 8px}
+    #analysisDock{top:77px;right:10px;width:min(214px,calc(100% - 20px));padding:7px 8px}
     #analysisDesc{display:none}
     #rightRail{display:contents}
     #panel,#hud,.fpanel{position:relative!important;left:auto!important;right:auto!important;
@@ -245,6 +258,11 @@
 <div id="boot">3D 앱 로딩 중…</div>
 <div id="stageWrap">
   <canvas id="stage"></canvas>
+  <div id="simRunBar" role="group" aria-label="3D 셀 실행 제어">
+    <button class="simRunBtn" id="bStageReset" type="button" title="현재 조건을 유지하고 0초로 초기화한 뒤 정지">↺ 처음부터</button>
+    <button class="simRunBtn" id="bStageStart" type="button" aria-pressed="true">▶ 시작</button>
+    <button class="simRunBtn" id="bStageStop" type="button" aria-pressed="false">■ 정지</button>
+  </div>
   <div id="mobileViewBar"><span>3D 보기</span><span class="mhint">드래그 회전</span></div>
   <div id="analysisDock" aria-label="3D 셀 분석">
     <div class="analysisHead"><span>3D 셀 분석</span><span id="analysisState">꺼짐</span></div>
@@ -643,8 +661,9 @@
       <div class="eq-n">
         <b>계면해상 CFD 아님</b> — 기포 표면을 VOF로 풀지 않습니다(µm 격자 + 표면장력 CFL →
         HPC 영역). 우리 것은 <b>Euler–Lagrange</b> 등가물: 기포는 <b>부분격자</b> 입자입니다.<br>
-        <b>추적 기포는 표본</b> — 초당 ~10만 개 나오는 실제 기포를 1400개로 <b>몬테카를로 표본</b>합니다
-        (1개 ≈ mult개 실제). 그래서 화면 개수는 통계지 실개수가 아닙니다.<br>
+        <b>추적 기포는 표본</b> — 초당 ~10만 개 규모의 기포군을 최대 1400개 <b>통계 cohort</b>로
+        나타냅니다. mult는 정수 실개수가 아니라 기대 기포수 가중치이며 cohort 분할 뒤 1 미만도
+        가능합니다. 그래서 화면 마커 수는 실개수가 아닙니다.<br>
         <b>Ni foam 내부 관통류 없음</b> · <b>막 함수율 분포 λ(x) 없음</b> ·
         <b>기체 crossover 없음</b> · mesh는 부분격자 strand 수집 모델이며 woven-mesh 유동장을
         직접 해상하지 않습니다. 정적 접촉각 이탈 근사는 이력현상을 포함하지 않습니다.<br>
@@ -852,7 +871,7 @@
   <div class="k">부착 대표 마커</div><div class="v small" id="hAttached">–</div>
   <div class="k">자유 분포 표본</div><div class="v small" id="hDistribution">–</div>
   <div class="k">이동 트레이서</div><div class="v small" id="hTracked">–</div>
-  <div class="k">실제 기포 추정</div><div class="v small" id="hReal">–</div>
+  <div class="k">기포수 기대값</div><div class="v small" id="hReal">–</div>
   <div class="k">이탈 반경 r_dep</div><div class="v small" id="hRdep">–</div>
   <div class="k">전류 불균일 (음/양극)</div><div class="v small" id="hSpread">–</div>
   <div class="k">속도 (×실시간)</div><div class="v small" id="hSp">–</div>
@@ -932,24 +951,41 @@ const CTRL = SIM_CTRL.concat([
     { k:"bscale", nm:"버블 표시 배율", seg:[["1","실제 ×1"],["2","×2"],["4","×4"],["8","×8"],["12","×12"],["16","×16"]], v:"1", local:1,
       help:"부착·분포·이동 버블에 같은 배율을 적용합니다. ×1이 계산된 실제 크기입니다." },
     { k:"bcount", nm:"분포 표본 수 상한 (0=전체)", un:"개", min:0, max:9000, step:100, v:0, lo:0, hi:9000, local:1 },
-    { k:"trace", nm:"이동 트레이서 수 (0=끄기)", un:"개", min:0, max:5000, step:100, v:5000, lo:0, hi:5000, local:1,
-      help:"0~5,000개의 화면용 대표 경로를 선택합니다. 계산 기포 수는 바뀌지 않으며, 많은 수는 기기 성능에 따라 프레임 속도가 낮아질 수 있습니다." },
+    { k:"trace", nm:"이탈 경로 표시 상한 (0=끄기)", un:"개", min:0, max:5000, step:100, v:600, lo:0, hi:5000, local:1,
+      help:"실제로 감지된 부착→이탈 이벤트의 이동 경로만 표시합니다. 기포 수가 아니며, 같은 통계 parcel을 복제해 채우지 않습니다." },
   ]],
 ]);
 
 // ============================ server link ==================================
 const pend = {}; let ptimer = null, srvOk = false;
+let opQueue = Promise.resolve(null);
 function send(k, v) {
   pend[k] = v;
   if (k === "tilt") applyCellTilt(v);
-  if (!ptimer) ptimer = setTimeout(flush, 70);
+  // A physical condition now starts a fresh run.  True debounce avoids
+  // rebuilding several intermediate runs while one slider is being dragged.
+  if (ptimer) clearTimeout(ptimer);
+  ptimer = setTimeout(flush, 140);
 }
 function flush() {
+  if (ptimer) clearTimeout(ptimer);
+  ptimer = null;
+  if (!Object.keys(pend).length) return opQueue;
   const body = JSON.stringify(pend);
   for (const k in pend) delete pend[k];
-  ptimer = null;
-  fetch("/api3d/op", { method:"POST", headers:{ "Content-Type":"application/json" }, body })
-    .catch(() => {});
+  const request = async () => {
+    const response = await fetch("/api3d/op", {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "조건 변경 실패");
+    observeRunResult(result);
+    return result;
+  };
+  // Keep rapid slider updates ordered.  Otherwise an older, slower rebuild can
+  // arrive after a newer condition and make the visible reset appear random.
+  opQueue = opQueue.then(request, request).catch(() => null);
+  return opQueue;
 }
 
 // ============================ control panel ================================
@@ -2295,6 +2331,8 @@ let lastState = null;
 const _col = new THREE.Color();
 let bubPrev = null, bubCur = null;
 let mergeAnimations = [], lastMergeSeq = 0;
+let lastLifecycleSeq = null;
+const lifecycleDetachIds = new Set();
 // In Movement/Distribution+paths views, every attached marker that is shown
 // owns one future tracer slot. This guarantees that a visible growing bubble
 // can detach continuously instead of disappearing when the tracer pool is full.
@@ -2407,6 +2445,7 @@ function ingestBubbles(st) {
         const dx = cur[0] - prev[0], dy = cur[1] - prev[1], dz = cur[2] - prev[2];
         cur[6] = Math.sqrt(dx * dx + dy * dy + dz * dz) / dt;
         if (prev[5] > 0.5 && cur[5] <= 0.5
+            && !lifecycleDetachIds.has(id)
             && trackedAttachedIds.has(bubbleTrackKey(cur[4], id)))
           queueTracerHandoff(prev, cur, id);
       }
@@ -2485,8 +2524,15 @@ function renderBubbles(now) {
   }
   let eligibleFree = 0;
   for (const v of visPool) if (eligible(v) && !v.att) eligibleFree++;
-  availableDistributionCount = eligibleFree;
-  const freeRenderTarget = showFreeDistribution ? Math.min(displayLimit, eligibleFree) : 0;
+  // visPool keeps unmatched parcels for one poll while they fade out.  That
+  // continuity aid must not inflate the displayed statistical population above
+  // the server's current representative-parcel count.
+  const serverFreeTarget = Math.max(
+    0, Math.floor(+((lastState && lastState.diag && lastState.diag.n_free)
+                    ?? eligibleFree)));
+  availableDistributionCount = Math.min(eligibleFree, serverFreeTarget);
+  const freeRenderTarget = showFreeDistribution
+    ? Math.min(displayLimit, availableDistributionCount) : 0;
   let freeSeen = 0;
   let freeCount = 0, attachedCount = 0, meshCount = 0;
   for (const v of visPool) {
@@ -2799,23 +2845,39 @@ function queueTracerHandoff(previous, current, sourceId) {
   tracerHandoffsQueued++;
 }
 
-function _trSeed() {
-  if (!bubCur || !bubCur.map.size) return null;
-  const arr = [...bubCur.map.values()];
-  for (let tries = 0; tries < 24; tries++) {
-    const c = arr[(Math.random() * arr.length) | 0];
-    if (c[5] > 0.5) continue;                      // attached: not a riser
-    if (tracerPointInSolid(bubGrid, c[0], c[1], c[2])) continue;
-    return tracerFromBubble(c);
+function ingestLifecycleEvents(st) {
+  lifecycleDetachIds.clear();
+  const feed = st && st.lifecycle;
+  if (!feed) return;
+  const latest = Math.max(0, Math.floor(+feed.latest_seq || 0));
+  // First subscription (or a server reset) establishes a high-water mark.
+  // Historical events must not suddenly fill the current scene.
+  if (lastLifecycleSeq == null || latest < lastLifecycleSeq) {
+    lastLifecycleSeq = latest;
+    return;
   }
-  return null;
+  for (const event of feed.events || []) {
+    const seq = Math.floor(+event.seq || 0);
+    if (seq <= lastLifecycleSeq || event.type !== "detach") continue;
+    const position = event.position_m;
+    const radius = +event.radius_m;
+    const side = +event.side;
+    if (!Array.isArray(position) || position.length < 3 || !(radius > 0)) continue;
+    lifecycleDetachIds.add(+event.id);
+    const seed = [+position[0], +position[1], +position[2], radius, side, 0, 0];
+    if (tracerPointInSolid(bubGrid, seed[0], seed[1], seed[2])) continue;
+    tracerHandoffs.push(tracerFromBubble(seed, true, +event.id));
+    if (tracerHandoffs.length > TR_N) tracerHandoffs.shift();
+    tracerHandoffsQueued++;
+  }
+  lastLifecycleSeq = latest;
 }
 
 function wantedTracerCount() {
   if (P.trace === "off") return 0;       // backward-compatible saved UI state
   const requested = Number(P.trace);
   return Number.isFinite(requested)
-    ? Math.min(TR_N, Math.max(0, Math.floor(requested))) : 700;
+    ? Math.min(TR_N, Math.max(0, Math.floor(requested))) : 0;
 }
 
 // Same Schiller-Naumann terminal-velocity correlation as parcels.py. The
@@ -2856,21 +2918,9 @@ function renderTracers(now) {
   const rate = (lastState && lastState.speed_actual) || 1;
   const dt = dtW * rate;                            // SIM seconds this frame
   if (tracers.length > want) tracers.length = want;
-  // Keep part of the requested capacity free for genuine attached->free
-  // handoffs. Filling every slot with random background markers forced each
-  // new handoff to teleport an unrelated moving marker across the cell.
-  const reservedForLifecycle = trackedAttachedIds.size + tracerHandoffs.length;
-  const backgroundTarget = Math.max(0, want - reservedForLifecycle);
-  // Fill a large selection over several frames. This avoids a one-frame hitch
-  // and seeds from successive server snapshots instead of stacking thousands
-  // of representative markers at the same sampled positions.
-  const seedBatch = Math.max(1, Math.ceil(backgroundTarget / 12));
-  let seeded = 0;
-  while (tracers.length < backgroundTarget && seeded++ < seedBatch) {
-    const t = _trSeed(); if (!t) break; tracers.push(t);
-  }
-  // Append exact handoffs only into a free slot. Never replace a moving marker
-  // mid-channel: replacement was the remaining source of visible teleporting.
+  // Only exact attached->free lifecycle events enter this pool.  The previous
+  // background fill repeatedly sampled the same free parcel with replacement,
+  // so 1,400 statistical parcels appeared as 5,000 "bubbles".
   while (tracerHandoffs.length && want) {
     const handoff = tracerHandoffs.shift();
     if (tracerPointInSolid(g, handoff.x, handoff.y, handoff.z)) continue;
@@ -2963,6 +3013,7 @@ function renderTracers(now) {
 window.__traceInfo = () =>
   ({ mode:P.bview || "move", n:trInst.count, pool:tracers.length,
      requested:wantedTracerCount(), capacity:TR_N,
+     source:"exact-detach-events",
      speedScale:velocityScale, solidReady:tracerMaskReady(bubGrid),
      inSolid:tracers.reduce((n, t) => n + (tracerPointInSolid(bubGrid, t.x, t.y, t.z) ? 1 : 0), 0),
      collisionBlocks:tracerCollisionBlocks, solidReseeds:tracerSolidReseeds,
@@ -3542,17 +3593,20 @@ document.getElementById("csvLsv").onclick = () => {
   const js = expLast.j;
   const meas = new Map(EXP_MEAS);
   const rows = csvHeader("LSV 분극곡선 (여러 조건 비교)");
-  // j_설정 = what was asked for; j_실제 = what the cell could actually deliver
-  // (a dry cathode's water wall clamps it). 도달가능=0 rows are NOT operating
-  // points — filter them out in Excel before plotting.
+  // CP preserves j_설정.  도달가능=0 rows are infeasible requests, and their
+  // finite voltage is only a lower bound rather than a realised operating point.
   const head = ["j_설정_mA_per_cm2", "j_실제_mA_per_cm2", "도달가능_1yes",
+                "전압하한_1yes", "j한계_mA_per_cm2",
                 "실측_pristine_V", "모델_pristine_V"];
   for (const c of expOverlay) { head.push(`${c.label}_V`, `${c.label}_dV_mV`); }
   rows.push(head);
   const pr = expLast.pristine, base = pr.V;
   const ju = pr.j_used || js, rc = pr.reachable;
+  const lb = pr.voltage_is_lower_bound || js.map(() => false);
+  const jl = pr.j_limit || js.map(() => "");
   js.forEach((j, i) => {
     const r = [j, ju[i], rc ? (rc[i] ? 1 : 0) : 1,
+               lb[i] ? 1 : 0, jl[i] == null ? "" : jl[i],
                meas.has(j) ? meas.get(j) : "", +base[i].toFixed(4)];
     for (const c of expOverlay) {
       const v = c.V[i];
@@ -3636,7 +3690,7 @@ document.getElementById("csvBub").onclick = () => {
       b[o+5] > 0.5 ? "부착(성장중)" : "상승(자유)",
       cur ? +((cur[6] || 0) * 1000).toFixed(2) : ""]);
   }
-  csvSave("기포스냅샷", rows, "csvBubStat", `${n}개 (1개≈${mult.toFixed(0)}개 실제) · t=${s.t.toFixed(2)}s`);
+  csvSave("기포스냅샷", rows, "csvBubStat", `${n}개 통계 마커 · 부착 seed 가중치 ${mult.toFixed(2)} · t=${s.t.toFixed(2)}s`);
 };
 
 // ⑥ one summary row per condition — paste-stack them in Excel to compare designs
@@ -3783,11 +3837,16 @@ function expReadout(res) {
   const el = document.getElementById("exRead");
   const at = jt => res.j.indexOf(jt);
   const reach = res.pristine.reachable;
+  const lower = res.pristine.voltage_is_lower_bound || [];
+  const limit = res.pristine.j_limit || [];
   const rows = [1000, 1500, 2250].map(jt => {
     const i = at(jt);
-    // a point past a hard wall (dry-cathode water supply) is NOT an operating
-    // point — quoting a voltage there would be quoting a lower current's V
-    if (reach && !reach[i]) return `${jt}: <b style="color:#c9333f">도달불가</b>`;
+    if (reach && !reach[i]) {
+      const v = res.pristine.V[i];
+      const vText = lower[i] && Number.isFinite(v) ? ` · V≥${v.toFixed(3)}V` : "";
+      const jText = Number.isFinite(limit[i]) ? ` · 한계 ${limit[i]} mA/cm²` : "";
+      return `${jt}: <b style="color:#c9333f">도달불가${vText}${jText}</b>`;
+    }
     const vp = res.pristine.V[i];
     const dv = res.mesh ? (vp - res.mesh.V[i]) * 1000 : null;
     return `${jt}: ${vp.toFixed(3)}V` + (dv !== null
@@ -3928,11 +3987,94 @@ loadExperiments();
 
 // ============================ buttons ======================================
 let paused = false;
-document.getElementById("bPause").onclick = e => {
-  paused = !paused; send("paused", paused);
-  e.target.textContent = paused ? "▶ 재생" : "⏸ 정지";
-};
-document.getElementById("bReset").onclick = () => fetch("/api3d/reset", { method:"POST" });
+let lastRunId = null;
+const bPause = document.getElementById("bPause");
+const bStageReset = document.getElementById("bStageReset");
+const bStageStart = document.getElementById("bStageStart");
+const bStageStop = document.getElementById("bStageStop");
+
+function syncRunButtons(nextPaused) {
+  paused = !!nextPaused;
+  bPause.textContent = paused ? "▶ 재생" : "⏸ 정지";
+  bStageStart.classList.toggle("is-active", !paused);
+  bStageStop.classList.toggle("is-active", paused);
+  bStageStart.setAttribute("aria-pressed", String(!paused));
+  bStageStop.setAttribute("aria-pressed", String(paused));
+}
+
+function clearLiveVisualState() {
+  lastState = null;
+  bubPrev = null; bubCur = null; bubGrid = null; visPool = [];
+  trackedAttachedIds.clear();
+  lifecycleDetachIds.clear();
+  tracers.length = 0; tracerHandoffs.length = 0; trLast = 0;
+  mergeAnimations.length = 0;
+  inst.count = 0; instAttached.count = 0; instMesh.count = 0;
+  trInst.count = 0; mergeInst.count = 0;
+  displayedAttachedCount = displayedMeshCount = 0;
+  displayedDistributionCount = availableDistributionCount = 0;
+  displayedTracerCount = 0;
+  lastMergeSeq = 0; lastLifecycleSeq = null;
+  tracerCollisionBlocks = tracerSolidReseeds = 0;
+  tracerHandoffsQueued = tracerHandoffsShown = 0;
+  tracerHandoffsSkipped = tracerHandoffStartFallbacks = 0;
+  gas3dCur = null; vel3dCur = null;
+  latestFaces = null; analysisData = null;
+  velocityScale = velocityP95 = 0.25; velocityScaleUpdated = 0;
+  zoomFocus = null;
+  cpRec = [];
+  geometryRequestPending = true;
+  updateBubbleHud();
+}
+
+function observeRunResult(result) {
+  if (!result || result.run_id == null) return false;
+  const next = Number(result.run_id);
+  if (!Number.isFinite(next) || next === lastRunId) return false;
+  const hadRun = lastRunId != null;
+  lastRunId = next;
+  if (hadRun) clearLiveVisualState();
+  if (result.paused != null) syncRunButtons(result.paused);
+  return hadRun;
+}
+
+async function drainPendingOperations() {
+  if (ptimer || Object.keys(pend).length) await flush();
+  else await opQueue;
+}
+
+async function restartFromZero() {
+  bStageReset.disabled = true;
+  try {
+    await drainPendingOperations();
+    const response = await fetch("/api3d/reset", { method:"POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "초기화 실패");
+    if (!observeRunResult(result)) clearLiveVisualState();
+    syncRunButtons(result.paused ?? paused);
+  } finally {
+    bStageReset.disabled = false;
+  }
+}
+
+async function setPausedState(nextPaused) {
+  await drainPendingOperations();
+  const response = await fetch("/api3d/op", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ paused:nextPaused })
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "실행 상태 변경 실패");
+  observeRunResult(result);
+  syncRunButtons(result.paused ?? nextPaused);
+}
+
+bPause.onclick = () => setPausedState(!paused).catch(() => {});
+document.getElementById("bReset").onclick = () => restartFromZero().catch(() => {});
+bStageReset.onclick = () => restartFromZero().catch(() => {});
+bStageStart.onclick = () => setPausedState(false).catch(() => {});
+bStageStop.onclick = () => setPausedState(true).catch(() => {});
+syncRunButtons(false);
 document.getElementById("bCam").onclick = () => {
   document.getElementById("viewSeg").querySelectorAll("button").forEach(x =>
     x.classList.toggle("on", x.dataset.v === "orbit"));
@@ -3941,6 +4083,20 @@ document.getElementById("bCam").onclick = () => {
 
 // ============================ polling ======================================
 let pollN = 0;
+let geometryRequestPending = true, geometryStateKey = "";
+const GEOMETRY_STATE_KEYS = [
+  "W_cm","H_cm","ff","n_ch","w_ch_mm","d_ch_mm","w_land_mm",
+  "t_ptl_um","t_mem_um","in_z","in_w","out_z","out_w","mask",
+  "in_face","out_face","h_mm","dry_cathode","mesh_id","mesh_cover",
+  "mesh_pos","mesh_mode"
+];
+function geometryKey(st) {
+  const d = (st && st.designer) || {}, g = (st && st.grid) || {};
+  return JSON.stringify([
+    g.nx, g.ny, g.nz, g.h_mm, g.n_lay,
+    ...GEOMETRY_STATE_KEYS.map(k => d[k])
+  ]);
+}
 function updateBubbleHud() {
   const dg = (lastState && lastState.diag) || {};
   const english = window.SimI18n && SimI18n.getLanguage() === "en";
@@ -3964,22 +4120,50 @@ function updateBubbleHud() {
         ? `hidden · ${number(wantedTracerCount())} configured`
         : `숨김 · ${number(wantedTracerCount())}개 설정`)
     : (english
-        ? `${number(displayedTracerCount)} moving markers shown`
-        : `이동 마커 ${number(displayedTracerCount)}개 표시`);
-  const real = dg.n_real_est == null ? "–" : `~${number(dg.n_real_est)}`;
+        ? `${number(displayedTracerCount)} detected detach paths shown`
+        : `감지된 이탈 경로 ${number(displayedTracerCount)}개 표시`);
+  const real = dg.n_expected_bubbles == null ? "–" : (english
+    ? `expected ~${number(dg.n_expected_bubbles)}`
+    : `기대 ~${number(dg.n_expected_bubbles)}`);
   const mult = dg.mult == null ? "" : (english
-    ? ` · 1 representative ≈ ${number(dg.mult)} real`
-    : ` · 대표 1개≈실제 ${number(dg.mult)}개`);
+    ? ` · attached-seed weight ${number(dg.mult)}`
+    : ` · 부착 seed 가중치 ${number(dg.mult)}`);
   document.getElementById("hReal").textContent = real + mult;
 }
 
 async function poll() {
   let dt = 110;                      // fast polls + 60fps interpolation = smooth
   try {
-    // the heavy face maps evolve slowly -> request them every 3rd poll only
-    const wantFaces = mode === "live" && (pollN++ % 3) === 0;
-    const st = await (await fetch("/api3d/state" + (wantFaces ? "?faces=1" : ""))).json();
+    // Dense fields evolve slowly. Request only what the current visual mode
+    // consumes; surface maps alone can exceed 2.5 MB on a capped large grid.
+    const denseTick = mode === "live" && (pollN++ % 3) === 0;
+    const surfaceAnalysis = !["off", "eps", "speed"].includes(analysisMode);
+    const sliceNeedsVolume = document.querySelector("#sliceMode button.on")?.dataset.m === "eps";
+    const wantSurfaces = denseTick && surfaceAnalysis;
+    const wantVelocity = denseTick && (analysisMode === "speed" || sliceNeedsVolume ||
+      ((P.bview || "move") !== "dist" && wantedTracerCount() > 0));
+    const wantLifecycle = (P.bview || "move") !== "dist" && wantedTracerCount() > 0;
+    const wantGas = denseTick && (analysisMode === "eps" || sliceNeedsVolume);
+    const wantGeometry = geometryRequestPending;
+    geometryRequestPending = false;
+    const query = [];
+    if (wantSurfaces) query.push("surfaces=1");
+    if (wantVelocity) query.push("velocity=1");
+    if (wantLifecycle) {
+      query.push("events=1");
+      query.push(`event_after=${lastLifecycleSeq == null ? 0 : lastLifecycleSeq}`);
+    }
+    if (wantGas) query.push("gas=1");
+    if (wantGeometry) query.push("geometry=1");
+    const stateUrl = "/api3d/state" + (query.length ? "?" + query.join("&") : "");
+    const st = await (await fetch(stateUrl)).json();
+    observeRunResult(st);
     lastState = st; srvOk = true;
+    const nextGeometryKey = geometryKey(st);
+    if (nextGeometryKey !== geometryStateKey) {
+      geometryStateKey = nextGeometryKey;
+      if (!wantGeometry) geometryRequestPending = true;
+    }
     cpRecord(st);                    // ⑤ live CP/CA transient recorder (exp tab)
     exSyncQ(st);                     // pump flow in mL/min (exp tab)
     if (st.diag) drawEta3(st.diag.eta, st.diag.V_cell);   // ⚡ voltage breakdown
@@ -4003,10 +4187,31 @@ async function poll() {
       tracerCollisionBlocks = tracerSolidReseeds = 0;
       tracerHandoffsQueued = tracerHandoffsShown = 0;
       tracerHandoffsSkipped = tracerHandoffStartFallbacks = 0;
+      lastLifecycleSeq = null;
       rebuildCell();
     }
     const dg = st.diag || {};
     const validity = [];
+    if (dg.two_phase_quantitative === false)
+      validity.push("3D는 축소 parcel 시각화 모델이며 정량 two-fluid CFD가 아님");
+    if (dg.operating_feasible === false)
+      validity.push("CP 설정전류가 수송/물 공급 한계를 초과함 (표시 전압은 하한값)");
+    if (dg.grid_geometry_matches_request === false)
+      validity.push("요청 유로 치수와 실제 복셀 형상이 다름");
+    if (dg.grid_has_multiple_depth_cells === false)
+      validity.push("채널 깊이가 1개 복셀뿐임 (정량 격자 아님)");
+    if (dg.electrolyte_property_validated_path === false)
+      validity.push("H2SO4/PB 물성·촉매 경로는 미검증");
+    if ((dg.pending_gas_mL || 0) > 0)
+      validity.push("배치 대기 중인 기체가 있음");
+    if ((dg.deposition_unresolved_mL || 0) > 0)
+      validity.push("유체 셀에 적층하지 못한 parcel 기체가 있음");
+    if ((dg.thinning_skipped || 0) > 0)
+      validity.push("moment 보존 불가로 parcel 축약을 건너뜀");
+    if (dg.projection_converged === false)
+      validity.push(`압력투영 미수렴 (상대 발산 ${((dg.projection_relative_divergence || 0)*100).toFixed(2)}%)`);
+    if (dg.mhd_proxy_active || dg.dep_proxy_active)
+      validity.push("MHD/DEP는 보정 proxy이며 실제 장 해석이 아님");
     if (dg.grid_coarsened) validity.push(`격자 ${dg.h_requested_mm.toFixed(2)}→${dg.h_mm.toFixed(2)} mm`);
     if (dg.flow_ok === false) validity.push("입구-출구 단절");
     if (dg.dispersed_bubble_valid === false)
@@ -4026,9 +4231,11 @@ async function poll() {
     // the server is the single source of truth: pull its state into the widgets
     // so a change made in the 2-D view shows up here (and vice versa)
     ctls.sync(st.designer, st.speed);
+    syncRunButtons(st.paused);
     applyCellTilt(st.designer && st.designer.tilt);
-    if (wantFaces) plateEd.sync(st);
+    if (wantGeometry) plateEd.sync(st);
     if (mode === "live") {
+      ingestLifecycleEvents(st);
       ingestBubbles(st);
       if (st.gas3d) gas3dCur = st.gas3d;
       if (st.vel3d) vel3dCur = st.vel3d;
@@ -4405,7 +4612,7 @@ function setVisualPreset(next) {
     const on = !!presetLayers[cb.dataset.layer];
     cb.checked = on; layers[cb.dataset.layer] = on;
   });
-  setAnalysisMode(next === "analysis" ? "eps" : "off");
+  setAnalysisMode(next === "analysis" ? "j_c" : "off");
   applyLayers();
   setView(next === "analysis" ? "face" : "orbit");
 }
@@ -4550,8 +4757,9 @@ document.querySelectorAll(".fpanel .csvb[data-csv]").forEach(b => b.onclick = ()
     rows.push(["합계 V_cell", dg.V_cell]);
   } else if (b.dataset.csv === "lsv" && lsv3Res && lsv3Res.j) {
     const p=lsv3Res.pristine, ju=p.j_used||lsv3Res.j, rc=p.reachable;
-    title="📈 분극곡선 (LSV)"; rows=[["j_설정_mA_cm2","j_실제_mA_cm2","도달가능","모델_pristine_V"].concat(lsv3Res.mesh?["mesh_V"]:[])];
-    lsv3Res.j.forEach((j,i)=>{ const r=[j,ju[i],rc?(rc[i]?1:0):1,p.V[i]]; if(lsv3Res.mesh)r.push(lsv3Res.mesh.V[i]); rows.push(r); });
+    const lb=p.voltage_is_lower_bound||lsv3Res.j.map(()=>false), jl=p.j_limit||lsv3Res.j.map(()=>"");
+    title="📈 분극곡선 (LSV)"; rows=[["j_설정_mA_cm2","j_실제_mA_cm2","도달가능","전압하한","j한계_mA_cm2","모델_pristine_V"].concat(lsv3Res.mesh?["mesh_V"]:[])];
+    lsv3Res.j.forEach((j,i)=>{ const r=[j,ju[i],rc?(rc[i]?1:0):1,lb[i]?1:0,jl[i]==null?"":jl[i],p.V[i]]; if(lsv3Res.mesh)r.push(lsv3Res.mesh.V[i]); rows.push(r); });
   } else if (b.dataset.csv === "eis" && eis3Res && eis3Res.re) {
     title="🌀 EIS Nyquist"; rows=[["주파수_Hz","Z_re_ohm_cm2","-Z_im_ohm_cm2"]];
     eis3Res.f.forEach((f,i)=>rows.push([f,eis3Res.re[i],eis3Res.im[i]]));

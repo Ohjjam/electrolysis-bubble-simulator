@@ -11,8 +11,9 @@ Endpoints:
     GET  /                 the UI (web3d/app3d.html)
     GET  /web3d/...        static assets (vendored three.js etc.)
     GET  /api3d/state      JSON snapshot of the live cell-scale sim
-    POST /api3d/op         {key: value, ...} live parameter updates
-    POST /api3d/reset      rebuild the live sim (keeps settings)
+    POST /api3d/op         {key: value, ...} parameter updates; changed
+                           conditions start a fresh run
+    POST /api3d/reset      rebuild at t=0 and pause (keeps settings)
     GET  /api3d/runs       list Track B batch runs under results/
     POST /api3d/shutdown   local-only clean stop
 """
@@ -30,6 +31,7 @@ from pathlib import Path
 from bubblesim import Params, Simulator
 from bubblesim.config import ElectrodeParams
 from bubblesim.kernel.meshlayer import operating_mesh_factors
+from bubblesim.properties import saturation_pressure, water_activity_koh
 from bubblesim.solvers.channel import ChannelSolver
 from bubblesim3d.params3d import (DESIGNER_DEFAULTS, MESH_CATALOG,
                                   cell_config_from_designer, mesh_spec,
@@ -91,6 +93,8 @@ class LiveSim3D:
     DT = 3.0e-3              # sim step [s] (semi-Lagrangian is unconditionally stable)
     BLOCK = 0.012            # wall-clock chunk per loop [s]: small -> lock freed
                              # often (snapshots stay fresh) + frequent frames
+    MAX_STEPS_PER_LOCK = 20   # fast grids may still honour requested >1x speed
+    MAX_LOCK_SECONDS = 0.05   # slow grids yield after the current step
     PROJ_ITERS = 80       # CAP; CellSim3D.PROJ_TOL stops the solve early (~52 avg)
     IDLE_PAUSE = 45.0        # [s] no /api3d/state poll for this long -> stop
                              # stepping so an unwatched sim doesn't peg a CPU
@@ -108,6 +112,10 @@ class LiveSim3D:
                                  # (0 -> starts idle; no CPU until a viewer)
         self.speed_actual = 0.0
         self._carry = 0.0        # fractional sim steps carried between blocks
+        # Monotonic generation visible to every browser.  A new generation
+        # means all client-side interpolation/tracer pools belong to the old
+        # run and must be discarded, even when the voxel geometry is unchanged.
+        self.run_id = 0
         self._build()
 
     @staticmethod
@@ -152,6 +160,9 @@ class LiveSim3D:
     def _build(self):
         """(Re)create the cell sim from the current designer state."""
         self.params, self.cfg, self.sim = self._construct(self.designer)
+        self.run_id += 1
+        self._carry = 0.0
+        self.speed_actual = 0.0
 
     GEOM_KEYS = {"W_cm", "H_cm", "ff", "n_ch", "w_ch_mm", "d_ch_mm",
                  "w_land_mm", "t_ptl_um", "t_mem_um",
@@ -199,10 +210,26 @@ class LiveSim3D:
         lo, hi = LiveSim3D.NUM_LIMITS.get(k, (-1e12, 1e12))
         return f if lo <= f <= hi else None
 
+    @staticmethod
+    def _thermodynamic_error(d):
+        """Reject a wet-gas state with no positive dry product pressure."""
+        T = float(d.get("T", DESIGNER_DEFAULTS["T"])) + 273.15
+        P = float(d.get("Pbar", DESIGNER_DEFAULTS["Pbar"])) * 1.0e5
+        med = str(d.get("electrolyte", "KOH"))
+        c = float(d.get("c_mol", DESIGNER_DEFAULTS["c_mol"]))
+        aw = water_activity_koh(c) if med == "KOH" else 1.0
+        p_w = aw * saturation_pressure(T)
+        if P <= p_w:
+            return (f"total pressure ({P/1e5:.4g} bar) must exceed wet-gas "
+                    f"water-vapor pressure ({p_w/1e5:.4g} bar)")
+        return None
+
     def update(self, data: dict):
         with self.lock:
             candidate = dict(self.designer)
-            rebuild = False
+            restart = False
+            next_speed = self.speed
+            next_paused = self.paused
             accepted, rejected = {}, {}
             for k, v in data.items():
                 if k == "speed":
@@ -212,13 +239,13 @@ class LiveSim3D:
                     except (TypeError, ValueError):
                         continue
                     if math.isfinite(s):
-                        self.speed = max(0.01, min(5.0, s))
-                        accepted[k] = self.speed
+                        next_speed = max(0.01, min(5.0, s))
+                        accepted[k] = next_speed
                     else:
                         rejected[k] = "finite number required"
                 elif k == "paused":
-                    self.paused = bool(v)
-                    accepted[k] = self.paused
+                    next_paused = bool(v)
+                    accepted[k] = next_paused
                 elif k in DESIGNER_DEFAULTS:
                     cv = self._clean(k, v)
                     if cv is None:              # garbage: drop it, keep the sim alive
@@ -229,10 +256,20 @@ class LiveSim3D:
                                             # must not trigger a pointless rebuild
                     candidate[k] = cv
                     accepted[k] = cv
-                    if k in self.GEOM_KEYS:
-                        rebuild = True
+                    # Every physical/design condition starts a new transient.
+                    # Previously only geometry did this, so changing current,
+                    # flow, temperature, etc. inherited bubbles from the old
+                    # condition and made both population and motion misleading.
+                    restart = True
                 else:
                     rejected[k] = "unknown key"
+            thermo_error = self._thermodynamic_error(candidate)
+            if thermo_error:
+                for key in accepted:
+                    if key not in {"speed", "paused"}:
+                        rejected[key] = thermo_error
+                return {"ok": 0, "accepted": {}, "rejected": rejected,
+                        "error": thermo_error}
             # A drawn mask is authoritative only for ff="custom". Keeping a
             # stale mask beside serp/par/inter makes the UI say "serpentine"
             # while the solver and 3-D ribs still use an old drawing. Enforce
@@ -241,23 +278,32 @@ class LiveSim3D:
             if candidate.get("ff") != "custom" and candidate.get("mask"):
                 candidate["mask"] = ""
                 accepted["mask"] = ""
-                rebuild = True
-            if rebuild:
-                # Build first, commit second: a failed geometry never poisons the
-                # live designer or replaces the last valid simulation.
+                restart = True
+            if restart:
+                # Build first, commit second: a failed condition never poisons
+                # the live designer or replaces the last valid simulation.
                 params, cfg, sim = self._construct(candidate)
                 self.designer = candidate
                 self.params, self.cfg, self.sim = params, cfg, sim
-            else:                                   # operating levers: live
-                op = operating_from_designer(candidate)
-                self.designer = candidate
-                self._apply_params()                # catalyst / membrane R
-                self.sim.set_operating(op, tilt=float(self.designer.get("tilt", 0.0)))
-            return {"ok": 1, "accepted": accepted, "rejected": rejected}
+                self.run_id += 1
+                self._carry = 0.0
+                self.speed_actual = 0.0
+            # Commit UI controls only after thermodynamic validation and any
+            # restart has completed, so rejected updates are atomic.
+            self.speed = next_speed
+            self.paused = next_paused
+            return {"ok": 1, "accepted": accepted, "rejected": rejected,
+                    "run_id": self.run_id, "paused": self.paused}
 
     def reset(self):
         with self.lock:
             self._build()
+            # A reset must leave a visibly empty t=0 state.  If it immediately
+            # keeps running, this model can create hundreds of new representative
+            # bubbles before the next browser poll, which looks exactly like old
+            # bubbles survived the reset.  Start is now an explicit UI action.
+            self.paused = True
+            return {"ok": 1, "run_id": self.run_id, "paused": self.paused}
 
     def _advance(self, budget):
         with self.lock:
@@ -265,10 +311,17 @@ class LiveSim3D:
             # sim (the old max(1, round(...)) floored the rate at ~0.25x —
             # slow-motion below that silently didn't work)
             nf = budget * self.speed / self.DT + self._carry
-            n = int(nf)
-            self._carry = nf - n
-            for _ in range(n):
+            available = int(nf)
+            self._carry = nf - available
+            requested = min(available, self.MAX_STEPS_PER_LOCK)
+            n = 0
+            lock_start = time.perf_counter()
+            for _ in range(requested):
                 self.sim.step(self.DT, proj_iters=self.PROJ_ITERS)
+                n += 1
+                if (n < requested
+                        and time.perf_counter() - lock_start >= self.MAX_LOCK_SECONDS):
+                    break
         return n * self.DT
 
     def run_forever(self):
@@ -288,22 +341,47 @@ class LiveSim3D:
             total = time.perf_counter() - start
             self.speed_actual = 0.8 * self.speed_actual + 0.2 * (adv / max(total, 1e-9))
 
-    def snapshot(self, faces=False) -> dict:
-        # faces (the electrode current maps) are heavy at high resolution and
-        # evolve slowly -> the client requests them only every few polls
+    def snapshot(self, faces=False, *, surfaces=False, geometry=False,
+                 gas=False, velocity=False, event_after=None) -> dict:
+        # Dense analysis arrays are independently opt-in.  ``faces=1`` remains
+        # the backward-compatible all-heavy-fields request for older clients.
         with self.lock:
-            snap = self.sim.snapshot(with_faces=faces)
+            snap = self.sim.snapshot(
+                with_faces=faces or surfaces,
+                with_geometry=geometry or faces,
+                with_gas=gas or faces,
+                with_velocity=velocity or faces,
+            )
             snap.update({
                 "phase": "P1",
+                "run_id": self.run_id,
                 "paused": self.paused,
                 "speed": self.speed,
                 "speed_actual": round(self.speed_actual, 3),
                 "designer": self.designer,
                 "op": {"j_set": self.sim.op.j_set, "T": self.sim.op.T,
-                       "P": self.sim.op.P, "u_flow": self.sim.op.u_flow,
-                       "tilt": self.sim.tilt},
+                        "P": self.sim.op.P, "u_flow": self.sim.op.u_flow,
+                       "B_field": self.sim.op.B_field,
+                       "E_ext": self.sim.op.E_ext,
+                        "tilt": self.sim.tilt},
                 "vslice": self.sim.velocity_slice(0.5),
             })
+            if event_after is not None:
+                # The browser asks only for transitions newer than its last
+                # acknowledged sequence.  This is the exact detach stream used
+                # for path markers; it prevents one sampled parcel from being
+                # cloned thousands of times merely to make motion visible.
+                events = self.sim.parcels.lifecycle_events
+                latest = int(events[-1]["seq"]) if events else 0
+                snap["lifecycle"] = {
+                    "latest_seq": latest,
+                    "events": [
+                        event for event in events
+                        if event_after > 0
+                        and int(event.get("seq", 0)) > event_after
+                        and event.get("type") == "detach"
+                    ],
+                }
             return snap
 
 
@@ -315,7 +393,9 @@ SWEEP_J = [10, 20, 50, 100, 200, 300, 400, 500, 625, 750, 875,
            1000, 1250, 1500, 2000, 2250]                 # mA/cm^2
 _sweep_cache = {}
 
-_SWEEP_KEYS = ("W_cm", "H_cm", "ff", "n_ch", "w_ch_mm", "d_ch_mm", "u_flow",
+_SWEEP_KEYS = ("W_cm", "H_cm", "L_flow_cm", "ff", "n_ch", "w_ch_mm",
+               "w_land_mm",
+               "d_ch_mm", "u_flow", "B", "E", "dep_grad_um",
                "electrolyte", "c_mol", "T", "Pbar", "theta",
                "j0_cathode", "j0_anode", "alpha_a", "r_mem", "gap_mm", "void_frac",
                "mesh_id", "mesh_cover", "mesh_pos", "mesh_theta", "mesh_mode",
@@ -332,7 +412,9 @@ def _sweep_params(d: dict) -> Params:
                               Ea_j0=50.0e3),
         cathode=ElectrodeParams("HER", j0_ref=max(1e-9, float(d.get("j0_cathode", 130.0))),
                                 Ea_j0=30.0e3),
-        r_membrane_area=max(0.0, float(d.get("r_mem", 3.2e-6))))
+        r_membrane_area=max(0.0, float(d.get("r_mem", 3.2e-6))),
+        dep_gradient_length=max(
+            1e-9, float(d.get("dep_grad_um", 100.0)) * 1e-6))
 
 
 def _sweep_one(d: dict, with_mesh: bool):
@@ -342,12 +424,11 @@ def _sweep_one(d: dict, with_mesh: bool):
         d["mesh_id"] = ""
     solver = ChannelSolver()
     params = _sweep_params(d)
-    # j_used = the current the solver ACTUALLY delivered. With a dry cathode the
-    # water-supply wall clamps j below the requested value, and plotting V at the
-    # requested abscissa drew the curve at the wrong x (and flat past the wall).
-    # The chart/CSV must use j_used, and points where it fell short are simply
-    # UNREACHABLE for this cell.
-    out = {"V": [], "theta_out": [], "eps_out": [], "j_used": [], "reachable": []}
+    # CP preserves the requested current even beyond a transport/water wall.
+    # Reachability must therefore come from the solver's feasibility contract,
+    # never from j_used/requested (which is identically one in proper CP).
+    out = {"V": [], "theta_out": [], "eps_out": [], "j_used": [],
+           "reachable": [], "voltage_is_lower_bound": [], "j_limit": []}
     st = None
     for j in SWEEP_J:
         op = sweep_operating(d, j)
@@ -356,13 +437,24 @@ def _sweep_one(d: dict, with_mesh: bool):
         j_used = float(st.j) / 10.0                      # A/m^2 -> mA/cm^2
         out["V"].append(round(float(st.V), 4))
         out["j_used"].append(round(j_used, 1))
-        out["reachable"].append(bool(j_used >= 0.999 * j))
+        feasible = bool(st.fields.get("operating_feasible", True))
+        out["reachable"].append(feasible)
+        out["voltage_is_lower_bound"].append(
+            bool(st.fields.get("voltage_is_lower_bound", False)))
+        j_limit = st.fields.get("j_limit_A_m2")
+        out["j_limit"].append(
+            None if j_limit is None else round(float(j_limit) / 10.0, 1))
         out["theta_out"].append(round(st.fields["theta_out"], 4))
         out["eps_out"].append(round(st.fields["eps_out"], 4))
     ov = st.overpotentials                                # split at the last (max) j
     out["split_jmax"] = {k: round(float(v), 4) for k, v in ov.items()
                          if isinstance(v, (int, float))}
     out["prof_jmax"] = st.fields.get("path_prof")
+    out["model_input_valid"] = bool(st.fields.get("model_input_valid", False))
+    out["model_input_issues"] = list(st.fields.get("model_input_issues", []))
+    out["flow_length_m"] = st.fields.get("flow_length_m")
+    out["flow_length_source"] = st.fields.get("flow_length_source")
+    out["channel_closure_status"] = st.fields.get("channel_closure_status")
     out["mesh_warn"] = st.fields.get("mesh_warn", "")
     out["mesh_on"] = bool(st.fields.get("mesh_on", False))
     out["mesh_physics"] = {k.removeprefix("mesh_"): st.fields[k]
@@ -388,6 +480,9 @@ def sweep_polarization(designer: dict, overrides: dict) -> dict:
             if isinstance(v, float) and not math.isfinite(v):
                 continue
             d[k] = v
+    thermo_error = LiveSim3D._thermodynamic_error(d)
+    if thermo_error:
+        raise ValueError(thermo_error)
     key = json.dumps(d, sort_keys=True)
     if key in _sweep_cache:
         return _sweep_cache[key]
@@ -1492,7 +1587,21 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api3d/state":
             LIVE.last_poll = time.perf_counter()   # a viewer is here -> keep running
             q = self._query(self.path)
-            return self._json(LIVE.snapshot(faces=q.get("faces") == "1"))
+            legacy = q.get("faces") == "1"
+            event_after = None
+            if q.get("events") == "1":
+                try:
+                    event_after = max(0, int(q.get("event_after", "0")))
+                except (TypeError, ValueError):
+                    event_after = 0
+            return self._json(LIVE.snapshot(
+                faces=legacy,
+                surfaces=q.get("surfaces") == "1",
+                geometry=legacy or q.get("geometry") == "1",
+                gas=legacy or q.get("gas") == "1",
+                velocity=legacy or q.get("velocity") == "1",
+                event_after=event_after,
+            ))
         if p == "/api3d/runs":
             return self._json({"runs": list_runs()})
         if p == "/api3d/eis":
@@ -1667,8 +1776,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": 1, "result": res})
             return self._json({"error": "not found"}, 404)
         if self.path == "/api3d/reset":
-            LIVE.reset()
-            return self._json({"ok": 1})
+            return self._json(LIVE.reset())
         if self.path == "/api3d/run":
             try:
                 name = start_batch(data)

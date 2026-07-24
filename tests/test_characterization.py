@@ -39,22 +39,26 @@ REL = 1e-9   # pure refactors are bit-identical; this catches real logic drift
 # removing the arbitrary residual 0.05/0.9 coalescence probabilities: above the
 # measured critical coalescence concentration, this reduced model now reports
 # inhibited coalescence instead of silently forcing 5% of contacts to merge.
+# RE-BASELINED (2026-07-22 Sol audit): concentration polarisation now uses the
+# monovalent ionic carrier charge |z|=1. HER/OER molecule stoichiometry z=2/4 is
+# reserved for Faraday gas production, so changing the display electrode label
+# can no longer change the same full-cell transport loss.
 GOLDEN_STEADY_V2 = {
-    "j":         0.325306765267687,
-    "I":         0.325306765267687,
-    "theta":     0.561085984477363,
-    "eps":       0.5639091737443952,
+    "j":         0.3252074411712452,
+    "I":         0.3252074411712452,
+    "theta":     0.5600887164585785,
+    "eps":       0.5625952587214317,
     "r_d":       0.0015241237104220628,
     "n_bub":     69.0,
-    "eta_ohmic": 0.22126650917029692,
+    "eta_ohmic": 0.22023211524525405,
 }
 
 # solve_current_density(Operating(V_cell=V), props, theta, eps) -> j [A/m^2]
 GOLDEN_SOLVE_J = [
     # (V_cell, theta, eps, expected_j)
-    (2.0, 0.0, 0.0, 10084.76460506644),
-    (2.0, 0.4, 0.2, 6941.881430639487),
-    (1.8, 0.1, 0.1, 3090.2830671622314),
+    (2.0, 0.0, 0.0, 9930.76410284713),
+    (2.0, 0.4, 0.2, 6869.323589453472),
+    (1.8, 0.1, 0.1, 3064.586994270546),
 ]
 
 

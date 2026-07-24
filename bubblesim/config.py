@@ -19,8 +19,9 @@ class Operating:
     c_electrolyte: float = 6.0   # electrolyte concentration [mol/L]
     T: float = 333.15            # temperature [K]  (~60 degC)
     P: float = 1.0e5             # pressure [Pa]
-    # Water-side equivalent of measured catalyst/NF gas-bubble angle 145.1 deg.
-    contact_angle: float = 34.9  # apparent water contact angle through liquid [deg]
+    # Generic shared-kernel default. Experiment-specific measured angles belong
+    # in their preset/bridge (the 3-D designer explicitly supplies 34.9 deg).
+    contact_angle: float = 60.0  # apparent water contact angle through liquid [deg]
     u_flow: float = 0.0          # tangential cross-flow velocity [m/s]
     B_field: float = 0.0         # magnetic flux density [T]  (MHD convection)
     E_ext: float = 0.0           # near-surface field magnitude for DEP [V/m]
@@ -57,6 +58,7 @@ class Operating:
     channel_type: str = "serpentine"  # "serpentine" | "parallel" | "straight"
     n_pass: int = 4                   # serpentine passes / parallel channel count
     cell_width_cm: float = 5.0        # electrode width [cm] (serpentine run length)
+    flow_length_cm: float = 0.0       # measured/effective path length [cm]; 0 -> derive from layout
     drill_inlet_gas: float = 0.0      # flow2d: upstream gas entering the inlet (set when drilling a channel region)
     custom_path: "list | None" = None # user-drawn flow channel [[x,y],...] in [0,1] cell coords (design tool)
     chan_depth_mm: float = 1.0        # channel depth [mm] (channel model; 1.0 = legacy D_CHAN)

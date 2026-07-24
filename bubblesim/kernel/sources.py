@@ -4,7 +4,19 @@ Shared by every fidelity — the Faraday + ideal-gas conversion of current to a
 gas volume rate is the same whether the current came from a 0D or a 2D solver.
 """
 from ..constants import F, R_GAS
-from ..properties import GAS, saturation_pressure
+from ..properties import GAS, dry_gas_pressure, saturation_pressure
+
+
+def gas_molar_volume(T, P, *, wet=False, water_activity=1.0):
+    """Ideal molar gas volume [m^3/mol] on the simulator's state basis.
+
+    Wet gas and the reversible-voltage path share ``dry_gas_pressure`` so a hot
+    state cannot silently use two different vapor-pressure floors.
+    """
+    p_w = 0.0
+    if wet:
+        p_w = max(0.0, float(water_activity)) * saturation_pressure(T)
+    return R_GAS * T / dry_gas_pressure(P, p_w)
 
 
 def faradaic_gas_rate(j, electrode, T, P, area, eta_F=1.0, *, wet=False,
@@ -22,11 +34,8 @@ def faradaic_gas_rate(j, electrode, T, P, area, eta_F=1.0, *, wet=False,
     z = GAS[electrode]["z"]
     I = j * area
     n_dot = eta_F * I / (z * F)    # mol/s
-    p_gas = P
-    if wet:
-        p_w = max(0.0, float(water_activity)) * saturation_pressure(T)
-        p_gas = max(0.05 * P, P - min(0.95 * P, p_w))
-    return n_dot * R_GAS * T / p_gas   # m^3/s at cell T and wet/dry pressure
+    return n_dot * gas_molar_volume(
+        T, P, wet=wet, water_activity=water_activity)   # m^3/s at cell state
 
 
 def faradaic_molar_rate(j, electrode, area, eta_F=1.0):

@@ -48,8 +48,8 @@ DESIGNER_DEFAULTS = {
     # replaces the former arbitrary Fritz multiplier (0.08) in the 3-D path.
     "departure_diameter_um": 244.0,
     "dep_grad_um": 100.0,        # DEP proxy gradient length [um]
-    # 0.35 m/s: channel mean velocity. Pump flow is derived from the requested
-    # physical channel cross-section, not from the coarse live voxel inlet.
+    # 0.35 m/s: channel mean velocity. The live solver applies this velocity on
+    # the RESOLVED voxel inlet; requested and resolved areas are both reported.
     "u_flow": 0.35, "tilt": 0.0, "B": 0.0, "E": 0.0,
     # Measured catalyst/NF gas-bubble angle 145.1 deg -> water-side 34.9 deg.
     "theta": 34.9, "T": 60.0, "Pbar": 1.0,
@@ -64,7 +64,9 @@ DESIGNER_DEFAULTS = {
     "n_drag": 2.5,               # electro-osmotic drag [mol H2O / mol OH-]
     "D_w_mem": 1.0e-9,           # water diffusivity in the membrane [m^2/s]
         # (measured/calibrated r_mem pairs with a gap value; keep them together)
-    "h_mm": 2.0,                 # live-grid voxel size [mm] (smaller = finer channels, slower)
+    # Preview default. A 1 mm channel/depth is not quantitatively resolved by a
+    # 2 mm voxel; use a grid-convergence series and inspect the diagnostics.
+    "h_mm": 2.0,
     # --- PP-mesh bubble-management interlayer ------------------------------
     "mesh_id": "",               # MESH_CATALOG id ("" = no mesh)
     "mesh_cover": 1.0,           # fraction of the flow path covered (1 = full)
@@ -162,6 +164,7 @@ def operating_from_designer(d: dict) -> Operating:
         E_ext=max(0.0, _num(d, "E")) * 1.0e6,           # MV/m -> V/m
         A_cm2=max(1e-3, _num(d, "W_cm") * _num(d, "H_cm")),
         gap_mm=max(0.05, _num(d, "gap_mm")),
+        flow_length_cm=max(0.0, _num(d, "L_flow_cm")),
         # dry cathode (anolyte-only AEM): the cathode is fed water ONLY through
         # the membrane. Off by default -> identical to before.
         dry_cathode=_flag(d, "dry_cathode"),
@@ -218,6 +221,7 @@ def sweep_operating(d: dict, j_macm2: float) -> Operating:
     op.n_pass = max(1, _num(d, "n_ch", int))
     op.cell_width_cm = max(0.2, _num(d, "W_cm"))
     op.face_height_cm = max(0.2, _num(d, "H_cm"))
+    op.flow_length_cm = max(0.0, _num(d, "L_flow_cm"))
     op.chan_depth_mm = max(0.05, _num(d, "d_ch_mm"))
     op.u_flow = max(0.0, _num(d, "u_flow"))
     op.high_fidelity = True          # Gilliam/Pitzer properties: the calibrated
@@ -239,6 +243,7 @@ class Cell3DConfig:
     # geometry (designer)
     W_cm: float = 5.0            # electrode width  -> z extent
     H_cm: float = 5.0            # electrode height -> y extent (flow, buoyancy)
+    L_flow_cm: float = 40.0       # effective hydraulic path (channel reduced model)
     ff: str = "serp"             # flow-field type: serp | par | inter | custom
     n_ch: int = 8
     w_ch_mm: float = 1.0
@@ -377,6 +382,7 @@ class Cell3DConfig:
 def cell_config_from_designer(d: dict) -> Cell3DConfig:
     cfg = Cell3DConfig(
         W_cm=_num(d, "W_cm"), H_cm=_num(d, "H_cm"),
+        L_flow_cm=max(0.0, _num(d, "L_flow_cm")),
         ff=str(d.get("ff", "serp")),
         n_ch=max(1, _num(d, "n_ch", int)),
         w_ch_mm=_num(d, "w_ch_mm"), d_ch_mm=_num(d, "d_ch_mm"),

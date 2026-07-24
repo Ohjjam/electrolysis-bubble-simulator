@@ -98,7 +98,7 @@ def eta_water(j, j_lim_water, T):
 
     Same mass-transport form the rest of the kernel uses, with z = 1 because HER
     consumes exactly one H2O per electron. Saturates (does not diverge) at the
-    limit; the caller clamps j.
+    limit; CA callers bracket below it while CP callers flag infeasibility.
 
     j_lim_water <= 0 means the membrane passes NO water, i.e. total starvation —
     so it must return the SATURATED penalty, not zero. (Returning 0 here made the

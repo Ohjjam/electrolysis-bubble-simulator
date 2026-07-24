@@ -1,6 +1,7 @@
 """Robustness / stress tests (report item 4.2): extreme & degenerate inputs must
-not crash, NaN, or grow memory unboundedly -- the solver should clamp and stay
-finite. Complements the golden/monotonicity tests (which only cover the normal
+not crash, NaN, or grow memory unboundedly -- CA should bracket limits and CP
+should preserve impossible requests while flagging them. Complements the
+golden/monotonicity tests (which only cover the normal
 range).
 
 Run with:  python -m pytest tests/ -q   (or: python tests/test_stress.py)
@@ -95,13 +96,16 @@ def test_below_reversible_is_zero():
         assert st.j == 0.0
 
 
-def test_cp_huge_setpoint_clamps():
-    """A galvanostatic setpoint far above any limit clamps finite (no runaway)."""
+def test_cp_huge_setpoint_is_preserved_and_flagged():
+    """An impossible galvanostatic request stays explicit and finite."""
     for model in ("two_electrode", "oned"):
         op = Operating(model=model, mode="CP", j_set=1.0e12)
         st = get_solver(model).solve(op, build_context(op, Params()), [Flat()])
         _check_state(st)
-        assert st.j < 1.0e9      # clamped well below the absurd setpoint
+        assert st.j == op.j_set
+        assert st.fields["operating_feasible"] is False
+        assert st.fields["transport_limit_exceeded"] is True
+        assert st.fields["voltage_is_lower_bound"] is True
 
 
 def test_degenerate_params_no_crash():

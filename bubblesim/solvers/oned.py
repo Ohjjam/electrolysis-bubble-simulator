@@ -102,12 +102,14 @@ class OneDGapSolver:
 
         def eta_acts(j):
             return (_invert_bv(j / omt_a, j0_a, aa_a, ac_a, T, n=self.n_inner),
-                    _invert_bv(j / omt_c, j0_c, aa_c, ac_c, T, n=self.n_inner))
+                    # HER is cathodic. In positive-magnitude form the growing
+                    # exponential is governed by alpha_c, exactly as in 0D.
+                    _invert_bv(j / omt_c, j0_c, ac_c, aa_c, T, n=self.n_inner))
 
         j_lim_fp = vogt_limit(j_lim_base, j_ref_v, k_vogt)   # self-consistent ceiling
         mode = getattr(op, "mode", "CA")
         if mode == "CP":
-            j = max(0.0, min(op.j_set, 0.995 * j_lim_fp))
+            j = max(0.0, op.j_set)
         else:
             drive = op.V_cell - E_cell
             if drive <= 0.0:
@@ -130,14 +132,23 @@ class OneDGapSolver:
         z = (np.arange(self.n) + 0.5) * (L_side / self.n)
         c_ratio_c = 1.0 - (j / jlim_c) * np.clip((delta_c - z) / delta_c, 0.0, 1.0)
         phi_c = -j * np.cumsum(rl_c)                      # potential drop into the gap
+        primary_oer = bool(not dual and op.electrode == "OER")
         fields = {
             "z_mm": (z * 1e3).tolist(),
-            "eps_c": eps_c.tolist(),
-            "c_c": c_ratio_c.tolist(),
-            "phi_c": phi_c.tolist(),
             "delta_mm": delta_c * 1e3,
             "j_lim_1d": j_lim,
+            "profile_electrode": ("both" if dual else op.electrode),
         }
+        if primary_oer:
+            # The single supplied surface is the anode.  Earlier code solved the
+            # right profile but stored it in cathode-labelled fields.
+            fields["eps_a"] = eps_c.tolist()
+            fields["c_a"] = c_ratio_c.tolist()
+            fields["phi_a"] = (-phi_c).tolist()
+        else:
+            fields["eps_c"] = eps_c.tolist()
+            fields["c_c"] = c_ratio_c.tolist()
+            fields["phi_c"] = phi_c.tolist()
         if dual:
             c_ratio_a = 1.0 - (j / jlim_a) * np.clip((delta_a - z) / delta_a, 0.0, 1.0)
             fields["eps_a"] = eps_a.tolist()
@@ -145,10 +156,19 @@ class OneDGapSolver:
 
         med = context.get("electrolyte", "KOH")
         c_b = op.c_electrolyte
+        jlim_a_report = jlim_c if primary_oer else jlim_a
+        jlim_c_report = float("inf") if primary_oer else jlim_c
         fields.update({
             "pH_bulk": chemistry.bulk_pH(c_b, T, med),
-            "pH_anode": chemistry.local_pH(c_b, j, jlim_a, "OER", T, med),
-            "pH_cathode": chemistry.local_pH(c_b, j, jlim_c, "HER", T, med),
+            "pH_anode": chemistry.local_pH(c_b, j, jlim_a_report, "OER", T, med),
+            "pH_cathode": chemistry.local_pH(c_b, j, jlim_c_report, "HER", T, med),
+            "operating_feasible": bool(mode != "CP" or j < j_lim_fp),
+            "transport_limit_exceeded": bool(mode == "CP" and j >= j_lim_fp),
+            "j_requested_A_m2": float(op.j_set) if mode == "CP" else None,
+            "j_limit_A_m2": float(j_lim_fp),
+            "voltage_is_lower_bound": bool(mode == "CP" and j >= j_lim_fp),
+            "model_input_valid": bool(context.get("input_range_valid", False)),
+            "model_input_issues": list(context.get("input_range_issues", [])),
         })
 
         ov = {
@@ -160,7 +180,7 @@ class OneDGapSolver:
             "eta_ohmic": j * R_total,
             "eta_membrane": j * context["r_membrane_area"],
             "eta_bub_cov_anode": (fRT / aa_a) * math.log(1.0 / omt_a),
-            "eta_bub_cov_cathode": (fRT / aa_c) * math.log(1.0 / omt_c),
+            "eta_bub_cov_cathode": (fRT / ac_c) * math.log(1.0 / omt_c),
             "eta_bub_void": j * (R_ohm - context["gap_m"] / context["kappa"]),
         }
         return ElectroState(j=j, overpotentials=ov, fields=fields,

@@ -1,4 +1,4 @@
-"""CellSim3D — the cell-scale 3-D engine (Track A).
+"""CellSim3D — the cell-scale 3-D reduced-order engine (Track A).
 
 One dimension up from bubblesim.solvers.flow2d, at cell scale: incompressible
 NS on the gap + Lagrangian gas parcels, two-way coupled through the void field.
@@ -7,9 +7,12 @@ split) still comes from the FROZEN kernel electrochemistry
 (ZeroDTwoElectrodeSolver over build_context) — this engine is a 3-D field
 visualiser wrapped around the same canonical numbers, never a re-derivation.
 
-Honest scope: sub-grid parcels (no resolved interfaces -> not VOF); the
-electrode-face current redistribution (θ-driven) lands in P2. Here every face
-sees the mean current density.
+Honest scope: sub-grid representative parcels coupled to one incompressible
+liquid velocity field. This is neither VOF nor a two-fluid CFD model: parcel
+void, slip and d32 enter momentum exchange, but no gas-phase continuity
+equation displaces liquid volume. The electrode-face current map is a
+charge-conserving display diagnostic only; scalar electrochemistry and the
+Faraday source continue to use the 0-D mean current density.
 """
 import numpy as np
 
@@ -52,7 +55,9 @@ class CellSim3D:
         self.cfg = cfg
         self.inlet_area = 0.0
         self.inlet_area_voxel = 0.0
+        self.inlet_area_requested = 0.0
         self.channel_area_per_circuit = 0.0
+        self.channel_area_requested_per_circuit = 0.0
         self.liquid_circuits = 0
         self.port_in = self.port_out = None
         self.in_face = self.out_face = None
@@ -95,8 +100,12 @@ class CellSim3D:
             # electrode (catalyst) planes = the core boundaries: in a zero-gap
             # cell the gas emerges on the MEMBRANE side of each channel
             elec_planes = (self.n_lay * h, self.grid.Lx - self.n_lay * h)
-            # open inlet cross-section [m^2] -> pumped liquid flow rate, so the
-            # UI can show the gas/liquid ratio (an under-pumped cell chokes)
+            # Open RESOLVED inlet cross-section [m^2]. ``u_flow`` is a channel
+            # velocity, so the boundary condition and every velocity-based
+            # closure must see that same value. The former mapping preserved
+            # the requested sub-voxel area by diluting the voxel velocity;
+            # departure/transport closures still used u_flow, giving two
+            # velocities in one calculation.
             if self.in_face == "bottom":
                 open_face = ~solid[:, 0, :]
                 n_open = int((open_face & (self.ns.inlet > 0)).sum())
@@ -106,16 +115,21 @@ class CellSim3D:
                 n_open = int((open_face & (self.ns.inlet_z[0 if k == 0 else 1] > 0)).sum())
             self.inlet_area_voxel = float(n_open) * h * h
             self.liquid_circuits = 1 if bool(getattr(op, "dry_cathode", False)) else 2
-            self.channel_area_per_circuit = cfg.channel_area_m2()
-            self.inlet_area = self.channel_area_per_circuit * self.liquid_circuits
+            self.channel_area_requested_per_circuit = cfg.channel_area_m2()
+            self.inlet_area_requested = (self.channel_area_requested_per_circuit
+                                         * self.liquid_circuits)
+            self.inlet_area = self.inlet_area_voxel
+            self.channel_area_per_circuit = (self.inlet_area / self.liquid_circuits
+                                             if self.liquid_circuits else 0.0)
             self._sync_inlet_velocity()
         rng = np.random.default_rng(seed)
-        # PHYSICAL channel depth (mm -> m): the opposite plate confines the
-        # bubble, so a 0.2 mm channel must not let a 450 um sphere grow.
+        # Use the depth the voxel domain ACTUALLY resolves. Mixing a requested
+        # sub-voxel depth into parcel shear/confinement while NS used n_lay*h
+        # gave two different channels in one calculation.
         # box mode (cfg=None) has no flow channel; Parcels accepts channel_depth
         # =None (no gap confinement). The rest of __init__ already brackets cfg
         # use with `if cfg is not None`, and diagnostics() guards cfg is None too.
-        self.channel_depth = (max(1e-5, float(cfg.d_ch_mm) * 1e-3)
+        self.channel_depth = (max(1e-5, self.n_lay * self.grid.h)
                               if cfg is not None else None)
         self.parcels = Parcels(self.grid, op, rng, cap=cap,
                                face_masks=(self.face_c, self.face_a),
@@ -156,8 +170,9 @@ class CellSim3D:
         self.ns.set_fluid_properties(self.ctx["rho_l"], self.ctx["mu"])
         p = self.parcels
         if len(p.r):
-            stubs = [_Stub(p.coverage(0), p.void_near_wall(0)),
-                     _Stub(p.coverage(1), p.void_near_wall(1))]
+            layer = float(self.ctx["near_layer_m"])
+            stubs = [_Stub(p.coverage(0), p.void_near_wall(0, layer_m=layer)),
+                     _Stub(p.coverage(1), p.void_near_wall(1, layer_m=layer))]
         else:
             stubs = [_Stub(0.0, 0.0), _Stub(0.0, 0.0)]
         self._state = self._solver.solve(self.op, self.ctx, stubs)
@@ -176,6 +191,19 @@ class CellSim3D:
     # ---------------------------------------------------------------- update
     def set_operating(self, op, tilt=None):
         """Live parameter change (no domain rebuild)."""
+        # Parcels carry gas volume, not moles. Re-express the complete resident
+        # and cumulative ledger at the new T/P basis before adding a new source.
+        from bubblesim.kernel.sources import gas_molar_volume
+        new_ctx = build_context(op, self.params)
+        old_vm = gas_molar_volume(
+            self.op.T, self.op.P,
+            wet=bool(getattr(self.op, "high_fidelity", False)),
+            water_activity=self.ctx.get("water_activity", 1.0))
+        new_vm = gas_molar_volume(
+            op.T, op.P,
+            wet=bool(getattr(op, "high_fidelity", False)),
+            water_activity=new_ctx.get("water_activity", 1.0))
+        self.parcels.rescale_volume_basis(new_vm / old_vm)
         self.op = op
         self.parcels.op = op
         self._sync_inlet_velocity()
@@ -185,7 +213,7 @@ class CellSim3D:
         self._resolve()
 
     def _sync_inlet_velocity(self):
-        """Map physical circuit flow onto the coarse voxel inlet conservatively."""
+        """Apply the requested mean velocity on the resolved voxel inlet."""
         q_target = max(0.0, self.op.u_flow) * self.inlet_area
         self.ns.u_in = (q_target / self.inlet_area_voxel
                         if self.inlet_area_voxel > 0.0 else 0.0)
@@ -198,7 +226,7 @@ class CellSim3D:
     # Easy steps cost less than the old fixed budget; hard steps get what they need.
     PROJ_TOL = 2.0e-3
 
-    def step(self, dt, proj_iters=80, tol=None):
+    def step(self, dt, proj_iters=80, tol=None, *, trace_hook=None):
         # refresh the scalar electrochem occasionally (it varies slowly)
         if self._n % self._every == 0:
             self._resolve()
@@ -211,16 +239,16 @@ class CellSim3D:
         self.ns.set_interphase(gas, gas_velocity, diameter)
         self.ns.step(dt, proj_iters, tol=self.PROJ_TOL if tol is None else tol)
         # bubble lifecycle (nucleate -> grow -> detach -> rise) in one call
-        self.parcels.step(self.ns, j, dt, self.ctx)
+        self.parcels.step(self.ns, j, dt, self.ctx, trace_hook=trace_hook)
         self.t += dt
 
     # ------------------------------------------------------------- snapshot
     def gas_liquid(self):
         """(gas, liquid) volumetric flow rates [m^3/s] and their ratio.
 
-        A cell whose Faradaic gas rate rivals the pumped liquid rate CHOKES:
-        the channel fills with gas, holdup runs away, ohmic loss climbs. This
-        is the design number that tells you whether the pump is big enough.
+        The ratio is a screening diagnostic, not a quantitative choking
+        prediction. This reduced model has no gas-phase continuity equation
+        and cannot close liquid displacement at high void fraction.
         """
         from bubblesim.kernel.sources import faradaic_gas_rate as _fgr
         j = self.cell_current_A_m2()
@@ -255,7 +283,11 @@ class CellSim3D:
         m = free & (p.pos[:, 1] > 0.8 * self.grid.Ly)
         if not m.any():
             m = free
-        return float(p.r[m].mean()) if m.any() else 0.0
+        if not m.any():
+            return 0.0
+        weights = np.maximum(0.0, p.mult[m])
+        return (float(np.sum(weights * p.r[m]) / weights.sum())
+                if weights.sum() > 0.0 else 0.0)
 
     def diagnostics(self):
         p = self.parcels
@@ -286,14 +318,51 @@ class CellSim3D:
         rate_m3_s = q_her / n_sites                  # gas fed to ONE real site
         v_term = float(_vt(np.array([r_dep]), self.ctx["d_rho"],
                            self.ctx["mu"], self.ctx["rho_l"])[0])
+        if len(p.r):
+            eo = (G * float(self.ctx["d_rho"]) * (2.0 * p.r) ** 2
+                  / max(float(self.ctx["sigma"]), 1e-30))
+            tomiyama_in_range = float(np.mean((eo >= 1.39) & (eo <= 5.74)))
+            eo_min, eo_max = float(eo.min()), float(eo.max())
+        else:
+            tomiyama_in_range = 0.0
+            eo_min = eo_max = 0.0
+        geom = self._geom_widths()
+        quant_tol_mm = 0.5 * self.grid.h * 1e3
+        if self.cfg is not None and self.cfg.ff != "custom":
+            geom_match = (
+                abs(geom["rib_mm"] - self.cfg.w_land_mm) <= quant_tol_mm + 1e-12
+                and abs(geom["chan_mm"] - self.cfg.w_ch_mm) <= quant_tol_mm + 1e-12
+                and abs(self.n_lay * self.grid.h * 1e3 - self.cfg.d_ch_mm)
+                    <= quant_tol_mm + 1e-12)
+        else:
+            geom_match = True
+        fields = self._state.fields if self._state is not None else {}
+        med = str(self.ctx.get("electrolyte", "KOH"))
+        if self.ctx.get("input_range_valid", False):
+            electrolyte_status = (
+                "KOH correlation range; target-cell calibration/validation still required")
+        elif med == "KOH":
+            electrolyte_status = "KOH input outside a stated property/activity range"
+        else:
+            electrolyte_status = (
+                "rough property path; electrolyte-specific kinetics and validation required")
+        vmax = float(self.ns.speed().max())
+        rel_div = self.ns.max_divergence() * self.grid.h / max(vmax, 1e-12)
         return {
             "q_gas_mLs": round(q_gas * 1e6, 3),
             "q_liq_mLs": round(q_liq * 1e6, 3),
             "q_liq_per_circuit_mLs": round(
                 max(0.0, self.op.u_flow) * self.channel_area_per_circuit * 1e6, 3),
             "liquid_circuits": self.liquid_circuits,
-            "inlet_area_physical_mm2": round(self.inlet_area * 1e6, 4),
+            # Keep the old key as the requested CAD-area value for API
+            # compatibility. The resolved fields are authoritative for the
+            # live flow solve and gas/liquid ratio.
+            "inlet_area_physical_mm2": round(self.inlet_area_requested * 1e6, 4),
+            "inlet_area_requested_mm2": round(self.inlet_area_requested * 1e6, 4),
+            "inlet_area_resolved_mm2": round(self.inlet_area * 1e6, 4),
             "inlet_area_voxel_mm2": round(self.inlet_area_voxel * 1e6, 4),
+            "inlet_velocity_requested_m_s": round(max(0.0, self.op.u_flow), 8),
+            "inlet_velocity_resolved_m_s": round(float(self.ns.u_in), 8),
             "gas_liq": round(gl, 2) if np.isfinite(gl) else 999.0,
             "sites_per_mm2": round(sites_m2 * 1e-6, 3),
             "rate_um3_ms": round(rate_m3_s * 1e15, 4),   # um^3 per ms per site
@@ -331,14 +400,63 @@ class CellSim3D:
             "interphase_re_max": round(float(self.ns.interphase_re_max), 4),
             "alpha_g_raw_max": round(float(p.alpha_raw_max), 4),
             "alpha_g_overfilled_cells": int(p.alpha_overfilled_cells),
+            "alpha_g_clipped_volume_mL": round(
+                float(p.deposition_clipped_volume) * 1e6, 9),
+            "interphase_fields_consistent_after_clip": True,
             "dispersed_bubble_valid": bool(p.alpha_overfilled_cells == 0),
             "r_exit_um": round(self._exit_radius() * 1e6, 1),
             "sweeps": int(getattr(self.ns, "sweeps", 0)),
             "flow_ok": bool(self.flow_connected),
+            "model_scope": "reduced-order parcels + incompressible liquid",
+            "two_phase_quantitative": False,
+            "model_quantitative_ready": False,
+            "calibration_required_for_absolute_prediction": True,
+            "loss_decomposition_identifiable": False,
+            "loss_decomposition_status": (
+                "apparent OER j0 and fitted series resistance are not independently "
+                "identifiable from one full-cell polarization curve"),
+            "electrochem_spatial_model": "0D mean; face redistribution is display-only",
+            "nucleation_model_3d": "Faradaic gas-budget seed purchase; k_nuc/B_nuc are not used",
+            "electrolyte_property_status": electrolyte_status,
+            "electrolyte_property_validated_path": bool(
+                self.ctx.get("input_range_valid", False)),
+            "thermodynamic_state_valid": bool(
+                self.ctx.get("thermodynamic_state_valid", True)),
+            "activity_model_in_range": bool(
+                self.ctx.get("activity_model_in_range", False)),
+            "input_range_valid": bool(self.ctx.get("input_range_valid", False)),
+            "input_range_issues": list(self.ctx.get("input_range_issues", [])),
+            "transport_limit_model": self.ctx.get("transport_limit_model"),
+            "j_lim_calibrated_A_m2": float(self.ctx.get("j_lim_transport", 0.0)),
+            "j_lim_delta_proxy_A_m2": float(self.ctx.get("j_lim_from_delta_proxy", 0.0)),
+            "transport_limit_proxy_ratio": float(
+                self.ctx.get("transport_limit_proxy_ratio", 0.0)),
+            "mhd_proxy_active": bool(
+                abs(float(getattr(self.op, "B_field", 0.0))) > 0.0),
+            "dep_proxy_active": bool(
+                abs(float(getattr(self.op, "E_ext", 0.0))) > 0.0),
+            "dep_gradient_length_um": float(
+                self.ctx.get("dep_gradient_length", 0.0)) * 1e6,
+            "operating_feasible": bool(fields.get("operating_feasible", True)),
+            "transport_limit_exceeded": bool(fields.get("transport_limit_exceeded", False)),
+            "voltage_is_lower_bound": bool(fields.get("voltage_is_lower_bound", False)),
+            "j_requested_A_m2": fields.get("j_requested_A_m2"),
+            "j_limit_A_m2": fields.get("j_limit_A_m2"),
             # what the GRID actually resolves, vs what the sliders asked for.
             # The pass pitch is H/n_ch; w_ch_mm and w_land_mm only set the ratio,
             # and both get quantised to whole cells.
-            **self._geom_widths(),
+            **geom,
+            "channel_depth_requested_mm": round(self.cfg.d_ch_mm, 4) if self.cfg else None,
+            "channel_depth_achieved_mm": round(self.n_lay * self.grid.h * 1e3, 4),
+            "channel_depth_cells": int(self.n_lay),
+            "grid_has_multiple_depth_cells": bool(self.n_lay >= 2),
+            "grid_quantization_tolerance_mm": round(quant_tol_mm, 4),
+            "grid_geometry_matches_request": bool(geom_match),
+            "geometry_contract": (
+                "resolved voxel geometry is authoritative; requested in-plane "
+                "widths set only the rib/channel ratio when pitch and n_ch conflict"),
+            "flow_path_requested_cm": (
+                round(float(self.cfg.L_flow_cm), 4) if self.cfg else None),
             "h_requested_mm": round((self.cfg.h_requested or self.grid.h) * 1e3, 3)
                               if self.cfg is not None else round(self.grid.h * 1e3, 3),
             "H_requested_mm": round(self.cfg.H_cm * 10.0, 3) if self.cfg else round(self.grid.Ly * 1e3, 3),
@@ -347,14 +465,32 @@ class CellSim3D:
             "W_achieved_mm": round(self.grid.Lz * 1e3, 3),
             "grid_coarsened": bool(self.cfg and self.grid.h > (self.cfg.h_requested or self.grid.h) * 1.000001),
             "nu": float(self.ns.nu),
-            "mult": round(float(p.site_mult(0)), 1), # 1 tracked = N real (attached)
-            "n_real_est": int(n_real),               # real bubbles represented
+            "mult": round(float(p.site_mult(0)), 1), # attached seed expected-count weight
+            "n_real_est": int(round(n_real)),        # compatibility: rounded expectation
+            "n_expected_bubbles": float(n_real),
+            "multiplicity_semantics": "nonnegative statistical expected bubble count",
+            "multiplicity_min": float(p.mult.min()) if len(p.mult) else 0.0,
             "r_mean_mm": round(r_mean * 1e3, 4),
             "r_std_mm": round(r_std * 1e3, 4),      # >0 => real size distribution
             "theta_c": round(p.coverage(0), 4),
             "theta_a": round(p.coverage(1), 4),
-            "holdup": round(p.holdup(), 5),
-            "vmax": round(float(self.ns.speed().max()), 4),
+            "holdup": round(p.holdup(np.count_nonzero(~self.ns.solid)), 5),
+            "pending_gas_mL": round(p.pending_gas() * 1e6, 9),
+            "gas_closure_error": float(p.gas_closure_error()),
+            "deposition_unresolved_mL": round(p.deposition_unresolved_volume * 1e6, 9),
+            "gas_volume_state_rescales": int(p.state_volume_rescales),
+            "thinning_skipped": int(p.thinning_skipped),
+            "thinning_moment_error": float(p.thinning_moment_error),
+            "bubble_eotvos_min": eo_min,
+            "bubble_eotvos_max": eo_max,
+            "tomiyama_original_range_fraction": tomiyama_in_range,
+            "correlation_range_status": (
+                "runtime applicability diagnostic only; combined correlations "
+                "are not validated for this confined electrolysis channel"),
+            "vmax": round(vmax, 4),
+            "projection_relative_divergence": float(rel_div),
+            "projection_tolerance": float(self.PROJ_TOL),
+            "projection_converged": bool(rel_div <= self.PROJ_TOL),
             "j_Acm2": round(self.cell_current_A_m2() / 1.0e4, 4),
             "V_cell": round(self.cell_voltage(), 4),
             "up": [round(float(x), 3) for x in self.ns.up],
@@ -380,7 +516,7 @@ class CellSim3D:
         (Same construction as the 2-D app's LiveSim.eis.)
         """
         from bubblesim.kernel import impedance as imp
-        from bubblesim.constants import F as _F, R_GAS as _RG
+        from bubblesim.kernel.transport import conc_differential_resistance
         st, ctx, op = self._state, self.ctx, self.op
         if st is None:
             return {"error": "no operating point yet"}
@@ -395,9 +531,16 @@ class CellSim3D:
         Rct_c = imp.r_ct_bv(max(1e-3, 1 - th_c) * ctx["j0_cathode"],
                             ctx["alpha_a_cathode"], ctx["alpha_c_cathode"],
                             ov.get("eta_act_cathode", 0.0), T)
-        j_lim = ctx["j_lim_transport"]
-        z = ctx["z_primary"]
-        R_d = (_RG * T / (z * _F)) / max(j_lim - j, 1e-3)      # dc mass-transport R
+        R_d = conc_differential_resistance(
+            j, ctx["j_lim_transport"], ctx.get("z_transport", 1), T,
+            ctx["j_ref_vogt"], ctx["k_vogt"])
+        if not np.isfinite(R_d):
+            return {
+                "error": "no finite EIS linearisation at/above transport limit",
+                "valid": False,
+                "operating_feasible": bool(
+                    st.fields.get("operating_feasible", False)),
+            }
         delta = min(ctx.get("delta_bl", 3e-5), 0.8 * ctx.get("gap_m", 5e-4))
         tau_d = delta * delta / max(ctx.get("D_carrier", 3e-9), 1e-12)
         Ca = max(1e-3, self.params.anode.C_dl) * max(1e-3, 1 - th_a)
@@ -412,6 +555,9 @@ class CellSim3D:
             "im": [round(-z_.imag * 1e4, 4) for z_ in Z],      # Nyquist: -Im
             "Rs": round(R_s * 1e4, 4),
             "Rct_a": round(Rct_a * 1e4, 4), "Rct_c": round(Rct_c * 1e4, 4),
+            "Rd": round(R_d * 1e4, 4),
+            "valid": True,
+            "transport_linearization": "d(DC eta_conc)/dj including Vogt dL/dj",
         }
 
     def face_current_maps(self):
@@ -427,7 +573,21 @@ class CellSim3D:
         return {"nx": self.grid.nx, "ny": self.grid.ny,
                 "field": np.round(sp.T, 5).ravel().tolist()}   # row-major (ny, nx)
 
-    def snapshot(self, with_faces=True):
+    def snapshot(self, with_faces=True, *, with_geometry=None,
+                 with_gas=None, with_velocity=None):
+        """Return a JSON-ready state snapshot.
+
+        ``with_faces=True`` keeps the legacy all-heavy-fields contract.  New
+        clients can request electrode maps, static geometry, gas holdup and
+        velocity independently so the default cutaway view does not serialize
+        multi-megabyte analysis arrays it is not displaying.
+        """
+        if with_geometry is None:
+            with_geometry = with_faces
+        if with_gas is None:
+            with_gas = with_faces
+        if with_velocity is None:
+            with_velocity = with_faces
         snap = {
             "t": round(self.t, 4),
             "grid": {"nx": self.grid.nx, "ny": self.grid.ny, "nz": self.grid.nz,
@@ -445,6 +605,7 @@ class CellSim3D:
         snap["eps_prof"] = np.round(self.ns.gas.mean(axis=(0, 2)), 4).tolist()
         if with_faces:
             snap["faces"] = self.face_current_maps()
+        if with_geometry:
             # the PHYSICS land mask, so the renderer draws the ribs exactly
             # where the engine has them (turn gaps included) — bubbles passing
             # a gap must never look like they ghost through a drawn rib
@@ -459,11 +620,14 @@ class CellSim3D:
                                  "in_face": self.in_face, "out_face": self.out_face,
                                  "in": self.port_in.astype(int).tolist(),
                                  "out": self.port_out.astype(int).tolist()}
-            # full 3-D holdup field for the Euler-style contour view (~few KB,
-            # refreshed on the faces cadence — the field evolves slowly)
+        if with_gas:
+            # Full 3-D holdup field for the Euler-style contour view.  This is
+            # opt-in because a capped high-resolution grid is no longer a
+            # "few KB" once represented as JSON numbers.
             snap["gas3d"] = {"nx": self.grid.nx, "ny": self.grid.ny,
                              "nz": self.grid.nz,
                              "f": np.round(self.ns.gas, 3).ravel().tolist()}
+        if with_velocity:
             # centre velocities for the vector-arrow overlay (paper-style):
             # shows the flow deflecting around bubble clouds / lands
             u, v, w = self.ns.centres()

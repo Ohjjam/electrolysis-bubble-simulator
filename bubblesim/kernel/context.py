@@ -9,6 +9,7 @@ keys, never rename or remove them** (existing consumers and golden tests bind to
 append keys (e.g. `j0_anode`, `eta_conc` inputs) without disturbing this set.
 """
 from .. import properties as prop
+from ..constants import F
 from . import transport, chemistry, watertransport
 
 
@@ -23,6 +24,27 @@ def build_context(op, params) -> dict:
     # correction for the Nernst term and wet-gas volume conversion so the two
     # high-fidelity paths do not disagree about the dry-gas partial pressure.
     p_w = a_H2O * prop.saturation_pressure(op.T) if hf else 0.0
+    # State validity is independent of whether the optional high-fidelity
+    # voltage correction is enabled.  Otherwise a physically boiling state
+    # could become "valid" merely by switching fidelity off.
+    a_H2O_state = (prop.water_activity_koh(op.c_electrolyte)
+                   if med == "KOH" else 1.0)
+    p_w_state = a_H2O_state * prop.saturation_pressure(op.T)
+    thermo_valid = bool(op.P > p_w_state and op.P > 0.0)
+    ionic_strength = chemistry.ionic_strength(op.c_electrolyte, med)
+    activity_in_range = bool(
+        (hf and med == "KOH" and 0.0 <= op.c_electrolyte <= 12.0
+         and 273.15 <= op.T <= 373.15)
+        or (not (hf and med == "KOH") and ionic_strength <= 0.5))
+    model_issues = []
+    if not thermo_valid:
+        model_issues.append("total pressure must exceed electrolyte water-vapor pressure")
+    if not activity_in_range:
+        model_issues.append(
+            "electrolyte activity/correlation is outside its stated validity range")
+    if med != "KOH":
+        model_issues.append(
+            "acid/buffer properties and KOH catalyst kinetics are not target-electrolyte validated")
     d = {
         "E_rev": prop.reversible_voltage(op.T, op.P, a_H2O=a_H2O, p_w=p_w),
         "kappa": prop.conductivity(med, op.c_electrolyte, op.T, high_fidelity=hf),
@@ -41,6 +63,12 @@ def build_context(op, params) -> dict:
         "r_min_detach": params.r_min_detach,
         "water_activity": a_H2O,
         "p_water": p_w,
+        "p_water_state_validity": p_w_state,
+        "p_dry_gas": prop.dry_gas_pressure(op.P, p_w),
+        "thermodynamic_state_valid": thermo_valid,
+        "activity_model_in_range": activity_in_range,
+        "input_range_valid": bool(thermo_valid and activity_in_range and med == "KOH"),
+        "input_range_issues": model_issues,
     }
     # --- two-electrode (Butler-Volmer) coefficients + series resistances ---
     # (additive keys; the lumped solver ignores them, so golden values are unchanged)
@@ -71,14 +99,20 @@ def build_context(op, params) -> dict:
     # --- mass transport: Sherwood-grounded limiting current + Henry saturation ---
     d["sh_enhancement"] = transport.flow_enhancement(op, d, params)
     d["j_lim_transport"] = params.j_lim * d["sh_enhancement"]
+    # Gas stoichiometry (HER z=2 / OER z=4) belongs only to Faraday gas
+    # production.  The scalar concentration-polarisation closure represents
+    # depletion of the ionic charge carrier (OH- or H+ here), whose charge
+    # magnitude is one.  Using the gas molecule's electron count made the same
+    # full cell depend on the arbitrary ``op.electrode`` display label.
     d["z_primary"] = prop.GAS[op.electrode]["z"]
+    d["z_transport"] = 1
     d["c_sat_gas"] = transport.saturation_concentration(op.P, params.k_henry)
     d["k_vogt"] = params.k_vogt            # bubble self-stirring (applied in-solver, j-dependent)
     d["j_ref_vogt"] = params.j_ref_vogt
 
     # --- electrolyte chemistry (bulk; surface pH is current-dependent, set in solver) ---
     d["electrolyte"] = med
-    d["ionic_strength"] = chemistry.ionic_strength(op.c_electrolyte, med)
+    d["ionic_strength"] = ionic_strength
     d["activity_coeff"] = chemistry.activity_for(op.c_electrolyte, op.T, med, high_fidelity=hf)
     d["pH_bulk"] = chemistry.bulk_pH(op.c_electrolyte, op.T, med)
     d["t_carrier"] = prop.ELECTROLYTES[med]["t_carrier"]
@@ -96,6 +130,18 @@ def build_context(op, params) -> dict:
     Sc = nu / max(d["D_carrier"], 1e-12)
     sh_nat = transport.natural_convection_sherwood(0.02, params.L_char, nu, Sc)
     d["delta_bl"] = params.L_char / max(params.sh0 * d["sh_enhancement"], sh_nat)
+    # The 0-D solver retains the calibrated ``params.j_lim`` closure for
+    # backwards-compatible cell fits. Expose the independently derived
+    # single-carrier diffusion estimate instead of implying that
+    # D_carrier/delta_bl feed that calibrated ceiling. This is an audit
+    # diagnostic, not another hidden correction factor.
+    c_carrier_m3 = max(0.0, op.c_electrolyte) * 1.0e3
+    d["j_lim_from_delta_proxy"] = (
+        F * d["D_carrier"] * c_carrier_m3
+        / (max(d["delta_bl"], 1e-12) * max(1e-3, 1.0 - d["t_carrier"])))
+    d["transport_limit_model"] = "calibrated j_lim times Sherwood/Vogt closure"
+    d["transport_limit_proxy_ratio"] = (
+        d["j_lim_transport"] / max(d["j_lim_from_delta_proxy"], 1e-30))
 
     # --- geometry the solvers need for void-resistance partitioning ---
     d["gap_m"] = op.gap_mm * 1e-3

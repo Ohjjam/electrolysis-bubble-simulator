@@ -93,6 +93,15 @@ def _newton_eta(eta, A, se, ke, I, h, inv_h2, N, j0, aa, ac, f):
     return eta
 
 
+def pore_limiting_current(eff, c_b, D_carrier, t_carrier):
+    """Carrier-ion diffusion ceiling through the homogenized pore [A/m^2]."""
+    L = max(float(eff["L_e"]), 1e-9)
+    eps = max(0.0, float(eff["eps_p"]))
+    D_pore = float(D_carrier) * (eps ** 1.5 if eps > 0.0 else 1.0)
+    return (F * D_pore * max(0.0, float(c_b))
+            / (L * max(1e-3, 1.0 - float(t_carrier))))
+
+
 def porous_eta(I, eff, kappa, j0_real, aa, ac, T, omt=1.0, N=33,
                gas_feedback=False, escape=1.0, c_b=6.0e3, D_carrier=1.0e-9, t_carrier=0.0):
     """Solve the depth BVP for total current density I [A/m^2]; return eta_eff and
@@ -111,11 +120,14 @@ def porous_eta(I, eff, kappa, j0_real, aa, ac, T, omt=1.0, N=33,
     """
     L = eff["L_e"]
     d_mm = (np.linspace(0.0, L, N) * 1e3).tolist()
+    i_lim_pore = pore_limiting_current(eff, c_b, D_carrier, t_carrier)
     if I <= 0.0:
         z = [0.0] * N
         return {"eta_eff": 0.0, "util": 1.0, "pen_mm": L * 1e3,
                 "eta": z, "j_loc": z, "d_mm": d_mm, "s_g_max": 0.0,
-                "c_pore": [1.0] * N, "eta_conc_pore": 0.0}
+                "c_pore": [1.0] * N, "eta_conc_pore": 0.0,
+                "j_lim_pore": float(i_lim_pore),
+                "pore_transport_exceeded": False}
 
     a = eff["a"] * max(1e-3, omt)              # coverage blocks active area
     se = max(eff["sigma_eff"], 1e-9)
@@ -155,8 +167,6 @@ def porous_eta(I, eff, kappa, j0_real, aa, ac, T, omt=1.0, N=33,
     # in-pore reactant depletion: carrier supplied at the separator (d=L, i_s=0)
     # and consumed toward the collector (i_s=I); a pore-scale limiting current
     # (Bruggeman pore diffusivity, migration relief via t_carrier) sets c(d)/c_b.
-    D_pore = D_carrier * (eff["eps_p"] ** 1.5 if eff["eps_p"] > 0.0 else 1.0)
-    i_lim_pore = F * D_pore * c_b / (max(L, 1e-9) * max(1e-3, 1.0 - t_carrier))
     c_ratio = np.clip(1.0 - i_s / max(i_lim_pore, 1e-9), 0.02, 1.0)
     wj = np.abs(j) + 1e-30
     c_react = float(np.sum(wj * c_ratio) / np.sum(wj))     # reaction-weighted mean conc
@@ -168,7 +178,9 @@ def porous_eta(I, eff, kappa, j0_real, aa, ac, T, omt=1.0, N=33,
     return {"eta_eff": eta_eff, "util": util, "pen_mm": front * 1e3,
             "eta": eta.tolist(), "j_loc": j.tolist(), "d_mm": d_mm,
             "s_g_max": float(s_g.max()),
-            "c_pore": c_ratio.tolist(), "eta_conc_pore": eta_conc_pore}
+            "c_pore": c_ratio.tolist(), "eta_conc_pore": eta_conc_pore,
+            "j_lim_pore": float(i_lim_pore),
+            "pore_transport_exceeded": bool(I >= i_lim_pore)}
 
 
 class PorousSolver:
@@ -224,7 +236,7 @@ class PorousSolver:
         aa_a, ac_a = context["alpha_a_anode"], context["alpha_c_anode"]
         aa_c, ac_c = context["alpha_a_cathode"], context["alpha_c_cathode"]
         T = op.T
-        j_lim_base, z = context["j_lim_transport"], context["z_primary"]
+        j_lim_base, z = context["j_lim_transport"], context.get("z_transport", 1)
         k_vogt, j_ref_v = context["k_vogt"], context["j_ref_vogt"]
         omt_a, omt_c = max(1e-3, 1.0 - theta_a), max(1e-3, 1.0 - theta_c)
         gasfb = getattr(op, "gas_feedback", False)
@@ -239,17 +251,21 @@ class PorousSolver:
                               c_b=c_b, D_carrier=D_c, t_carrier=t_c)
 
         def col_c(j):
-            return porous_eta(j, eff, kappa, j0_c, aa_c, ac_c, T, omt_c, self.N,
+            # Positive current is a cathodic HER magnitude here: swap the
+            # coefficients so alpha_c controls the growing exponential.
+            return porous_eta(j, eff, kappa, j0_c, ac_c, aa_c, T, omt_c, self.N,
                               gas_feedback=gasfb, escape=esc,
                               c_b=c_b, D_carrier=D_c, t_carrier=t_c)
 
         def jlim_of(jj):
             return j_lim_base * vogt_enhancement(jj, j_ref_v, k_vogt)
 
-        j_lim_fp = vogt_limit(j_lim_base, j_ref_v, k_vogt)
+        j_lim_external = vogt_limit(j_lim_base, j_ref_v, k_vogt)
+        j_lim_pore = pore_limiting_current(eff, c_b, D_c, t_c)
+        j_lim_fp = min(j_lim_external, j_lim_pore)
         mode = getattr(op, "mode", "CA")
         if mode == "CP":
-            j = max(0.0, min(op.j_set, 0.995 * j_lim_fp))
+            j = max(0.0, op.j_set)
         else:
             drive = op.V_cell - E_cell
             if drive <= 0.0:
@@ -259,7 +275,11 @@ class PorousSolver:
                     return (E_cell + col_a(jj)["eta_eff"] + col_c(jj)["eta_eff"]
                             + conc_overpotential(jj, jlim_of(jj), z, T)
                             + jj * R_total - op.V_cell)
-                hi = 0.995 * j_lim_fp
+                # Keep the historical CA solve path.  The pore model currently
+                # has a finite concentration floor, so its internal ceiling is
+                # a validity flag rather than a mathematically divergent root
+                # bracket.  CP nevertheless reports that ceiling explicitly.
+                hi = 0.995 * j_lim_external
                 j = hi if fbal(hi) < 0.0 else bisect(fbal, 0.0, hi, self.n_outer)
 
         ra, rc = col_a(j), col_c(j)
@@ -291,6 +311,18 @@ class PorousSolver:
             "pen_mm_c": rc["pen_mm"], "pen_mm_a": ra["pen_mm"],
             "s_g_c": rc["s_g_max"], "s_g_a": ra["s_g_max"],
             "c_pore_c": rc["c_pore"], "c_pore_a": ra["c_pore"],
+            "operating_feasible": bool(j < j_lim_fp),
+            "transport_limit_exceeded": bool(j >= j_lim_fp),
+            "external_transport_limit_exceeded": bool(
+                j >= j_lim_external),
+            "pore_transport_exceeded": bool(j >= j_lim_pore),
+            "j_requested_A_m2": float(op.j_set) if mode == "CP" else None,
+            "j_limit_A_m2": float(j_lim_fp),
+            "j_limit_external_A_m2": float(j_lim_external),
+            "j_limit_pore_A_m2": float(j_lim_pore),
+            "voltage_is_lower_bound": bool(mode == "CP" and j >= j_lim_fp),
+            "model_input_valid": bool(context.get("input_range_valid", False)),
+            "model_input_issues": list(context.get("input_range_issues", [])),
         }
         return ElectroState(j=j, overpotentials=ov, fields=fields,
                             V=(V if mode == "CP" else None))

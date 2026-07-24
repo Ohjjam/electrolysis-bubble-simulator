@@ -2,9 +2,9 @@
 
 A bubble lets go when the *detaching* forces (buoyancy + flow drag + electric
 DEP + MHD-driven shear) overcome the surface-tension adhesion that pins its
-contact line. We anchor on the classic Fritz (1935) departure diameter for the
-quiescent, field-free case and then let the extra forces shrink the departure
-radius via a buoyancy-equivalent force balance.
+contact line. The preferred quiescent, field-free anchor is a measured
+departure radius for the target electrode. Fritz (1935) remains a legacy
+fallback; extra forces then shrink that anchor through the force balance.
 """
 import math
 
@@ -30,9 +30,9 @@ def departure_radius(op, props, j):
     A bubble of radius r feels detaching forces
         buoyancy : F_b(r) = (4/3) pi d_rho g r^3        ~ r^3
         flow drag: F_d(r) = 1/2 Cd rho_l u_eff^2 pi r^2 ~ r^2
-        neg-DEP  : F_E(r) = 2 pi eps0 eps_l |K| E^2 r^2  ~ r^2   (pushes off electrode)
-    and is pinned by a surface-tension adhesion calibrated so that, with no flow
-    or field, it leaves exactly at the Fritz radius:  F_adh = F_b(r_d0).
+        neg-DEP  : F_E(r) = 2 pi eps0 eps_l |K| E^2 r^3/L ~ r^3
+    and is pinned by contact-line adhesion ``F_adh = A_adh r`` calibrated so
+    that, with no flow or field, it leaves exactly at the measured/Fritz anchor.
     The departure radius is the r that satisfies F_b(r)+F_d(r)+F_E(r) = F_adh,
     solved on (r_min, r_d0]. Stronger detaching forces -> smaller r_d -> more
     frequent departure. Solving the balance self-consistently (rather than at a

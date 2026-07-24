@@ -111,6 +111,23 @@ def test_mesh_contact_merge_conserves_represented_volume():
     assert math.isclose(p.r[0], r * 2 ** (1 / 3), rel_tol=2e-15)
 
 
+def test_mesh_cohort_split_allows_fractional_expected_weight():
+    """A valid weighted collision is not discarded just to keep mult >= 1."""
+    p = mesh_parcels(concentration=0.0)
+    p.op.c_electrolyte = 0.0  # eta=1: isolate weighted cohort mechanics
+    r = 0.08e-3
+    geom = p.mesh_geometry()
+    x = geom["x_axis"] + geom["strand_radius"] + r
+    set_parcels(p, [[x, 2.00e-3, 0.0], [x, 2.10e-3, 0.0]], [r, r],
+                attached=[False, False], mesh_attached=[True, True],
+                mult=[1.0, 1.5])
+    gas_before = p.resident_gas()
+    p._coalesce_mesh()
+    assert p.n_merge_mesh == 1
+    assert np.allclose(np.sort(p.mult), [0.5, 1.0])
+    assert math.isclose(p.resident_gas(), gas_before, rel_tol=2e-15)
+
+
 def test_koh_coalescence_efficiency_is_continuous_not_hard_zero():
     one_molar = mesh_parcels(1.0).p_merge()
     six_molar = mesh_parcels(6.0).p_merge()

@@ -65,17 +65,15 @@ def test_cp_coverage_raises_voltage():
     assert V1 > V0
 
 
-def test_cp_clamps_at_transport_limit():
-    """Demanding j beyond the limit cannot blow up: j clamps just below the
-    (Vogt-enhanced) transport limit and V stays finite."""
-    from bubblesim.kernel.transport import vogt_enhancement
+def test_cp_preserves_setpoint_and_flags_transport_infeasibility():
+    """Galvanostatic mode must not silently turn into a lower-current run."""
     op = Operating(mode="CP", j_set=1.0e9, model="two_electrode")
     st = _solve(ZeroDTwoElectrodeSolver, op)
-    ctx, p = build_context(op, Params()), Params()
-    # bubble self-stirring raises the limit with current, so the invariant is
-    # j <= jlim_of(j) = j_lim_transport * vogt(j), not the bare base limit.
-    jlim_eff = ctx["j_lim_transport"] * vogt_enhancement(st.j, p.j_ref_vogt, p.k_vogt)
-    assert st.j <= jlim_eff
+    assert st.j == op.j_set
+    assert st.fields["operating_feasible"] is False
+    assert st.fields["transport_limit_exceeded"] is True
+    assert st.fields["voltage_is_lower_bound"] is True
+    assert st.fields["j_limit_A_m2"] < st.j
     assert math.isfinite(st.V)
 
 

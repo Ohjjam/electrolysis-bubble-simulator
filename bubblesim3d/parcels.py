@@ -10,8 +10,8 @@ patch (bubblesim.kernel.bubbles.population.Surface), lifted into 3-D:
     detach    -> when it reaches its departure radius (kernel
                  forces.departure_radius, with per-bubble spread) it lets go
     rise      -> the freed bubble rides the solved flow + buoyant slip (kernel
-                 Schiller-Naumann terminal velocity) with a gentle lateral
-                 meander, and vents at the outlet
+                 Schiller-Naumann terminal velocity) with Tomiyama/Antal
+                 wall-normal drift, and vents at the outlet
 
 REPRESENTATIVE MULTIPLICITY (the honest answer to real bubble sizes): at real
 electrolysis departure sizes (~50-300 um diameter) a working cell detaches
@@ -19,11 +19,13 @@ HUNDREDS OF THOUSANDS of bubbles per second — tracking each one is the
 documented millions-of-bubbles wall. So each tracked bubble carries a
 multiplicity `mult`: its RADIUS is a genuine single-bubble radius (drives
 slip, detachment, the rendered size), while its GAS CONTENT is
-W = mult * V(r) and its coverage footprint counts mult sites. `mult` for
-attached bubbles = (real nucleation-site count from the kernel site density) /
-(tracked slots), so coverage, gas totals and the ~10 ms growth-to-departure
-cycle all come out at REAL physical values; free risers are adaptively thinned
-(conservation kept exact by renormalising the survivors' W).
+W = mult * V(r) and its coverage footprint is weighted by `mult`.  `mult` is a
+non-negative STATISTICAL EXPECTED COUNT, not an integer literal count: weighted
+cohort splitting can therefore leave 0 < mult < 1.  This is required to conserve
+moments without rejecting collisions.  Attached seed weights originate from
+(nucleation-site count)/(tracked slots); free risers are adaptively thinned with
+non-negative weights that preserve expected bubble number, interfacial area and
+gas volume independently on each electrode side.
 
 COALESCENCE: a bubble does not "pop" in the liquid — when two touch they MERGE
 (and only burst at a free surface, which here is the outlet vent). Merging is
@@ -68,7 +70,7 @@ NOT MODELLED (honest scope; mirrored in docs/3D_EQUATIONS.md section 5):
     it. Below ~0.6 m/s the floor never binds.
 
 Gas is conserved at all times:
-    produced (integral of j/nF) = resident (attached + free) + vented
+    produced = resident (attached + free) + pending seed budget + vented
 Physics is reused from bubblesim.kernel, never reimplemented.
 """
 from dataclasses import replace
@@ -164,6 +166,10 @@ class Parcels:
         # collected bubble as if it had already detached.
         self.mesh_attached = np.zeros(0, dtype=bool)
         self.mesh_axis = np.zeros(0, dtype=np.int8)
+        # Unit normal from the contacted strand axis to the bubble centre.
+        # Keeping it explicit makes mesh sliding continuous: only the strand
+        # coordinate changes while the sphere remains tangent to that cylinder.
+        self.mesh_normal = np.zeros((0, 3), dtype=np.float64)
         self.r_dep = z0()                 # per-bubble departure radius [m]
         self.phase = z0()                 # per-bubble meander phase
         self.p_touch = z0()               # P(a neighbour lies within reach) so far
@@ -176,11 +182,20 @@ class Parcels:
         self.n_mesh_release_edge = 0
         self.merge_events = []            # bounded event stream for the renderer
         self._merge_seq = 0
+        self.lifecycle_events = []        # ID-resolved recorder/audit stream
+        self._event_seq = 0
+        self._event_t = 0.0
+        self.record_mode = False          # recorder disables statistical thinning
         self.ids = np.zeros(0, dtype=np.int64)
         self._next_id = 1
         self._t = 0.0
         self.alpha_raw_max = 0.0
         self.alpha_overfilled_cells = 0
+        self.deposition_unresolved_volume = 0.0
+        self.deposition_clipped_volume = 0.0
+        self.state_volume_rescales = 0
+        self.thinning_skipped = 0
+        self.thinning_moment_error = 0.0
         self.produced_cum = 0.0
         self.vented_cum = 0.0
         self._pending = [0.0, 0.0]        # gas that found no home this pass
@@ -189,6 +204,42 @@ class Parcels:
     @staticmethod
     def _vol(r):
         return (4.0 / 3.0) * np.pi * r ** 3
+
+    def rescale_volume_basis(self, factor):
+        """Re-express all stored gas volumes at a new T/P state basis.
+
+        Parcels store volume rather than moles.  A live T/P update therefore
+        must transform resident, pending and cumulative ledger terms together;
+        otherwise old and new gas are added in incompatible units.  Multiplicity
+        stays fixed and each single-bubble radius follows ``r ~ V^(1/3)``.
+        """
+        factor = float(factor)
+        if not np.isfinite(factor) or factor <= 0.0:
+            raise ValueError("gas-volume scale must be finite and positive")
+        if abs(factor - 1.0) <= 32.0 * np.finfo(float).eps:
+            return
+        self._ensure_state_arrays()
+        radius_scale = factor ** (1.0 / 3.0)
+        self.W *= factor
+        self.r *= radius_scale
+        self._pending = [float(v) * factor for v in self._pending]
+        self.produced_cum *= factor
+        self.vented_cum *= factor
+        self.deposition_unresolved_volume *= factor
+        self.deposition_clipped_volume *= factor
+        # Keep catalyst-attached spheres tangent to their physical wall after
+        # the pressure/temperature expansion or contraction.
+        attached = self.attached & (~self.mesh_attached)
+        if attached.any():
+            off = self._wall_off(self.r[attached])
+            if self.elec_planes is not None:
+                xc, xa = self.elec_planes
+                self.pos[attached, 0] = np.where(
+                    self.side[attached] == 0, xc - off, xa + off)
+            else:
+                self.pos[attached, 0] = np.where(
+                    self.side[attached] == 0, off, self.g.Lx - off)
+        self.state_volume_rescales += 1
 
     def _face_area(self):
         return self.g.Ly * self.g.Lz
@@ -200,11 +251,44 @@ class Parcels:
             self.mesh_attached = np.zeros(n, dtype=bool)
         if len(self.mesh_axis) != n:
             self.mesh_axis = np.zeros(n, dtype=np.int8)
+        if self.mesh_normal.shape != (n, 3):
+            self.mesh_normal = np.zeros((n, 3), dtype=np.float64)
 
-    def _record_merge(self, a, b, radius, side, attached, radius_a=None, radius_b=None):
+    @staticmethod
+    def _event_value(value):
+        """Convert numpy values to compact JSON-ready lifecycle metadata."""
+        if isinstance(value, np.ndarray):
+            return [float(v) for v in value.ravel()]
+        if isinstance(value, (np.floating, float)):
+            return float(value)
+        if isinstance(value, (np.integer, int)):
+            return int(value)
+        if isinstance(value, (np.bool_, bool)):
+            return bool(value)
+        if isinstance(value, (list, tuple)):
+            return [Parcels._event_value(v) for v in value]
+        return value
+
+    def _emit_event(self, event_type, **fields):
+        """Append one stable-ID lifecycle transition for offline recording."""
+        self._event_seq += 1
+        event = {
+            "seq": int(self._event_seq),
+            "t": float(self._event_t),
+            "type": str(event_type),
+        }
+        event.update({key: self._event_value(value)
+                      for key, value in fields.items()})
+        self.lifecycle_events.append(event)
+        if len(self.lifecycle_events) > 8192:
+            del self.lifecycle_events[:-8192]
+        return event
+
+    def _record_merge(self, a, b, radius, side, attached, radius_a=None,
+                      radius_b=None, ids=None, state=None):
         self._merge_seq += 1
         self.merge_events.append({
-            "seq": self._merge_seq, "t": float(self._t),
+            "seq": self._merge_seq, "t": float(self._event_t),
             "a": [float(v) for v in a], "b": [float(v) for v in b],
             "r": float(radius), "side": int(side),
             "ra": float(radius if radius_a is None else radius_a),
@@ -213,6 +297,17 @@ class Parcels:
         })
         if len(self.merge_events) > 128:
             del self.merge_events[:-128]
+        self._emit_event(
+            "merge",
+            ids=[] if ids is None else ids,
+            side=int(side),
+            state=("attached" if attached else "free") if state is None else state,
+            position_a=a,
+            position_b=b,
+            radius_a_m=float(radius if radius_a is None else radius_a),
+            radius_b_m=float(radius if radius_b is None else radius_b),
+            radius_after_m=float(radius),
+        )
 
     def _gap(self):
         """Physical electrode-to-plate channel depth [m]."""
@@ -342,17 +437,44 @@ class Parcels:
         return (1.0 - np.cos(theta_m)) > (1.0 - np.cos(theta_e))
 
     def _sample_sites(self, side, want):
-        """Random continuous (y,z) nucleation spots on the face, restricted to
-        the OPEN channel (rejection-sampled against the land mask)."""
-        ys = self.rng.uniform(0.04, 0.96, 3 * want) * self.g.Ly
-        zs = self.rng.uniform(0.04, 0.96, 3 * want) * self.g.Lz
-        if self.face_masks is not None and self.face_masks[side] is not None:
-            mask = self.face_masks[side]
-            jy = np.clip((ys / self.g.h).astype(int), 0, mask.shape[0] - 1)
-            kz = np.clip((zs / self.g.h).astype(int), 0, mask.shape[1] - 1)
-            ok = mask[jy, kz]
-            ys, zs = ys[ok], zs[ok]
-        return ys[:want], zs[:want]
+        """Sample electrolyte-accessible electrode sites.
+
+        Lands are excluded on both electrodes.  On the Mesh2/OER face, a seed
+        must also fit in an opening rather than starting inside a PP strand.
+        Rejected gas is not lost: the caller leaves it in the pending Faradaic
+        budget until an accessible tracked slot is available.
+        """
+        if want <= 0:
+            return np.zeros(0), np.zeros(0)
+        accepted_y, accepted_z = [], []
+        geom = self.mesh_geometry() if side == 1 and self._mesh_transfer_allowed() else None
+        for _ in range(12):
+            remaining = want - len(accepted_y)
+            if remaining <= 0:
+                break
+            count = max(16, 4 * remaining)
+            ys = self.rng.uniform(0.04, 0.96, count) * self.g.Ly
+            zs = self.rng.uniform(0.04, 0.96, count) * self.g.Lz
+            ok = np.ones(count, dtype=bool)
+            if self.face_masks is not None and self.face_masks[side] is not None:
+                mask = self.face_masks[side]
+                jy = np.clip((ys / self.g.h).astype(int), 0, mask.shape[0] - 1)
+                kz = np.clip((zs / self.g.h).astype(int), 0, mask.shape[1] - 1)
+                ok &= mask[jy, kz]
+            if geom is not None:
+                x = self._wall_x(side, self.R_NUC)
+                for q in np.nonzero(ok)[0]:
+                    if self._nearest_mesh_strand(
+                            np.array([x, ys[q], zs[q]], dtype=float),
+                            self.R_NUC, geom) is not None:
+                        ok[q] = False
+            for y, z in zip(ys[ok], zs[ok]):
+                accepted_y.append(float(y))
+                accepted_z.append(float(z))
+                if len(accepted_y) >= want:
+                    break
+        return (np.asarray(accepted_y[:want], dtype=float),
+                np.asarray(accepted_z[:want], dtype=float))
 
     def _at_top_vent(self, z):
         """Is this z inside an open outlet column of the y-top face?"""
@@ -467,26 +589,53 @@ class Parcels:
         n = int(np.ceil(budget / (self.SUB_FRAC * w_cycle)))
         return int(np.clip(n, 1, self.MAX_SUB))
 
-    def step(self, ns, j_A_m2, dt, ctx):
+    def step(self, ns, j_A_m2, dt, ctx, trace_hook=None):
         """One bubble-dynamics step: nucleate + grow, coalesce, detach, advect."""
         self._ensure_state_arrays()
+        t0 = float(self._t)
         self._t += dt
         r_dep0 = max(2 * self.R_NUC,
                      self.departure_radius(ctx, max(1e-6, j_A_m2)))
         n_sub = self._wall_substeps(j_A_m2, dt, r_dep0, ctx)
         sdt = dt / n_sub
-        for _ in range(n_sub):
+        for substep in range(n_sub):
+            event_start = len(self.lifecycle_events)
+            self._event_t = t0 + (substep + 1) * sdt
             self._nucleate_and_grow(j_A_m2, sdt, ctx, r_dep0)
             self._coalesce()
             self._capture_on_mesh()
             self._detach(ctx, j_A_m2)
+            if trace_hook is not None:
+                trace_hook({
+                    "t": float(self._event_t),
+                    "stage": "wall",
+                    "substep": int(substep + 1),
+                    "substeps": int(n_sub),
+                    "parcels": self,
+                    "ns": ns,
+                    "ctx": ctx,
+                    "events": tuple(self.lifecycle_events[event_start:]),
+                })
         # Mesh parcels do not receive Faradaic growth directly, so one
         # contact pass per outer flow step is sufficient and avoids repeating
         # the same neighbour search up to MAX_SUB times.
+        event_start = len(self.lifecycle_events)
+        self._event_t = t0 + dt
         self._coalesce_mesh()
         self._move_and_release_mesh(ns, dt, ctx)
         self._advect(ns, dt, ctx)
         self._coalesce_free(ns, dt, ctx)
+        if trace_hook is not None:
+            trace_hook({
+                "t": float(self._event_t),
+                "stage": "transport",
+                "substep": int(n_sub),
+                "substeps": int(n_sub),
+                "parcels": self,
+                "ns": ns,
+                "ctx": ctx,
+                "events": tuple(self.lifecycle_events[event_start:]),
+            })
 
     def departure_radius(self, ctx, j_A_m2):
         """Departure radius with the NEAR-WALL velocity the bubble actually feels.
@@ -577,6 +726,7 @@ class Parcels:
                 budget -= want * w_seed
             grow_budget[side] = budget
         if new_pos:
+            old_n = len(self.r)
             self.pos = np.vstack([self.pos] + new_pos)
             self.r = np.concatenate([self.r] + new_r)
             self.W = np.concatenate([self.W] + new_W)
@@ -588,10 +738,23 @@ class Parcels:
                 [self.mesh_attached, np.zeros(n_new, dtype=bool)])
             self.mesh_axis = np.concatenate(
                 [self.mesh_axis, np.zeros(n_new, dtype=np.int8)])
+            self.mesh_normal = np.vstack(
+                [self.mesh_normal, np.zeros((n_new, 3), dtype=np.float64)])
             self.r_dep = np.concatenate([self.r_dep] + new_dep)
             self.phase = np.concatenate([self.phase] + new_ph)
             self.p_touch = np.concatenate([self.p_touch] + new_touch)
             self.ids = np.concatenate([self.ids] + new_id)
+            for i in range(old_n, len(self.r)):
+                self._emit_event(
+                    "birth",
+                    id=int(self.ids[i]),
+                    side=int(self.side[i]),
+                    position_m=self.pos[i],
+                    radius_m=float(self.r[i]),
+                    represented_count=float(self.mult[i]),
+                    represented_volume_m3=float(self.W[i]),
+                    departure_radius_m=float(self.r_dep[i]),
+                )
         # (2) grow attached with the remaining gas: the budget dW is shared
         # r^2-weighted; each tracked bubble converts its share into a SINGLE-
         # bubble radius increment via its multiplicity (dV_single = dW/mult),
@@ -641,6 +804,7 @@ class Parcels:
 
     def _capture_on_mesh(self):
         """Transfer an OER bubble only after it geometrically touches PP."""
+        self._ensure_state_arrays()
         geom = self.mesh_geometry()
         if geom is None or not self._mesh_transfer_allowed():
             return
@@ -649,17 +813,41 @@ class Parcels:
             hit = self._nearest_mesh_strand(self.pos[i], self.r[i], geom)
             if hit is None:
                 continue
-            axis, axis_point, _ = hit
+            before = self.pos[i].copy()
+            axis, axis_point, distance = hit
+            delta = before - axis_point
+            norm = float(np.linalg.norm(delta))
+            if norm <= np.sqrt(np.finfo(float).eps) * max(
+                    geom["strand_radius"] + self.r[i], 1.0e-12):
+                # Exact axis coincidence is ambiguous.  The +x direction is the
+                # channel-facing normal in the anode coordinate convention.
+                normal = np.array([1.0, 0.0, 0.0])
+            else:
+                normal = delta / norm
             self.attached[i] = False
             self.mesh_attached[i] = True
             self.mesh_axis[i] = axis
-            # Put the centre tangent to the channel-facing side of the measured
-            # cylindrical strand. Gas volume, radius, multiplicity and ID stay
-            # unchanged, so the transfer cannot create or destroy gas.
-            self.pos[i] = axis_point
-            self.pos[i, 0] = geom["x_axis"] + geom["strand_radius"] + self.r[i]
+            self.mesh_normal[i] = normal
+            # Resolve only the sphere/cylinder overlap along the actual contact
+            # normal.  This retains the approached side of the strand and
+            # removes the former full-strand jump to hard-coded +x.
+            self.pos[i] = axis_point + normal * (
+                geom["strand_radius"] + self.r[i])
             self.p_touch[i] = 0.0
             self.n_mesh_capture += 1
+            self._emit_event(
+                "mesh_capture",
+                id=int(self.ids[i]),
+                side=int(self.side[i]),
+                position_before_m=before,
+                position_after_m=self.pos[i],
+                radius_m=float(self.r[i]),
+                mesh_axis=int(axis),
+                axis_point_m=axis_point,
+                contact_normal=normal,
+                distance_to_axis_before_m=float(distance),
+                displacement_m=float(np.linalg.norm(self.pos[i] - before)),
+            )
 
     def _coalesce_mesh(self):
         """Merge mesh-held representative cohorts only on physical contact.
@@ -669,6 +857,7 @@ class Parcels:
         gas exactly and does not merge non-touching bubbles merely because they
         occupy the same mesh unit cell.
         """
+        self._ensure_state_arrays()
         idx = np.nonzero(self.mesh_attached & (self.mult > 0.0))[0]
         if len(idx) < 2:
             return
@@ -709,6 +898,7 @@ class Parcels:
                     continue
                 small, large = (i, j) if self.mult[i] <= self.mult[j] else (j, i)
                 ms, ml = float(self.mult[small]), float(self.mult[large])
+                remainder = ml - ms
                 rs, rl = float(self.r[small]), float(self.r[large])
                 r_new = (rs ** 3 + rl ** 3) ** (1.0 / 3.0)
                 if r_new > self.r_conf():
@@ -717,7 +907,7 @@ class Parcels:
                 vs, vl = self._vol(rs), self._vol(rl)
                 self.pos[small] = (vs * before_s + vl * before_l) / (vs + vl)
                 self.r[small] = r_new
-                self.mult[large] = max(0.0, ml - ms)
+                self.mult[large] = max(0.0, remainder)
                 self.W[small] = ms * self._vol(r_new)
                 self.W[large] = self.mult[large] * self._vol(rl)
                 self.r_dep[small] = max(float(self.r_dep[small]), r_new)
@@ -726,14 +916,20 @@ class Parcels:
                     hit = self._nearest_mesh_strand(self.pos[small], r_new, geom)
                     if hit is not None:
                         axis, axis_point, _ = hit
+                        delta = self.pos[small] - axis_point
+                        norm = float(np.linalg.norm(delta))
+                        normal = (delta / norm if norm > np.finfo(float).eps
+                                  else np.array([1.0, 0.0, 0.0]))
                         self.mesh_axis[small] = axis
-                        self.pos[small] = axis_point
-                        self.pos[small, 0] = (geom["x_axis"]
-                                              + geom["strand_radius"] + r_new)
+                        self.mesh_normal[small] = normal
+                        self.pos[small] = axis_point + normal * (
+                            geom["strand_radius"] + r_new)
                 self.n_merge_mesh += 1
                 self.n_merge_real += ms
                 self._record_merge(before_s, before_l, r_new,
-                                   int(self.side[small]), False, rs, rl)
+                                   int(self.side[small]), False, rs, rl,
+                                   ids=[int(self.ids[small]), int(self.ids[large])],
+                                   state="mesh-held")
                 used.add(small); used.add(large)
                 break
         if np.any(self.mult <= np.finfo(float).eps):
@@ -748,13 +944,24 @@ class Parcels:
         plus Schiller--Naumann drag exceeds the Young--Dupre static adhesion
         estimate based on the measured PP bubble contact angle.
         """
+        self._ensure_state_arrays()
         idx = np.nonzero(self.mesh_attached)[0]
         if len(idx) == 0:
             return
         geom = self.mesh_geometry()
         if geom is None:
+            for i in idx:
+                self._emit_event(
+                    "mesh_release_edge",
+                    id=int(self.ids[i]),
+                    side=int(self.side[i]),
+                    position_m=self.pos[i],
+                    radius_m=float(self.r[i]),
+                    reason="mesh_geometry_unavailable",
+                )
             self.mesh_attached[idx] = False
             self.mesh_axis[idx] = 0
+            self.mesh_normal[idx] = 0.0
             self.n_mesh_release_edge += len(idx)
             return
         p, r = self.pos[idx], self.r[idx]
@@ -799,12 +1006,37 @@ class Parcels:
 
         force_idx, edge_idx = idx[release], idx[edge]
         if len(force_idx):
+            for local in np.nonzero(release)[0]:
+                i = int(idx[local])
+                self._emit_event(
+                    "mesh_release_force",
+                    id=int(self.ids[i]),
+                    side=int(self.side[i]),
+                    position_m=self.pos[i],
+                    radius_m=float(self.r[i]),
+                    force_N=float(force[local]),
+                    adhesion_N=float(adhesion[local]),
+                    mesh_axis=int(self.mesh_axis[i]),
+                )
             self.mesh_attached[force_idx] = False
             self.mesh_axis[force_idx] = 0
+            self.mesh_normal[force_idx] = 0.0
             self.n_mesh_release_force += len(force_idx)
         if len(edge_idx):
+            for local in np.nonzero(edge)[0]:
+                i = int(idx[local])
+                self._emit_event(
+                    "mesh_release_edge",
+                    id=int(self.ids[i]),
+                    side=int(self.side[i]),
+                    position_m=self.pos[i],
+                    radius_m=float(self.r[i]),
+                    mesh_axis=int(self.mesh_axis[i]),
+                    reason="strand_or_coverage_edge",
+                )
             self.mesh_attached[edge_idx] = False
             self.mesh_axis[edge_idx] = 0
+            self.mesh_normal[edge_idx] = 0.0
             self.n_mesh_release_edge += len(edge_idx)
 
     # ----------------------------------------------------------- coalescence
@@ -845,12 +1077,16 @@ class Parcels:
         kernel is geometric cross-section times physical approach speed and a
         Prince--Blanch film-drainage efficiency.  A collision changes the two
         existing weighted cohorts in place, so the tracked-particle count does
-        not grow with the number of outer time steps.
+        not grow with the number of outer time steps.  Pair kinematics are
+        evaluated as arrays per cell; only accepted collision events enter the
+        Python bookkeeping loop.  This keeps the live solver responsive without
+        changing the random-pair or weighted-collision equations.
         """
         self._ensure_state_arrays()
         free = np.nonzero((~self.attached) & (~self.mesh_attached)
                           & (self.mult > 0.0))[0]
-        if len(free) < 2 or self.p_merge() <= 0.0:
+        merge_efficiency = self.p_merge()
+        if len(free) < 2 or merge_efficiency <= 0.0:
             return
         pos = self.pos[free]
         velocity = self.bubble_velocity(ns, ctx)[free]
@@ -861,79 +1097,103 @@ class Parcels:
             key = (int(self.side[free[local]]), int(cell[0]), int(cell[1]), int(cell[2]))
             buckets.setdefault(key, []).append(local)
 
-        rho = float(ctx["rho_l"])
-        sigma = float(ctx["sigma"])
-        tiny = np.finfo(float).tiny
-        changed = False
+        # Assemble the random pairs per cell, then evaluate all cell batches in
+        # one vector operation.  Most cells contain only a handful of parcels;
+        # creating dozens of tiny NumPy arrays was slower than the old scalar
+        # loop even though each individual formula was vectorised.
+        local_i_parts, local_j_parts, factor_parts = [], [], []
         for members in buckets.values():
             count = len(members)
             sampled_pairs = count // 2
             if sampled_pairs == 0:
                 continue
-            shuffled = self.rng.permutation(members)
-            # Number of all unordered parcel pairs represented by each sampled
-            # pair.  This is exact combinatorics, not an efficiency parameter.
+            shuffled = np.asarray(self.rng.permutation(members), dtype=np.int64)
             pair_factor = count * (count - 1) / (2.0 * sampled_pairs)
-            for q in range(sampled_pairs):
-                local_i, local_j = int(shuffled[2*q]), int(shuffled[2*q + 1])
-                i, j = int(free[local_i]), int(free[local_j])
-                mi, mj = float(self.mult[i]), float(self.mult[j])
-                if mi <= 0.0 or mj <= 0.0:
-                    continue
-                ri, rj = float(self.r[i]), float(self.r[j])
-                relative = float(np.linalg.norm(velocity[local_i] - velocity[local_j]))
-                yi, _ = self._wall_dist(self.pos[[i], 0], self.side[[i]])
-                yj, _ = self._wall_dist(self.pos[[j], 0], self.side[[j]])
-                shear = 0.5 * (float(self.shear_rate(yi)[0])
-                               + float(self.shear_rate(yj)[0]))
-                approach = relative + shear * (ri + rj)
-                if approach <= 0.0:
-                    continue
+            local_i_parts.append(shuffled[:2 * sampled_pairs:2])
+            local_j_parts.append(shuffled[1:2 * sampled_pairs:2])
+            factor_parts.append(np.full(sampled_pairs, pair_factor))
+        if not local_i_parts:
+            return
 
-                reduced = 0.5 / (1.0 / max(ri, tiny) + 1.0 / max(rj, tiny))
-                t_drain = (np.sqrt(reduced ** 3 * rho / (16.0 * sigma))
-                           * np.log(self.H0 / self.HF))
-                t_contact = (ri + rj) / approach
-                efficiency = float(np.exp(-t_drain / max(t_contact, tiny)))
-                kernel = np.pi * (ri + rj) ** 2 * approach * efficiency
-                probability = (self.p_merge() * max(mi, mj) * kernel * float(dt)
-                               / self.g.cell_volume * pair_factor)
-                gamma = int(np.floor(probability))
-                if self.rng.random() < probability - gamma:
-                    gamma += 1
-                if gamma <= 0:
-                    continue
+        local_i = np.concatenate(local_i_parts)
+        local_j = np.concatenate(local_j_parts)
+        pair_factor = np.concatenate(factor_parts)
+        pair_i, pair_j = free[local_i], free[local_j]
+        mi, mj = self.mult[pair_i], self.mult[pair_j]
+        ri, rj = self.r[pair_i], self.r[pair_j]
+        relative = np.linalg.norm(
+            velocity[local_i] - velocity[local_j], axis=1)
+        yi, _ = self._wall_dist(self.pos[pair_i, 0], self.side[pair_i])
+        yj, _ = self._wall_dist(self.pos[pair_j, 0], self.side[pair_j])
+        shear = 0.5 * (self.shear_rate(yi) + self.shear_rate(yj))
+        approach = relative + shear * (ri + rj)
+        active = (mi > 0.0) & (mj > 0.0) & (approach > 0.0)
+        if not active.any():
+            return
 
-                # The lower-multiplicity cohort receives gamma partner volumes;
-                # the higher cohort loses exactly the corresponding real-bubble
-                # count.  This is the super-droplet update and conserves gas.
-                small, large = (i, j) if mi <= mj else (j, i)
-                m_small, m_large = float(self.mult[small]), float(self.mult[large])
-                max_gamma = int(np.floor(m_large / m_small))
-                if max_gamma <= 0:
-                    continue
-                gamma = min(gamma, max_gamma)
-                r_small, r_large = float(self.r[small]), float(self.r[large])
-                r_new = (r_small ** 3 + gamma * r_large ** 3) ** (1.0 / 3.0)
-                if r_new > self.r_conf():
-                    continue
-                before_small = self.pos[small].copy()
-                before_large = self.pos[large].copy()
-                v_small, v_large = self._vol(r_small), self._vol(r_large)
-                self.pos[small] = ((v_small * before_small + gamma * v_large * before_large)
-                                   / (v_small + gamma * v_large))
-                self.r[small] = r_new
-                self.r_dep[small] = max(float(self.r_dep[small]), r_new)
-                self.mult[large] = max(0.0, m_large - gamma * m_small)
-                merged_real = gamma * m_small
-                self.n_merge_free += 1
-                self.n_merge_real += merged_real
-                self._record_merge(before_small, before_large, r_new,
-                                   int(self.side[small]), False,
-                                   r_small, r_large)
-                changed = True
+        pair_i, pair_j = pair_i[active], pair_j[active]
+        pair_factor = pair_factor[active]
+        mi, mj = mi[active], mj[active]
+        ri, rj = ri[active], rj[active]
+        approach = approach[active]
+        tiny = np.finfo(float).tiny
+        reduced = 0.5 / (1.0 / np.maximum(ri, tiny)
+                         + 1.0 / np.maximum(rj, tiny))
+        t_drain = (
+            np.sqrt(reduced ** 3 * float(ctx["rho_l"])
+                    / (16.0 * float(ctx["sigma"])))
+            * np.log(self.H0 / self.HF))
+        t_contact = (ri + rj) / approach
+        efficiency = np.exp(-t_drain / np.maximum(t_contact, tiny))
+        kernel = np.pi * (ri + rj) ** 2 * approach * efficiency
+        probability = (
+            merge_efficiency * np.maximum(mi, mj) * kernel * float(dt)
+            / self.g.cell_volume * pair_factor)
+        gamma = np.floor(probability).astype(np.int64)
+        gamma += (self.rng.random(len(gamma))
+                  < probability - gamma).astype(np.int64)
 
-        if changed:
+        choose_i = mi <= mj
+        small = np.where(choose_i, pair_i, pair_j)
+        large = np.where(choose_i, pair_j, pair_i)
+        m_small = np.where(choose_i, mi, mj)
+        m_large = np.where(choose_i, mj, mi)
+        max_gamma = np.floor(
+            m_large / np.maximum(m_small, tiny)).astype(np.int64)
+        gamma = np.minimum(gamma, max_gamma)
+        r_small = self.r[small]
+        r_large = self.r[large]
+        r_new = (r_small ** 3 + gamma * r_large ** 3) ** (1.0 / 3.0)
+        accepted = (gamma > 0) & (r_new <= self.r_conf())
+        if not accepted.any():
+            return
+
+        small, large = small[accepted], large[accepted]
+        m_small, m_large = m_small[accepted], m_large[accepted]
+        gamma, r_small = gamma[accepted], r_small[accepted]
+        r_large, r_new = r_large[accepted], r_new[accepted]
+        before_small = self.pos[small].copy()
+        before_large = self.pos[large].copy()
+        v_small, v_large = self._vol(r_small), self._vol(r_large)
+        self.pos[small] = (
+            v_small[:, None] * before_small
+            + (gamma * v_large)[:, None] * before_large
+        ) / (v_small + gamma * v_large)[:, None]
+        self.r[small] = r_new
+        self.r_dep[small] = np.maximum(self.r_dep[small], r_new)
+        self.mult[large] = np.maximum(0.0, m_large - gamma * m_small)
+        merged_real = gamma * m_small
+        self.n_merge_free += int(len(small))
+        self.n_merge_real += float(merged_real.sum())
+        for q in range(len(small)):
+            self._record_merge(
+                before_small[q], before_large[q], r_new[q],
+                int(self.side[small[q]]), False,
+                r_small[q], r_large[q],
+                ids=[int(self.ids[small[q]]), int(self.ids[large[q]])],
+                state="free")
+
+        if len(small):
             self.W = self.mult * self._vol(self.r)
             self._filter(self.mult > np.finfo(float).eps)
             # Coalescence increases the receiving parcel radius after advection.
@@ -992,7 +1252,10 @@ class Parcels:
         for q, parcel_index in enumerate(idx):
             self._record_merge(event_pos[q], event_pos[q], self.r[parcel_index],
                                self.side[parcel_index], True,
-                               event_radius[q], event_radius[q])
+                               event_radius[q], event_radius[q],
+                               ids=[int(self.ids[parcel_index]),
+                                    int(self.ids[parcel_index])],
+                               state="electrode-attached")
 
     def _detach(self, ctx, j_A_m2):
         """Release attached bubbles that reached their departure radius."""
@@ -1000,38 +1263,120 @@ class Parcels:
             return
         go = self.attached & (self.r >= self.r_dep)
         if go.any():
+            for i in np.nonzero(go)[0]:
+                self._emit_event(
+                    "detach",
+                    id=int(self.ids[i]),
+                    side=int(self.side[i]),
+                    position_m=self.pos[i],
+                    radius_m=float(self.r[i]),
+                    departure_radius_m=float(self.r_dep[i]),
+                    reason="radius_reached_departure_threshold",
+                )
             self.attached[go] = False
         self._thin_free()
 
     def _thin_free(self):
-        """Keep at most FREE_TARGET tracked risers.
+        """Thin free risers while preserving number, area and gas volume.
 
-        At real departure sizes a working cell frees ~1e5-1e9 bubbles/s, far
-        beyond what can be tracked. A random subset survives and absorbs ALL the
-        gas of the dropped ones (W and mult scaled by the same factor, so each
-        survivor's single-bubble radius is untouched and it simply stands for
-        more real bubbles). produced = resident + vented stays machine-exact.
-
-        The subset MUST stay a fresh UNIFORM random draw each step: it is a
-        Monte-Carlo sample of the real swarm, so `r[~attached].mean()` reads the
-        true number-mean bubble radius. Keeping a "stable" subset instead (to
-        stop the render churn) biased the sample toward the older, coalesced
-        risers and inflated the mean radius 3-8x -- a physics error. The id
-        churn is handled in the RENDERER (nearest-match continuity), not here.
+        A volume-only rescale preserved ``sum(W)`` but changed ``sum(mult)`` and
+        ``sum(mult*r**2)``.  Those are the real-bubble count and interfacial area,
+        so thinning changed d32, drag and coalescence.  We now draw a fresh
+        weighted subset and solve non-negative representative weights that
+        preserve, independently on each electrode side, the 0th, 2nd and 3rd
+        radius moments.  If the selected support cannot represent those moments
+        without negative weights, thinning is skipped rather than corrupting the
+        physics.
         """
         self._ensure_state_arrays()
+        if self.record_mode:
+            return
         free = np.nonzero((~self.attached) & (~self.mesh_attached))[0]
-        if len(free) <= self.FREE_TARGET:
+        sides = [s for s in (0, 1) if np.any(self.side[free] == s)]
+        minimum_support = 3 * len(sides)
+        target = max(int(self.FREE_TARGET), minimum_support)
+        if len(free) <= target:
             return
-        sel = self.rng.choice(len(free), size=self.FREE_TARGET, replace=False)
-        kept = free[sel]
-        w_total = float(self.W[free].sum())
-        w_kept = float(self.W[kept].sum())
-        if w_kept <= 0.0:
+
+        # Guarantee radius support on each gas side, then fill the remaining
+        # slots by real-number weight.  The subsequent moment solve is exact;
+        # this draw only controls the retained spatial sample.
+        mandatory = []
+        for side in sides:
+            idx = free[self.side[free] == side]
+            rr, mm = self.r[idx], np.maximum(self.mult[idx], 0.0)
+            mean_r = float(np.sum(mm * rr) / max(mm.sum(), np.finfo(float).tiny))
+            mandatory.extend((int(idx[np.argmin(rr)]), int(idx[np.argmax(rr)]),
+                              int(idx[np.argmin(np.abs(rr - mean_r))])))
+        mandatory = np.unique(np.asarray(mandatory, dtype=np.int64))
+        remaining = np.setdiff1d(free, mandatory, assume_unique=False)
+        n_fill = target - len(mandatory)
+        if n_fill > 0:
+            prob = np.maximum(self.mult[remaining], 0.0)
+            prob = prob / prob.sum() if prob.sum() > 0.0 else None
+            drawn = self.rng.choice(remaining, size=n_fill, replace=False, p=prob)
+            kept = np.concatenate([mandatory, drawn])
+        else:
+            kept = mandatory[:target]
+
+        r_scale = max(float(self.r[free].max()), np.finfo(float).tiny)
+        x_all = self.r[free] / r_scale
+        x_keep = self.r[kept] / r_scale
+        rows, targets = [], []
+        for side in sides:
+            all_side = self.side[free] == side
+            keep_side = self.side[kept] == side
+            for power in (0, 2, 3):
+                rows.append(keep_side.astype(float) * x_keep ** power)
+                targets.append(float(np.sum(self.mult[free][all_side]
+                                            * x_all[all_side] ** power)))
+        A = np.vstack(rows)
+        b = np.asarray(targets)
+
+        # Closest-to-equal non-negative STATISTICAL weights under exact linear
+        # moment constraints.  A lower bound of one rejected valid weighted
+        # collisions and introduced severe time-step dependence.  Fractional
+        # expected counts are therefore allowed and disclosed in diagnostics.
+        lower = np.zeros(len(kept))
+        shifted = b
+        active = np.ones(len(kept), dtype=bool)
+        solved = None
+        while (int(active.sum()) >= len(b)
+               and all(int(np.count_nonzero(active & (self.side[kept] == side))) >= 3
+                       for side in sides)):
+            A_act = A[:, active]
+            w0 = np.zeros(int(active.sum()))
+            active_sides = self.side[kept][active]
+            for side in sides:
+                sm = active_sides == side
+                total_n = shifted[3 * sides.index(side)]
+                if sm.any():
+                    w0[sm] = total_n / sm.sum()
+            residual = shifted - A_act @ w0
+            gram = A_act @ A_act.T
+            correction = A_act.T @ np.linalg.lstsq(gram, residual, rcond=None)[0]
+            candidate = w0 + correction
+            scale = max(1.0, float(np.max(np.abs(candidate))))
+            if candidate.min(initial=0.0) >= -1e-12 * scale:
+                solved = lower.copy()
+                solved[active] += np.maximum(0.0, candidate)
+                break
+            active_indices = np.nonzero(active)[0]
+            active[active_indices[int(np.argmin(candidate))]] = False
+
+        if solved is None:
+            self.thinning_skipped += 1
             return
-        scale = w_total / w_kept
-        self.W[kept] *= scale
-        self.mult[kept] *= scale
+
+        moment_scale = np.maximum(1.0, np.abs(b))
+        error = float(np.max(np.abs(A @ solved - b) / moment_scale))
+        self.thinning_moment_error = max(self.thinning_moment_error, error)
+        if error > 1e-9:
+            self.thinning_skipped += 1
+            return
+
+        self.mult[kept] = solved
+        self.W[kept] = solved * self._vol(self.r[kept])
         live = self.attached | self.mesh_attached
         live[kept] = True
         self._filter(live)
@@ -1061,9 +1406,40 @@ class Parcels:
         velocity[free, 2] = wf + slip * ns.up[2]
         return velocity
 
+    def trace_kinematics(self, ns, ctx):
+        """Liquid, buoyant-slip and effective velocities for video/audit data."""
+        self._ensure_state_arrays()
+        n = len(self.r)
+        liquid = np.zeros((n, 3), dtype=np.float64)
+        slip_vector = np.zeros((n, 3), dtype=np.float64)
+        effective = self.bubble_velocity(ns, ctx)
+        if n == 0:
+            return liquid, slip_vector, effective
+        uf, vf, wf = ns.sample_velocity(self.pos)
+        liquid[:, 0] = uf
+        liquid[:, 1] = vf
+        liquid[:, 2] = wf
+        moving = ~self.attached
+        if moving.any():
+            slip = terminal_velocity(
+                self.r[moving], ctx["d_rho"], ctx["mu"], ctx["rho_l"])
+            slip_vector[moving] = slip[:, None] * np.asarray(ns.up)[None, :]
+        held = self.mesh_attached
+        if held.any():
+            transport = liquid[held] + slip_vector[held]
+            axis = self.mesh_axis[held]
+            projected = np.zeros_like(transport)
+            projected[axis == 1, 1] = transport[axis == 1, 1]
+            projected[axis == 2, 2] = transport[axis == 2, 2]
+            effective[held] = projected
+        return liquid, slip_vector, effective
+
     def _advect(self, ns, dt, ctx):
-        """Rise the freed bubbles (flow + buoyant slip + lateral meander); vent
-        those that reach the outlet. Attached bubbles stay put."""
+        """Advect free bubbles with solved flow, slip and wall-normal drift.
+
+        Vent bubbles that reach the configured outlet. Attached bubbles stay
+        put; no display wobble or random crawl enters the physical trajectory.
+        """
         self._ensure_state_arrays()
         if len(self.r) == 0:
             return
@@ -1072,11 +1448,9 @@ class Parcels:
             p = self.pos[free]
             r_f = self.r[free]
             velocity = self.bubble_velocity(ns, ctx)[free]
-            # gentle lateral meander (organic, not a straight column)
             # WALL-NORMAL force balance (Tomiyama lift vs Antal wall lubrication).
-            # For these sizes the lift wins at every standoff >= r, so the drift
-            # is inward and the bubbles stay pinned to the electrode — the model
-            # now SAYS that instead of merely omitting the physics.
+            # Lubrication repels a bubble at contact while lift draws it back
+            # from farther out, giving a stable near-wall stand-off just above r.
             side_f = self.side[free]
             d = velocity * dt
             # axis-wise obstacle collision, SUBSTEPPED so a fast bubble can
@@ -1098,10 +1472,6 @@ class Parcels:
                         # gas that reaches it is trapped and must find the port
                         blocked |= (cand[:, 1] > y_top) & ~self._at_top_vent(cand[:, 2])
                     p[~blocked, ax] = cand[~blocked, ax]
-            # trapped-bubble crawl: a riser pinned under a land (rise blocked)
-            # wanders slowly sideways until it finds the turn gap — the
-            # contact-line wobble real trapped bubbles show, and it keeps the
-            # dead corners from collecting permanent residents
             # the bubble surface cannot enter the electrode: its centre stops at
             # one radius from the catalyst plane (where the wall force diverges)
             y_w, nrm = self._wall_dist(p[:, 0], side_f)
@@ -1130,16 +1500,27 @@ class Parcels:
             vented |= free_now & at_lo & self._at_side_vent("left", y)
             vented |= free_now & at_hi & self._at_side_vent("right", y)
         if vented.any():
+            for i in np.nonzero(vented)[0]:
+                self._emit_event(
+                    "vent",
+                    id=int(self.ids[i]),
+                    side=int(self.side[i]),
+                    position_m=self.pos[i],
+                    radius_m=float(self.r[i]),
+                    represented_volume_m3=float(self.W[i]),
+                )
             self.vented_cum += float(self.W[vented].sum())
             keep = ~vented
             self._filter(keep)
 
     def _filter(self, keep):
+        self._ensure_state_arrays()
         self.pos = self.pos[keep]; self.r = self.r[keep]; self.W = self.W[keep]
         self.mult = self.mult[keep]
         self.side = self.side[keep]; self.attached = self.attached[keep]
         self.mesh_attached = self.mesh_attached[keep]
         self.mesh_axis = self.mesh_axis[keep]
+        self.mesh_normal = self.mesh_normal[keep]
         self.r_dep = self.r_dep[keep]; self.phase = self.phase[keep]
         self.p_touch = self.p_touch[keep]
         self.ids = self.ids[keep]
@@ -1152,19 +1533,40 @@ class Parcels:
         and interfacial area. Deposits include parcel multiplicity, so thinning
         changes sampling noise but not phase volume or area.
         """
-        gas = self.g.field()
-        area = self.g.field()
-        momentum = np.zeros((3,) + self.g.shape, dtype=np.float64)
+        deposited_fields = np.zeros((5,) + self.g.shape, dtype=np.float64)
+        gas, area = deposited_fields[0], deposited_fields[1]
+        momentum = deposited_fields[2:]
         if len(self.r):
             inv_cell = 1.0 / self.g.cell_volume
             void_weight = self.W * inv_cell
             area_weight = self.mult * (4.0 * np.pi * self.r * self.r) * inv_cell
             velocity = self.bubble_velocity(ns, ctx)
-            self.g.deposit27(gas, self.pos, void_weight)
-            self.g.deposit27(area, self.pos, area_weight)
-            for axis in range(3):
-                self.g.deposit27(momentum[axis], self.pos,
-                                 void_weight * velocity[:, axis])
+            fluid = ~ns.solid
+            deposited = self.g.deposit27_many(
+                deposited_fields, self.pos,
+                np.vstack((void_weight, area_weight,
+                           void_weight[None, :] * velocity.T)),
+                fluid)
+            self.deposition_unresolved_volume = max(
+                0.0, float(void_weight.sum()) - float(deposited[0])
+            ) * self.g.cell_volume
+        else:
+            self.deposition_unresolved_volume = 0.0
+        self.alpha_raw_max = float(gas.max()) if gas.size else 0.0
+        self.alpha_overfilled_cells = int(np.count_nonzero(gas > 1.0))
+        # A phase fraction cannot exceed one.  Scale gas volume, interfacial
+        # area and gas momentum by the SAME local factor before deriving d32 and
+        # velocity.  Clipping alpha alone made the returned alpha, d32 and drag
+        # describe different phase inventories.
+        alpha_cap = 1.0 - np.sqrt(np.finfo(float).eps)
+        scale = np.ones_like(gas)
+        over = gas > alpha_cap
+        scale[over] = alpha_cap / gas[over]
+        self.deposition_clipped_volume = float(
+            np.sum(gas[over] - alpha_cap) * self.g.cell_volume)
+        gas *= scale
+        area *= scale
+        momentum *= scale[None, ...]
         gas_velocity = np.zeros_like(momentum)
         occupied = gas > np.finfo(float).tiny
         for axis in range(3):
@@ -1172,27 +1574,33 @@ class Parcels:
         diameter = np.zeros_like(gas)
         surfaced = area > np.finfo(float).tiny
         diameter[surfaced] = 6.0 * gas[surfaced] / area[surfaced]
-        self.alpha_raw_max = float(gas.max()) if gas.size else 0.0
-        self.alpha_overfilled_cells = int(np.count_nonzero(gas > 1.0))
-        # A phase fraction cannot exceed one. The epsilon-sized gap only keeps
-        # alpha_l positive in the momentum equation; it is not a packing fit.
-        gas = np.minimum(gas, 1.0 - np.sqrt(np.finfo(float).eps))
         return gas, gas_velocity, diameter
 
-    def deposit_void(self):
+    def deposit_void(self, solid=None):
         """Scatter bubble gas volume -> grid void fraction (3x3x3 smear)."""
         gas = self.g.field()
         if len(self.r):
-            self.g.deposit27(gas, self.pos, self.W / self.g.cell_volume)
+            valid = None if solid is None else ~np.asarray(solid, dtype=bool)
+            self.g.deposit27(gas, self.pos, self.W / self.g.cell_volume, valid)
         return np.minimum(gas, 1.0 - np.sqrt(np.finfo(float).eps))
 
     # ------------------------------------------------------------ diagnostics
     def resident_gas(self):
         return float(self.W.sum()) if len(self.W) else 0.0
 
-    def holdup(self):
-        total_vol = self.g.n * self.g.cell_volume
+    def holdup(self, fluid_cells=None):
+        """Resident gas divided by liquid-domain volume.
+
+        ``fluid_cells`` lets the cell engine exclude ribs/core. The no-argument
+        form remains for standalone boxes where every grid cell is fluid.
+        """
+        n_cells = self.g.n if fluid_cells is None else int(fluid_cells)
+        total_vol = n_cells * self.g.cell_volume
         return self.resident_gas() / total_vol if total_vol else 0.0
+
+    def pending_gas(self):
+        """Unresolved/incubating gas carried between nucleation passes [m^3]."""
+        return float(sum(self._pending))
 
     def coverage(self, side):
         """Fraction of the face shadowed by attached-bubble footprints (Poisson
@@ -1205,35 +1613,50 @@ class Parcels:
         foot = self.mult[m] * np.pi * (self.r[m] * sinb) ** 2
         return float(min(0.95, 1.0 - np.exp(-foot.sum() / self._face_area())))
 
-    def near_wall_mask(self, side, slab_cells=2):
-        """Bubbles within `slab_cells` of this side's ELECTRODE surface (the
-        catalyst plane with elec_planes, else the outer wall)."""
-        slab = slab_cells * self.g.h
+    def near_wall_mask(self, side, slab_cells=2, *, layer_m=None):
+        """Bubbles within a physical layer of this side's electrode surface.
+
+        ``layer_m`` is preferred for scalar electrochemistry because the
+        Bruggeman near-layer thickness is a physical model input and must not
+        silently become ``slab_cells * h`` when the flow grid changes.  The
+        cell-count form remains for display/binning callers.
+        """
+        slab = float(layer_m) if layer_m is not None else slab_cells * self.g.h
+        slab = max(slab, np.finfo(float).tiny)
         x = self.pos[:, 0]
         if self.elec_planes is not None:
             xc, xa = self.elec_planes
             return (np.abs(x - xc) < slab) if side == 0 else (np.abs(x - xa) < slab)
         return (x < slab) if side == 0 else (x > self.g.Lx - slab)
 
-    def void_near_wall(self, side, slab_cells=2):
+    def void_near_wall(self, side, slab_cells=2, *, layer_m=None):
         """Gas volume fraction in the near-electrode layer (feeds the kernel
         Bruggeman void resistance, like Surface.void_fraction)."""
         if len(self.r) == 0:
             return 0.0
-        m = self.near_wall_mask(side, slab_cells)
-        layer_vol = self._face_area() * slab_cells * self.g.h
+        thickness = float(layer_m) if layer_m is not None else slab_cells * self.g.h
+        thickness = max(thickness, np.finfo(float).tiny)
+        m = self.near_wall_mask(side, slab_cells, layer_m=thickness)
+        layer_vol = self._face_area() * thickness
         return float(min(0.6, self.W[m].sum() / layer_vol))
 
     def size_stats(self):
-        """(mean, std) bubble radius [m] — std>0 confirms a size distribution."""
+        """Multiplicity-weighted number mean/std of bubble radius [m]."""
         if len(self.r) == 0:
             return 0.0, 0.0
-        return float(self.r.mean()), float(self.r.std())
+        weights = np.maximum(0.0, self.mult)
+        total = float(weights.sum())
+        if total <= 0.0:
+            return 0.0, 0.0
+        mean = float(np.sum(weights * self.r) / total)
+        var = float(np.sum(weights * (self.r - mean) ** 2) / total)
+        return mean, var ** 0.5
 
     def gas_closure_error(self):
         if self.produced_cum <= 0:
             return 0.0
-        return abs(self.produced_cum - (self.resident_gas() + self.vented_cum)) \
+        return abs(self.produced_cum - (self.resident_gas() + self.pending_gas()
+                                        + self.vented_cum)) \
             / self.produced_cum
 
     def snapshot_flat(self):

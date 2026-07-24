@@ -6,7 +6,7 @@ the face) instead of face2d's empirical accumulation law. Given the scalar
 operating point j_mean (frozen kernel two-electrode balance), the local current
 redistributes at the common overpotential:
 
-    j(y,z) = j_mean * (1 - theta(y,z)) / mean(1 - theta)         (charge-conserving)
+    j(y,z) = j_mean * active*(1-theta) / mean_full(active*(1-theta))
 
 so bubble-blanketed patches (and rib-shadowed lands) carry less current and
 clear channels carry more — the face bottleneck map.
@@ -26,7 +26,7 @@ def face_coverage(parcels, grid, side, contact_angle_deg,
                   ny_f=None, nz_f=None, slab_cells=2, cap=0.9):
     """theta(y,z) on one electrode face from near-wall bubble footprints.
 
-    Bins bubbles within `slab_cells` of the face into an (ny_f, nz_f) map; each
+    Bins catalyst-attached bubbles into an (ny_f, nz_f) map; each
     footprint (pi (r sin beta)^2) is spread uniformly over the bins inside its
     contact disk. theta saturates via the kernel's Poisson-union closure:
     theta = cap (1 - exp(-area/bin_area)).
@@ -39,7 +39,11 @@ def face_coverage(parcels, grid, side, contact_angle_deg,
         return th
     # near-ELECTRODE bubbles (catalyst plane in a zero-gap cell — parcels
     # knows where its electrode surfaces actually are)
-    m = parcels.near_wall_mask(side, slab_cells)
+    # Match scalar electrochemistry: only catalyst-attached bubbles block the
+    # catalyst. Free near-wall risers and mesh-held bubbles remain visual parcel
+    # states, not a second display-only coverage definition.
+    parcels._ensure_state_arrays()
+    m = parcels.attached & (parcels.side == side)
     if not m.any():
         return th
     y = parcels.pos[m, 1]
@@ -70,14 +74,16 @@ def face_coverage(parcels, grid, side, contact_angle_deg,
 
 
 def redistribute(j_mean, theta, active=None):
-    """j(y,z) = j_mean (1-theta)/mean(1-theta), conserving the mean over active
-    cells. `active` (bool, same shape) masks out inactive (land) cells."""
+    """Redistribute a whole-face geometric mean current density.
+
+    ``j_mean`` and the Faraday source both use the full geometric electrode
+    area.  The masked map therefore conserves its mean over the full face; an
+    active-only mean would lose current in proportion to the land fraction.
+    """
     omt = 1.0 - theta
     if active is not None:
         omt = np.where(active, omt, 0.0)
-        denom = omt[active].mean() if active.any() else 1.0
-    else:
-        denom = omt.mean()
+    denom = omt.mean()
     jf = j_mean * omt / max(1e-9, float(denom))
     return jf
 

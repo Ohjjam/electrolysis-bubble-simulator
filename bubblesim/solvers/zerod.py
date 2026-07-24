@@ -43,7 +43,7 @@ def solve_current_density(op, props, theta, eps):
     j0 = props["j0"]
     b = props["tafel_b"]
     j_lim = props["j_lim_eff"]
-    z = props.get("z_primary", 2)
+    z = props.get("z_transport", 1)
     one_minus_theta = max(1e-3, 1.0 - theta)
 
     drive = op.V_cell - E_rev
@@ -70,7 +70,7 @@ def overpotentials(op, props, theta, eps, j):
     kappa_eff = props["kappa"] * (1.0 - eps) ** 1.5
     R_area = (op.gap_mm * 1e-3) / max(kappa_eff, 1e-6)
     eta_ohmic = j * R_area
-    eta_conc = conc_overpotential(j, props["j_lim_eff"], props.get("z_primary", 2), op.T)
+    eta_conc = conc_overpotential(j, props["j_lim_eff"], props.get("z_transport", 1), op.T)
     eta_act = op.V_cell - E_rev - eta_ohmic - eta_conc
     return {"E_rev": E_rev, "eta_act": eta_act, "eta_conc": eta_conc, "eta_ohmic": eta_ohmic}
 
@@ -90,15 +90,25 @@ class ZeroDSolver:
             kappa_eff = context["kappa"] * (1.0 - eps) ** 1.5
             R_area = (op.gap_mm * 1e-3) / max(kappa_eff, 1e-6)
             omt = max(1e-3, 1.0 - theta)
-            j = max(0.0, min(op.j_set, 0.995 * context["j_lim_eff"]))
+            j = max(0.0, op.j_set)
+            feasible = j < context["j_lim_eff"]
             eta_act = max(0.0, context["tafel_b"]
                           * math.log10(max(j, 1e-12) / (omt * context["j0"])))
             eta_conc = conc_overpotential(j, context["j_lim_eff"],
-                                          context.get("z_primary", 2), op.T)
+                                          context.get("z_transport", 1), op.T)
             V = context["E_rev"] + eta_act + eta_conc + j * R_area
             ov = {"E_rev": context["E_rev"], "eta_act": eta_act,
                   "eta_conc": eta_conc, "eta_ohmic": j * R_area}
-            return ElectroState(j=j, overpotentials=ov, V=V)
+            fields = {
+                "operating_feasible": bool(feasible),
+                "transport_limit_exceeded": bool(not feasible),
+                "j_requested_A_m2": float(j),
+                "j_limit_A_m2": float(context["j_lim_eff"]),
+                "voltage_is_lower_bound": bool(not feasible),
+                "model_input_valid": bool(context.get("input_range_valid", False)),
+                "model_input_issues": list(context.get("input_range_issues", [])),
+            }
+            return ElectroState(j=j, overpotentials=ov, fields=fields, V=V)
         j = solve_current_density(op, context, theta, eps)
         ov = overpotentials(op, context, theta, eps, j)
         return ElectroState(j=j, overpotentials=ov)
@@ -181,7 +191,7 @@ class ZeroDTwoElectrodeSolver:
         aa_c, ac_c = context["alpha_a_cathode"], context["alpha_c_cathode"]
         T = op.T
         j_lim_base = context["j_lim_transport"]    # Sherwood-grounded transport limit
-        z = context["z_primary"]
+        z = context.get("z_transport", 1)
         k_vogt, j_ref_v = context["k_vogt"], context["j_ref_vogt"]
 
         def jlim_of(jj):     # bubble self-stirring (Vogt) raises the limit with current
@@ -217,9 +227,12 @@ class ZeroDTwoElectrodeSolver:
             j_lim_fp = min(j_lim_fp, max(j_lim_w, 1e-9))
         mode = getattr(op, "mode", "CA")
         if mode == "CP":
-            # galvanostatic: j imposed, V follows. Clamp below the self-consistent
-            # Vogt-enhanced limit; beyond it eta_conc diverges (voltage runaway).
-            j = max(0.0, min(op.j_set, 0.995 * j_lim_fp))
+            # Galvanostatic means the requested current is the current.  Beyond
+            # a transport/water ceiling this reduced model cannot produce a
+            # finite physical voltage; silently lowering j changed the meaning
+            # of CP.  Keep the setpoint and mark the returned finite voltage as
+            # a numerical lower bound (conc_overpotential is saturation-clamped).
+            j = max(0.0, op.j_set)
         else:
             drive = op.V_cell - E_cell
             if drive <= 0.0:
@@ -257,10 +270,18 @@ class ZeroDTwoElectrodeSolver:
         }
         med = context.get("electrolyte", "KOH")
         c_b = op.c_electrolyte
+        feasible = bool(mode != "CP" or j < j_lim_fp)
         fields = {
             "pH_bulk": chemistry.bulk_pH(c_b, T, med),
             "pH_anode": chemistry.local_pH(c_b, j, j_lim, "OER", T, med),
             "pH_cathode": chemistry.local_pH(c_b, j, j_lim, "HER", T, med),
+            "operating_feasible": feasible,
+            "transport_limit_exceeded": bool(mode == "CP" and j >= j_lim_fp),
+            "j_requested_A_m2": float(op.j_set) if mode == "CP" else None,
+            "j_limit_A_m2": float(j_lim_fp),
+            "voltage_is_lower_bound": bool(mode == "CP" and not feasible),
+            "model_input_valid": bool(context.get("input_range_valid", False)),
+            "model_input_issues": list(context.get("input_range_issues", [])),
         }
         return ElectroState(j=j, overpotentials=ov, fields=fields,
                             V=(V_cp if mode == "CP" else None))

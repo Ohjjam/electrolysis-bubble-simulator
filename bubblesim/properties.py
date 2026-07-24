@@ -31,6 +31,16 @@ def saturation_pressure(T):
     return 10.0 ** (8.07131 - 1730.63 / (233.426 + T_C)) * 133.322   # mmHg -> Pa
 
 
+def dry_gas_pressure(P, p_w=0.0):
+    """Dry product-gas partial pressure [Pa] used by every wet-gas path.
+
+    The one-pascal floor is numerical only.  Callers must inspect
+    ``P > p_w`` (exposed as ``thermodynamic_state_valid`` in the context)
+    before interpreting a result physically.
+    """
+    return max(1.0, float(P) - max(0.0, float(p_w)))
+
+
 def water_activity_koh(c):
     """Water activity a_w in aqueous KOH (Balej 1985-anchored linear fit).
 
@@ -56,7 +66,7 @@ def reversible_voltage(T, P=1.0e5, P_ref=1.0e5, a_H2O=1.0, p_w=0.0):
     (golden-safe); build_context enables them only under high_fidelity.
     """
     E = 1.229 - 0.9e-3 * (T - 298.15)
-    P_dry = max(1.0, P - p_w)
+    P_dry = dry_gas_pressure(P, p_w)
     return (E + (R_GAS * T) / (2.0 * F) * 1.5 * math.log(P_dry / P_ref)
             - (R_GAS * T) / (2.0 * F) * math.log(a_H2O))
 

@@ -1,6 +1,6 @@
 # 모델 상수 감사 — Bubble simulator
 
-기준: 2026-07-20 현재 코드. 숫자를 모두 없애는 것이 목표는 아니다. 아래처럼 출처와 역할을 구분한다.
+기준: 2026-07-23 재감사 반영 코드. 숫자를 모두 없애는 것이 목표는 아니다. 아래처럼 출처와 역할을 구분한다.
 
 - **물리 상수**: Faraday 상수, 기체상수, 표준중력처럼 그대로 사용 가능
 - **측정 입력**: 접촉각, 막 저항, 교환전류밀도처럼 대상 셀에서 측정해야 하는 값
@@ -18,6 +18,34 @@
 | 합체확률 `0.05 / 0.9` | 농도에 따라 매 충돌에 임의 확률 적용 | 제거. 기하학적 충돌 커널과 Prince–Blanch 액막 배수 효율 사용. 전해질의 임계합체농도는 별도 실험 입력으로 남김 |
 | 접촉거리 `1.6 r sin(theta)` | 벽면 합체 도달거리 | 동일 크기 두 footprint의 합인 `2 r sin(theta)`로 수정 |
 | 스텝마다 새 합체 입자 생성 | 시간간격이 작을수록 계산 입자와 시각 이벤트가 증가 | Shima 계열 가중 입자쌍 갱신으로 교체. 실제 기포 수와 기체 체적을 보존하면서 기존 두 cohort를 갱신 |
+
+## 2026-07-22 1차 감사와 2026-07-23 재감사 후 수정한 구현 결함
+
+- CP는 transport/water limit 초과 시 `j_set`을 낮추지 않고 infeasible 상태와 전압 하한을 반환한다.
+- 농도과전압의 이온 운반자 전하(`z=1`)를 Faraday HER/OER 화학양론(`z=2/4`)과 분리했다.
+- 3D 입구의 해결된 복셀 유속을 `u_flow`와 일치시키고 요청/해결 유로면적을 따로 보고한다.
+- parcel의 gas/area/momentum 적층은 fluid cell만 사용하며 유효 이웃으로 재정규화한다.
+- 자유 parcel 축약은 side별 기대 기포수·계면적·체적 moment를 보존한다. `mult`는
+  비음수 통계 가중치라 cohort 분할 뒤 1 미만일 수 있으며, 이를 1 이상으로 강제해 충돌을
+  버리면 시간간격 의존성이 커지므로 사용하지 않는다.
+- gas ledger에 pending seed budget을 포함한다.
+- 전기화학 near-wall void는 `Params.near_layer`의 물리 두께를 사용한다.
+- 국소 전류맵은 전체 기하 면적 적분전류를 보존하고 촉매 부착기포만 coverage로 사용한다.
+- EIS 물질전달 저항은 DC와 같은 `z_transport=1`, current-dependent Vogt 한계와 그 미분을
+  사용하며 transport wall 이상에서는 유효 스펙트럼을 반환하지 않는다.
+- 1D/porous HER는 비대칭 transfer coefficient에서도 cathodic 성장 branch에 `alpha_c`를 쓴다.
+- CP sweep은 설정전류 보존과 별개로 `operating_feasible`, 전압 하한, 한계전류를 내보내며
+  CSV에도 이 구분을 보존한다.
+- B/E/DEP gradient와 명시적 flow length가 sweep/cache에서 사라지지 않게 연결했다.
+- live T/P 변경은 기존 parcel, pending, produced, vented ledger 전체를 새 molar-volume 기준으로
+  변환한다.
+- porous 내부 확산한계를 외부 0D 한계와 분리해 feasibility와 전압 하한에 반영한다.
+- 포화수증기압 이상의 유효 dry-gas pressure가 없는 상태는 UI/API에서 거부하고, 직접 solver
+  경로에는 invalid 진단을 남긴다.
+- 고 void coupling은 gas·계면적·운동량을 같은 국소 비율로 제한해 `d32`와 항력이 서로 다른
+  gas volume을 보지 않게 한다. 제거된 체적은 parcel ledger를 바꾸지 않고 별도 진단한다.
+
+상세 코드·시험·미해결 범위는 [`PRO_AUDIT_IMPLEMENTATION.md`](PRO_AUDIT_IMPLEMENTATION.md)에 있다.
 
 ## 우선순위 0 — 정량 예측 전에 반드시 처리
 
@@ -56,11 +84,15 @@
 | `params3d.py: h=2 mm`, `max_cells=60000` | 유동/기체분율 격자 | 최소 3개 격자에서 압력강하·유량·국소 void·d32 수렴성 |
 | `parcels.py: N_SITES=140`, `FREE_TARGET=1400`, `cap=6000` | 가중 입자 표본 수 | 700/1400/2800 이상 ensemble 통계와 신뢰구간. 절대 기포 수와 구분 |
 | `SUB_FRAC=0.25`, `MAX_SUB=32` | 벽 기포 성장 substep | 이탈 크기·주기 변화가 허용오차 이내인지 확인 |
-| `faceredist.py: slab_cells=2, cap=0.9`, footprint 최소 0.51 bin | 전류 재분배 공간 필터 | 격자 독립성 확인. 현재는 국소 전류맵에 영향을 주는 수치 폐쇄 |
+| `faceredist.py: cap=0.9`, footprint 최소 0.51 bin, 3×3 smoothing | 표시 전류맵 공간 필터 | 전체 면 전하는 보존하지만 hotspot/spread의 격자·필터 독립성 확인. scalar 전압·Faraday source에는 재입력하지 않음 |
 | `cell3d.py: PROJ_TOL=2e-3`, `PROJ_ITERS=80` | 압력 투영 종료 조건 | 무차원 발산, 입출구 질량수지 기준을 계속 회귀 시험 |
 | `CONF_FRAC=0.45` | 구형 기포가 채널의 90%를 넘지 않게 제한 | 이는 slug-flow 전이 모델이 아니다. 제한에 도달하면 '구형 기포 모델 범위 초과'로 보고하고 더 성장시키지 않음 |
 
-`alpha_g > 1`인 격자는 임의 상한으로 정상처럼 숨기지 않는다. 계산은 발산 방지를 위해 1 직전에서 제한하지만, 진단의 `alpha_g_raw_max`, `alpha_g_overfilled_cells`, `dispersed_bubble_valid=false`와 UI 경고로 분산기포 모델의 적용 범위 초과를 명시한다.
+`alpha_g > 1`인 격자는 임의 상한으로 정상처럼 숨기지 않는다. 계산은 발산 방지를 위해 gas,
+계면적, 기체 운동량을 같은 국소 비율로 1 직전에서 제한하지만, 진단의 `alpha_g_raw_max`,
+`alpha_g_overfilled_cells`, `alpha_g_clipped_volume_mL`, `dispersed_bubble_valid=false`와 UI
+경고로 분산기포 모델의 적용 범위 초과를 명시한다. 이 일관화는 기체 상연속식이나 two-fluid
+질량수지를 대신하지 않는다.
 
 ## 표시 전용 상수
 
@@ -76,6 +108,10 @@
 2. 완료: 보존형 가중 충돌·합체와 시간간격 회귀 시험
 3. 완료: `fritz_scale`을 실측 무유동 이탈직경 입력으로 교체
 4. 완료: mesh 3D 접촉 수집·체적보존 합체·정적 접촉각 힘평형과 한계 진단
-5. 다음: 사이트 밀도·핵생성 크기·이탈 분포를 전극 프리셋 데이터로 분리
-6. 다음: `void_frac`, MHD, DEP, Vogt 보정을 기본 정량 경로에서 비활성화하거나 해석식으로 교체
-7. 이후: KOH 외 전해질 물성 데이터와 격자/입자 ensemble 수렴성 보고서 구축
+5. 완료: CP fail-loud, 이온 z 분리, fluid-only deposition, pending ledger, 물리 near-layer,
+   charge-conserving 표시 map, number/area/volume 보존 parcel 축약
+6. 완료: EIS/DC transport slope 일치, 1D/porous HER branch, CP/field/flow sweep 전달,
+   live T/P gas-volume 기준, porous 내부한계, 포화상태 거부, 고 void moment 일관화
+7. 다음: 사이트 밀도·핵생성 크기·이탈 분포를 전극 프리셋 데이터로 분리
+8. 다음: `void_frac`, MHD, DEP, Vogt 보정을 기본 정량 경로에서 비활성화하거나 해석식으로 교체
+9. 이후: KOH 외 전해질 물성 데이터, two-fluid 기준해, 격자/시간/parcel ensemble 수렴성 보고서 구축

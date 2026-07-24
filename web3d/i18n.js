@@ -381,6 +381,7 @@
     "자유 분포 표본": "Free-bubble distribution sample",
     "이동 트레이서": "Moving tracers",
     "실제 기포 추정": "Estimated real bubbles",
+    "기포수 기대값": "Expected bubble count",
     "전극 부착·성장": "Attached/growing on electrode",
     "이탈·이동": "Detached/moving",
     "이탈 반경 r_dep": "Detachment radius r_dep",

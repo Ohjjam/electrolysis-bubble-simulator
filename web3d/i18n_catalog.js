@@ -318,6 +318,7 @@
   "자유 분포 표본": "Free-bubble distribution sample",
   "이동 트레이서": "Moving tracers",
   "실제 기포 추정": "Estimated real bubbles",
+  "기포수 기대값": "Expected bubble count",
   "전극 부착·성장": "Attached/growing on electrode",
   "이탈·이동": "Detached/moving",
   "버블 중심은 직사각형 단위 셀 전체 어디서든 균일하게 생길 수 있으며, 구멍 중앙에 고정하지 않습니다.": "The bubble center can occur uniformly anywhere throughout the rectangular unit cell and is not fixed to the center of the hole.",

@@ -10,15 +10,18 @@
 ### Track A — 셀 스케일 3D (라이브, 인터랙티브)
 - **격자**: mm급 균일 복셀. 전극면(x), 유동/높이(y, 부력), 셀 폭(z).
 - **유동**: staggered MAC 격자 위 비압축 Navier–Stokes (Chorin projection +
-  semi-Lagrangian 이류 + red-black SOR 압력 풀이, warm-start). 발산은 기계 정밀도까지 제거.
-  명시적 점성항은 없음(Stam 방식 — 수치확산+damping); 정량 경계층이 아니라 부력 플룸·
-  self-stirring·기울기 가스 갇힘을 보여주는 정성 시각화.
+  semi-Lagrangian 이류 + 명시적 점성 + red-black SOR 압력 풀이, warm-start).
+  연산자는 해석해 시험을 통과하지만 기본 2 mm 격자는 1 mm 채널을 해상하지 못하므로
+  압력강하·벽전단·국소 유속은 정량값이 아니다.
 - **기포**: Lagrangian 가스 파슬 — 전극면에서 Faradaic 율(`kernel.sources`)로 핵생성,
-  볼륨 보존, Schiller–Naumann 종단속도(`kernel.population`와 동일식)로 상승, 3×3×3 보이드
-  투영 → Boussinesq 부력(양방향 결합). 총 가스량 = ∫j/nF 보존.
-- **대표 다중도**: 추적 기포 1개 = 실제 기포 `mult`개. 반경 `r`은 진짜 단일 기포 반경,
-  가스량은 `W = mult·V(r)`. 성장·이탈·솎아내기 어디서도 `W = mult·V(r)`와
-  `생성 = 잔류 + 배출`이 기계 정밀도로 유지됨.
+  Schiller–Naumann slip과 상간 운동량 교환, Tomiyama/Antal 벽법선 근사를 사용한다.
+  3×3×3 적층은 fluid cell에만 하며 총 가스량은 pending을 포함해 보존한다.
+  다만 별도 기체 상연속식이 없는 reduced-order 모델이지 two-fluid/VOF가 아니다.
+- **대표 다중도**: `mult`는 추적 cohort가 대표하는 **기대 기포수의 통계 가중치**다.
+  정수가 아니며 cohort 분할 뒤 `0 < mult < 1`도 가능하다. 반경 `r`은 단일 기포 반경,
+  가스량은 `W = mult·V(r)`. 성장·이탈·축약에서 이 항등식과
+  `생성 = 잔류 + pending + 배출`을 유지한다. 자유 parcel 축약은 기대 수·계면적·체적
+  moment를 side별로 보존하며 불가능하면 건너뛴다.
 - **벽 구속(confinement)**: 반대편 플레이트가 `d_ch` 떨어져 있으므로 어떤 기포도
   `0.45·d_ch`를 넘을 수 없음. 이탈 반경과 성장 모두 이 한계로 clamp — 넘치는 가스는
   더 큰 기포가 아니라 **같은 크기의 기포 더 많이**(`mult` 증가)가 됨.
